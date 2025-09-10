@@ -5,14 +5,19 @@ import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
+import 'package:one_five_one_ten/pages/transaction_history_page.dart'; // <--- 修正：添加这一行
 
-// ... (Providers 保持不变)
-final accountDetailProvider = FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
+// Provider 用于获取账户对象
+final accountDetailProvider =
+    FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
   final isar = DatabaseService().isar;
   return isar.accounts.get(accountId);
 });
 
-final accountPerformanceProvider = FutureProvider.autoDispose.family<Map<String, dynamic>, int>((ref, accountId) async {
+// Provider 用于计算账户性能
+final accountPerformanceProvider =
+    FutureProvider.autoDispose.family<Map<String, dynamic>, int>(
+        (ref, accountId) async {
   final account = await ref.watch(accountDetailProvider(accountId).future);
   if (account == null) {
     throw '未找到账户';
@@ -26,9 +31,9 @@ class AccountDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // ... (build 方法主体保持不变)
     final asyncAccount = ref.watch(accountDetailProvider(accountId));
     final asyncPerformance = ref.watch(accountPerformanceProvider(accountId));
+
     return Scaffold(
       appBar: AppBar(
         title: Text(asyncAccount.asData?.value?.name ?? '加载中...'),
@@ -51,15 +56,22 @@ class AccountDetailPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildMacroView(BuildContext context, WidgetRef ref, Account account, Map<String, dynamic> performance) {
-    // ... (这部分保持不变)
+  Widget _buildMacroView(BuildContext context, WidgetRef ref, Account account,
+      Map<String, dynamic> performance) {
     final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
-    final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
-    final totalProfit = performance['totalProfit'] ?? 0.0;
-    final profitRate = performance['profitRate'] ?? 0.0;
-    final annualizedReturn = performance['annualizedReturn'] ?? 0.0;
-    Color profitColor = totalProfit > 0 ? Colors.red.shade400 : Colors.green.shade400;
-    if (totalProfit == 0) profitColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
+    final percentFormat =
+        NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
+
+    final totalProfit = (performance['totalProfit'] ?? 0.0) as double;
+    final profitRate = (performance['profitRate'] ?? 0.0) as double;
+    final annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
+
+    Color profitColor =
+        totalProfit > 0 ? Colors.red.shade400 : Colors.green.shade400;
+    if (totalProfit == 0) {
+      profitColor =
+          Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
+    }
 
     return Card(
       child: Padding(
@@ -67,18 +79,65 @@ class AccountDetailPage extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('账户概览', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('账户概览',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                IconButton(
+                  icon: const Icon(Icons.history),
+                  tooltip: '查看更新记录',
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            TransactionHistoryPage(accountId: account.id),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
             const Divider(height: 20),
-            _buildMetricRow(context, '当前总值:', currencyFormat.format(performance['currentValue'] ?? 0.0)),
-            _buildMetricRow(context, '净投入:', currencyFormat.format(performance['netInvestment'] ?? 0.0)),
-            _buildMetricRow(context, '总收益:', '${currencyFormat.format(totalProfit)} (${percentFormat.format(profitRate)})', color: profitColor),
-            _buildMetricRow(context, '年化收益率:', percentFormat.format(annualizedReturn), color: annualizedReturn > 0 ? Colors.red.shade400 : Colors.green.shade400),
+            _buildMetricRow(
+              context,
+              '当前总值:',
+              currencyFormat.format(performance['currentValue'] ?? 0.0),
+            ),
+            _buildMetricRow(
+              context,
+              '净投入:',
+              currencyFormat.format(performance['netInvestment'] ?? 0.0),
+            ),
+            _buildMetricRow(
+              context,
+              '总收益:',
+              '${currencyFormat.format(totalProfit)} (${percentFormat.format(profitRate)})',
+              color: profitColor,
+            ),
+            _buildMetricRow(
+              context,
+              '年化收益率:',
+              percentFormat.format(annualizedReturn),
+              color: annualizedReturn > 0
+                  ? Colors.red.shade400
+                  : Colors.green.shade400,
+            ),
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                ElevatedButton(onPressed: () { _showInvestWithdrawDialog(context, ref, account); }, child: const Text('资金操作')),
-                ElevatedButton(onPressed: () { _showUpdateValueDialog(context, ref, account); }, child: const Text('更新总值')),
+                ElevatedButton(
+                    onPressed: () {
+                      _showInvestWithdrawDialog(context, ref, account);
+                    },
+                    child: const Text('资金操作')),
+                ElevatedButton(
+                    onPressed: () {
+                      _showUpdateValueDialog(context, ref, account);
+                    },
+                    child: const Text('更新总值')),
               ],
             )
           ],
@@ -86,12 +145,11 @@ class AccountDetailPage extends ConsumerWidget {
       ),
     );
   }
-  
-  // --- “资金操作”对话框修改 ---
-  void _showInvestWithdrawDialog(BuildContext context, WidgetRef ref, Account account) {
+
+  void _showInvestWithdrawDialog(
+      BuildContext context, WidgetRef ref, Account account) {
     final amountController = TextEditingController();
     final List<bool> isSelected = [true, false];
-    // --- 新增：日期状态变量 ---
     DateTime selectedDate = DateTime.now();
 
     showDialog(
@@ -106,23 +164,37 @@ class AccountDetailPage extends ConsumerWidget {
                 children: [
                   ToggleButtons(
                     isSelected: isSelected,
-                    onPressed: (index) { setState(() { isSelected[0] = index == 0; isSelected[1] = index == 1; }); },
+                    onPressed: (index) {
+                      setState(() {
+                        isSelected[0] = index == 0;
+                        isSelected[1] = index == 1;
+                      });
+                    },
                     borderRadius: BorderRadius.circular(8.0),
                     children: const [
-                      Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text('投入')),
-                      Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text('转出')),
+                      Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('投入')),
+                      Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('转出')),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  TextField(controller: amountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: '金额', prefixText: '¥ ')),
+                  TextField(
+                      controller: amountController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                          labelText: '金额', prefixText: '¥ ')),
                   const SizedBox(height: 16),
-                  // --- 新增：日期选择UI ---
                   Row(
                     children: [
                       const Text("日期:", style: TextStyle(fontSize: 16)),
                       const Spacer(),
                       TextButton(
-                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate), style: const TextStyle(fontSize: 16)),
+                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate),
+                            style: const TextStyle(fontSize: 16)),
                         onPressed: () async {
                           final pickedDate = await showDatePicker(
                             context: context,
@@ -131,7 +203,9 @@ class AccountDetailPage extends ConsumerWidget {
                             lastDate: DateTime.now(),
                           );
                           if (pickedDate != null) {
-                            setState(() { selectedDate = pickedDate; });
+                            setState(() {
+                              selectedDate = pickedDate;
+                            });
                           }
                         },
                       )
@@ -140,7 +214,9 @@ class AccountDetailPage extends ConsumerWidget {
                 ],
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
+                TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('取消')),
                 TextButton(
                   onPressed: () async {
                     final amount = double.tryParse(amountController.text);
@@ -148,12 +224,18 @@ class AccountDetailPage extends ConsumerWidget {
                       final isar = DatabaseService().isar;
                       final newTxn = AccountTransaction()
                         ..amount = amount
-                        ..date = selectedDate // --- 修改：使用选择的日期 ---
-                        ..type = isSelected[0] ? TransactionType.invest : TransactionType.withdraw
+                        ..date = selectedDate
+                        ..type = isSelected[0]
+                            ? TransactionType.invest
+                            : TransactionType.withdraw
                         ..account.value = account;
-                      await isar.writeTxn(() async { await isar.accountTransactions.put(newTxn); await newTxn.account.save(); });
+                      await isar.writeTxn(() async {
+                        await isar.accountTransactions.put(newTxn);
+                        await newTxn.account.save();
+                      });
                       ref.invalidate(accountPerformanceProvider(account.id));
-                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                      if (dialogContext.mounted)
+                        Navigator.of(dialogContext).pop();
                     }
                   },
                   child: const Text('保存'),
@@ -166,16 +248,14 @@ class AccountDetailPage extends ConsumerWidget {
     );
   }
 
-  // --- “更新总值”对话框修改 ---
-  void _showUpdateValueDialog(BuildContext context, WidgetRef ref, Account account) {
+  void _showUpdateValueDialog(
+      BuildContext context, WidgetRef ref, Account account) {
     final valueController = TextEditingController();
-    // --- 新增：日期状态变量 ---
     DateTime selectedDate = DateTime.now();
 
     showDialog(
       context: context,
       builder: (dialogContext) {
-        // --- 新增：使用StatefulBuilder来更新对话框内的日期显示 ---
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
@@ -183,15 +263,20 @@ class AccountDetailPage extends ConsumerWidget {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(controller: valueController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: '当前总资产价值', prefixText: '¥ ')),
+                  TextField(
+                      controller: valueController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                          labelText: '当前总资产价值', prefixText: '¥ ')),
                   const SizedBox(height: 16),
-                  // --- 新增：日期选择UI ---
                   Row(
                     children: [
                       const Text("日期:", style: TextStyle(fontSize: 16)),
                       const Spacer(),
                       TextButton(
-                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate), style: const TextStyle(fontSize: 16)),
+                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate),
+                            style: const TextStyle(fontSize: 16)),
                         onPressed: () async {
                           final DateTime? pickedDate = await showDatePicker(
                             context: context,
@@ -200,7 +285,9 @@ class AccountDetailPage extends ConsumerWidget {
                             lastDate: DateTime.now(),
                           );
                           if (pickedDate != null) {
-                            setState(() { selectedDate = pickedDate; });
+                            setState(() {
+                              selectedDate = pickedDate;
+                            });
                           }
                         },
                       )
@@ -209,7 +296,9 @@ class AccountDetailPage extends ConsumerWidget {
                 ],
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
+                TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('取消')),
                 TextButton(
                   onPressed: () async {
                     final value = double.tryParse(valueController.text);
@@ -217,12 +306,16 @@ class AccountDetailPage extends ConsumerWidget {
                       final isar = DatabaseService().isar;
                       final newTxn = AccountTransaction()
                         ..amount = value
-                        ..date = selectedDate // --- 修改：使用选择的日期 ---
+                        ..date = selectedDate
                         ..type = TransactionType.updateTotalValue
                         ..account.value = account;
-                      await isar.writeTxn(() async { await isar.accountTransactions.put(newTxn); await newTxn.account.save(); });
+                      await isar.writeTxn(() async {
+                        await isar.accountTransactions.put(newTxn);
+                        await newTxn.account.save();
+                      });
                       ref.invalidate(accountPerformanceProvider(account.id));
-                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                      if (dialogContext.mounted)
+                        Navigator.of(dialogContext).pop();
                     }
                   },
                   child: const Text('保存'),
@@ -235,12 +328,13 @@ class AccountDetailPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildMicroView(BuildContext context) { /* ... 保持不变 ... */
+  Widget _buildMicroView(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          const Text('持仓资产', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('持仓资产',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           IconButton(onPressed: () {}, icon: const Icon(Icons.add)),
         ]),
         const Divider(height: 20),
@@ -249,14 +343,20 @@ class AccountDetailPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildMetricRow(BuildContext context, String title, String value, {Color? color}) { /* ... 保持不变 ... */
-     return Padding(
+  Widget _buildMetricRow(BuildContext context, String title, String value,
+      {Color? color}) {
+    return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title, style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+          Text(title,
+              style: TextStyle(
+                  fontSize: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.bold, color: color)),
         ],
       ),
     );
