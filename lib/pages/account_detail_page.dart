@@ -3,18 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
+import 'package:one_five_one_ten/models/asset.dart';
+import 'package:one_five_one_ten/pages/add_edit_asset_page.dart';
+import 'package:one_five_one_ten/pages/transaction_history_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
-import 'package:one_five_one_ten/pages/transaction_history_page.dart'; // <--- 修正：添加这一行
 
-// Provider 用于获取账户对象
 final accountDetailProvider =
     FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
   final isar = DatabaseService().isar;
   return isar.accounts.get(accountId);
 });
 
-// Provider 用于计算账户性能
 final accountPerformanceProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, int>(
         (ref, accountId) async {
@@ -23,6 +23,20 @@ final accountPerformanceProvider =
     throw '未找到账户';
   }
   return CalculatorService().calculateAccountPerformance(account);
+});
+
+final trackedAssetsProvider =
+    StreamProvider.autoDispose.family<List<Asset>, int>((ref, accountId) {
+  final isar = DatabaseService().isar;
+  return isar.accounts
+      .watchObject(accountId, fireImmediately: true)
+      .asyncMap((account) async {
+    if (account != null) {
+      await account.trackedAssets.load();
+      return account.trackedAssets.toList();
+    }
+    return [];
+  });
 });
 
 class AccountDetailPage extends ConsumerWidget {
@@ -40,13 +54,16 @@ class AccountDetailPage extends ConsumerWidget {
       ),
       body: asyncPerformance.when(
         data: (performance) {
+          if (asyncAccount.asData?.value == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
           final account = asyncAccount.asData!.value!;
           return ListView(
             padding: const EdgeInsets.all(16.0),
             children: [
               _buildMacroView(context, ref, account, performance),
               const SizedBox(height: 24),
-              _buildMicroView(context),
+              _buildMicroView(context, ref, accountId),
             ],
           );
         },
@@ -61,11 +78,9 @@ class AccountDetailPage extends ConsumerWidget {
     final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
     final percentFormat =
         NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
-
     final totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final profitRate = (performance['profitRate'] ?? 0.0) as double;
     final annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
-
     Color profitColor =
         totalProfit > 0 ? Colors.red.shade400 : Colors.green.shade400;
     if (totalProfit == 0) {
@@ -328,18 +343,61 @@ class AccountDetailPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildMicroView(BuildContext context) {
+  Widget _buildMicroView(BuildContext context, WidgetRef ref, int accountId) {
+    final asyncAssets = ref.watch(trackedAssetsProvider(accountId));
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          const Text('持仓资产',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          IconButton(onPressed: () {}, icon: const Icon(Icons.add)),
-        ]),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('持仓资产',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            IconButton(
+              icon: const Icon(Icons.add),
+              tooltip: '添加持仓资产',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => AddEditAssetPage(accountId: accountId),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
         const Divider(height: 20),
-        const Card(child: ListTile(title: Text('...'))),
+        asyncAssets.when(
+          data: (assets) {
+            if (assets.isEmpty) {
+              return const Card(child: ListTile(title: Text('暂无持仓资产')));
+            }
+            return Column(
+              children: assets.map((asset) => _buildAssetCard(asset)).toList(),
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (err, stack) => Center(child: Text('加载资产失败: $err')),
+        )
       ],
+    );
+  }
+
+  Widget _buildAssetCard(Asset asset) {
+    return Card(
+      child: ListTile(
+        leading: Icon(asset.trackingMethod == AssetTrackingMethod.shareBased
+            ? Icons.pie_chart_outline
+            : Icons.account_balance_wallet_outlined),
+        title: Text(asset.name),
+        subtitle: Text(
+            asset.trackingMethod == AssetTrackingMethod.shareBased ? '份额法' : '价值法'),
+        trailing: const Icon(Icons.arrow_forward_ios),
+        onTap: () {
+          // TODO: 点击后跳转到对应资产的详情页
+        },
+      ),
     );
   }
 

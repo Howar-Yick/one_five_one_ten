@@ -26,6 +26,12 @@ const AssetSchema = CollectionSchema(
       id: 1,
       name: r'name',
       type: IsarType.string,
+    ),
+    r'trackingMethod': PropertySchema(
+      id: 2,
+      name: r'trackingMethod',
+      type: IsarType.string,
+      enumMap: _AssettrackingMethodEnumValueMap,
     )
   },
   estimateSize: _assetEstimateSize,
@@ -61,6 +67,13 @@ const AssetSchema = CollectionSchema(
       target: r'PositionSnapshot',
       single: false,
       linkName: r'asset',
+    ),
+    r'transactions': LinkSchema(
+      id: 2335268965389565597,
+      name: r'transactions',
+      target: r'Transaction',
+      single: false,
+      linkName: r'asset',
     )
   },
   embeddedSchemas: {},
@@ -78,6 +91,7 @@ int _assetEstimateSize(
   var bytesCount = offsets.last;
   bytesCount += 3 + object.code.length * 3;
   bytesCount += 3 + object.name.length * 3;
+  bytesCount += 3 + object.trackingMethod.name.length * 3;
   return bytesCount;
 }
 
@@ -89,6 +103,7 @@ void _assetSerialize(
 ) {
   writer.writeString(offsets[0], object.code);
   writer.writeString(offsets[1], object.name);
+  writer.writeString(offsets[2], object.trackingMethod.name);
 }
 
 Asset _assetDeserialize(
@@ -101,6 +116,9 @@ Asset _assetDeserialize(
   object.code = reader.readString(offsets[0]);
   object.id = id;
   object.name = reader.readString(offsets[1]);
+  object.trackingMethod =
+      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[2])] ??
+          AssetTrackingMethod.valueBased;
   return object;
 }
 
@@ -115,17 +133,30 @@ P _assetDeserializeProp<P>(
       return (reader.readString(offset)) as P;
     case 1:
       return (reader.readString(offset)) as P;
+    case 2:
+      return (_AssettrackingMethodValueEnumMap[
+              reader.readStringOrNull(offset)] ??
+          AssetTrackingMethod.valueBased) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
 }
+
+const _AssettrackingMethodEnumValueMap = {
+  r'valueBased': r'valueBased',
+  r'shareBased': r'shareBased',
+};
+const _AssettrackingMethodValueEnumMap = {
+  r'valueBased': AssetTrackingMethod.valueBased,
+  r'shareBased': AssetTrackingMethod.shareBased,
+};
 
 Id _assetGetId(Asset object) {
   return object.id;
 }
 
 List<IsarLinkBase<dynamic>> _assetGetLinks(Asset object) {
-  return [object.account, object.snapshots];
+  return [object.account, object.snapshots, object.transactions];
 }
 
 void _assetAttach(IsarCollection<dynamic> col, Id id, Asset object) {
@@ -133,6 +164,8 @@ void _assetAttach(IsarCollection<dynamic> col, Id id, Asset object) {
   object.account.attach(col, col.isar.collection<Account>(), r'account', id);
   object.snapshots
       .attach(col, col.isar.collection<PositionSnapshot>(), r'snapshots', id);
+  object.transactions
+      .attach(col, col.isar.collection<Transaction>(), r'transactions', id);
 }
 
 extension AssetQueryWhereSort on QueryBuilder<Asset, Asset, QWhere> {
@@ -660,6 +693,136 @@ extension AssetQueryFilter on QueryBuilder<Asset, Asset, QFilterCondition> {
       ));
     });
   }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> trackingMethodEqualTo(
+    AssetTrackingMethod value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'trackingMethod',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> trackingMethodGreaterThan(
+    AssetTrackingMethod value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'trackingMethod',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> trackingMethodLessThan(
+    AssetTrackingMethod value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'trackingMethod',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> trackingMethodBetween(
+    AssetTrackingMethod lower,
+    AssetTrackingMethod upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'trackingMethod',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> trackingMethodStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'trackingMethod',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> trackingMethodEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'trackingMethod',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> trackingMethodContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'trackingMethod',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> trackingMethodMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'trackingMethod',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> trackingMethodIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'trackingMethod',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> trackingMethodIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'trackingMethod',
+        value: '',
+      ));
+    });
+  }
 }
 
 extension AssetQueryObject on QueryBuilder<Asset, Asset, QFilterCondition> {}
@@ -733,6 +896,63 @@ extension AssetQueryLinks on QueryBuilder<Asset, Asset, QFilterCondition> {
           r'snapshots', lower, includeLower, upper, includeUpper);
     });
   }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> transactions(
+      FilterQuery<Transaction> q) {
+    return QueryBuilder.apply(this, (query) {
+      return query.link(q, r'transactions');
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> transactionsLengthEqualTo(
+      int length) {
+    return QueryBuilder.apply(this, (query) {
+      return query.linkLength(r'transactions', length, true, length, true);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> transactionsIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.linkLength(r'transactions', 0, true, 0, true);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> transactionsIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.linkLength(r'transactions', 0, false, 999999, true);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> transactionsLengthLessThan(
+    int length, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.linkLength(r'transactions', 0, true, length, include);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition>
+      transactionsLengthGreaterThan(
+    int length, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.linkLength(r'transactions', length, include, 999999, true);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> transactionsLengthBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.linkLength(
+          r'transactions', lower, includeLower, upper, includeUpper);
+    });
+  }
 }
 
 extension AssetQuerySortBy on QueryBuilder<Asset, Asset, QSortBy> {
@@ -757,6 +977,18 @@ extension AssetQuerySortBy on QueryBuilder<Asset, Asset, QSortBy> {
   QueryBuilder<Asset, Asset, QAfterSortBy> sortByNameDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'name', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortByTrackingMethod() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'trackingMethod', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortByTrackingMethodDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'trackingMethod', Sort.desc);
     });
   }
 }
@@ -797,6 +1029,18 @@ extension AssetQuerySortThenBy on QueryBuilder<Asset, Asset, QSortThenBy> {
       return query.addSortBy(r'name', Sort.desc);
     });
   }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenByTrackingMethod() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'trackingMethod', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenByTrackingMethodDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'trackingMethod', Sort.desc);
+    });
+  }
 }
 
 extension AssetQueryWhereDistinct on QueryBuilder<Asset, Asset, QDistinct> {
@@ -811,6 +1055,14 @@ extension AssetQueryWhereDistinct on QueryBuilder<Asset, Asset, QDistinct> {
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'name', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QDistinct> distinctByTrackingMethod(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'trackingMethod',
+          caseSensitive: caseSensitive);
     });
   }
 }
@@ -831,6 +1083,13 @@ extension AssetQueryProperty on QueryBuilder<Asset, Asset, QQueryProperty> {
   QueryBuilder<Asset, String, QQueryOperations> nameProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'name');
+    });
+  }
+
+  QueryBuilder<Asset, AssetTrackingMethod, QQueryOperations>
+      trackingMethodProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'trackingMethod');
     });
   }
 }

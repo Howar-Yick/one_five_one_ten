@@ -1,22 +1,33 @@
 import 'package:isar/isar.dart';
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
+import 'package:one_five_one_ten/models/transaction.dart';
 
 part 'asset.g.dart';
+
+enum AssetTrackingMethod {
+  valueBased,
+  shareBased,
+}
 
 @collection
 class Asset {
   Id id = Isar.autoIncrement;
 
   @Index(type: IndexType.value)
-  late String name; // 资产名称, e.g., "贵州茅台"
+  late String name;
 
-  late String code; // 资产代码, e.g., "600519.SH"
+  // --- 修正：将 String? code 修改为 String code = '' ---
+  String code = ''; // 资产代码, 给予一个默认的空值
 
-  // 指向所属的账户
+  @Enumerated(EnumType.name)
+  late AssetTrackingMethod trackingMethod;
+
   final account = IsarLink<Account>();
 
-  // 关联的持仓快照历史
   @Backlink(to: "asset")
   final snapshots = IsarLinks<PositionSnapshot>();
+  
+  @Backlink(to: "asset")
+  final transactions = IsarLinks<Transaction>();
 }
