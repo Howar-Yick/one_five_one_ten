@@ -10,29 +10,23 @@ dependencies:
   flutter:
     sdk: flutter
   
-  # Isar 数据库核心库
-  isar: ^3.1.0+1
-  # Isar Flutter 专用库
-  isar_flutter_libs: ^3.1.0+1
-  # 用于获取文件系统路径，Isar初始化时需要
-  path_provider: ^2.0.11
+  # 锁定 Isar 版本
+  isar: 3.1.0+1
+  isar_flutter_libs: 3.1.0+1
   
-  # 状态管理库 Riverpod
+  path_provider: ^2.0.11
   flutter_riverpod: ^2.4.9
-
-  # 其他UI辅助库
   cupertino_icons: ^1.0.2
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
-  # Flutter 代码规范
+  
   flutter_lints: ^2.0.0
 
-  # Isar 代码生成器
-  isar_generator: ^3.1.0+1
-  # Flutter 项目构建工具
+  # 锁定 Isar Generator 和 Build Runner 的版本，与 Isar 库匹配
+  isar_generator: 3.1.0+1
   build_runner: ^2.4.6
 
 flutter:
