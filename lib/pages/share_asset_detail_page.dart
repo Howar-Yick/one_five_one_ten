@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
+import 'package:one_five_one_ten/pages/snapshot_history_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 
@@ -21,20 +22,16 @@ final shareAssetPerformanceProvider = FutureProvider.autoDispose.family<Map<Stri
 
 final snapshotHistoryProvider = StreamProvider.autoDispose.family<List<PositionSnapshot>, int>((ref, assetId) {
   final isar = DatabaseService().isar;
-  // 采用已被验证成功的 watchObject 模式
   return isar.assets.watchObject(assetId, fireImmediately: true).asyncMap((asset) async {
     if (asset != null) {
-      // 当 Asset 变化时，重新加载其关联的快照列表
       await asset.snapshots.load();
       final snapshots = asset.snapshots.toList();
-      // 手动排序，因为 backlinks 本身是无序的
       snapshots.sort((a, b) => b.date.compareTo(a.date));
       return snapshots;
     }
     return [];
   });
 });
-
 
 class ShareAssetDetailPage extends ConsumerWidget {
   final int assetId;
@@ -63,12 +60,11 @@ class ShareAssetDetailPage extends ConsumerWidget {
       body: asyncAsset.when(
         data: (asset) {
           if (asset == null) return const Center(child: Text('未找到该资产'));
+          // --- 修正：移除 _buildSnapshotHistory 的调用 ---
           return ListView(
             padding: const EdgeInsets.all(16.0),
             children: [
               _buildPerformanceCard(context, ref, asset),
-              const SizedBox(height: 24),
-              _buildSnapshotHistory(context, ref, asset),
             ],
           );
         },
@@ -78,6 +74,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
     );
   }
 
+  // --- 修正：此方法现在与价值法页面的布局完全一致 ---
   Widget _buildPerformanceCard(BuildContext context, WidgetRef ref, Asset asset) {
     final asyncPerformance = ref.watch(shareAssetPerformanceProvider(assetId));
     final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
@@ -96,7 +93,26 @@ class ShareAssetDetailPage extends ConsumerWidget {
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('资产概览', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    IconButton(
+                      icon: const Icon(Icons.history),
+                      tooltip: '查看快照历史',
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => SnapshotHistoryPage(assetId: asset.id),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const Divider(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -132,31 +148,6 @@ class ShareAssetDetailPage extends ConsumerWidget {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (err, stack) => Center(child: Text('计算失败: $err')),
-    );
-  }
-
-  Widget _buildSnapshotHistory(BuildContext context, WidgetRef ref, Asset asset) {
-    final asyncSnapshots = ref.watch(snapshotHistoryProvider(assetId));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('持仓快照历史', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const Divider(height: 20),
-        asyncSnapshots.when(
-          data: (snapshots) {
-            if(snapshots.isEmpty) return const Text('暂无快照历史');
-            return Column(
-              children: snapshots.map((snapshot) => ListTile(
-                leading: const Icon(Icons.history_toggle_off_outlined),
-                title: Text('份额: ${snapshot.totalShares.toStringAsFixed(2)}, 成本: ¥${snapshot.averageCost.toStringAsFixed(3)}'),
-                subtitle: Text(DateFormat('yyyy-MM-dd').format(snapshot.date)),
-              )).toList(),
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (err, stack) => Center(child: Text('加载历史失败: $err')),
-        )
-      ],
     );
   }
 
@@ -201,13 +192,13 @@ class ShareAssetDetailPage extends ConsumerWidget {
                   onPressed: () async {
                     final shares = double.tryParse(sharesController.text);
                     final cost = double.tryParse(costController.text);
-                    final price = double.tryParse(priceController.text);
+                    final priceText = priceController.text.trim();
 
                     if (shares != null && cost != null) {
                       final isar = DatabaseService().isar;
                       
-                      if (price != null) {
-                        asset.latestPrice = price;
+                      if (priceText.isNotEmpty) {
+                        asset.latestPrice = double.tryParse(priceText) ?? asset.latestPrice;
                         asset.priceUpdateDate = DateTime.now();
                       }
 
@@ -218,7 +209,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
                         ..asset.value = asset;
                       
                       await isar.writeTxn(() async {
-                        await isar.assets.put(asset); // Save asset to update price
+                        await isar.assets.put(asset);
                         await isar.positionSnapshots.put(newSnapshot);
                         await newSnapshot.asset.save();
                       });

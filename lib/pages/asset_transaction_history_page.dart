@@ -76,6 +76,8 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
         title: Text(title),
         subtitle: Text(DateFormat('yyyy-MM-dd').format(txn.date)),
         trailing: Text(currencyFormat.format(txn.amount), style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
+        // --- 激活点击事件 ---
+        onTap: () => _showEditTransactionDialog(context, ref, txn),
         onLongPress: () => _showDeleteConfirmation(context, ref, txn),
       ),
     );
@@ -104,4 +106,103 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
       ),
     );
   }
+
+  void _showEditTransactionDialog(
+      BuildContext context, WidgetRef ref, Transaction txn) {
+    final amountController = TextEditingController(text: txn.amount.toString());
+    DateTime selectedDate = txn.date;
+    final List<bool> isSelected = [
+      txn.type == TransactionType.invest,
+      txn.type == TransactionType.withdraw
+    ];
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('编辑记录'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (txn.type != TransactionType.updateValue)
+                    ToggleButtons(
+                      isSelected: isSelected,
+                      onPressed: (index) {
+                        setState(() {
+                          isSelected[0] = index == 0;
+                          isSelected[1] = index == 1;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(8.0),
+                      children: const [
+                        Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text('投入')),
+                        Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text('转出')),
+                      ],
+                    ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: amountController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: txn.type == TransactionType.updateValue ? '总资产金额' : '金额',
+                      prefixText: '¥ ',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text("日期:", style: TextStyle(fontSize: 16)),
+                      const Spacer(),
+                      TextButton(
+                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
+                        onPressed: () async {
+                          final pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime.now(),
+                          );
+                          if (pickedDate != null) {
+                            setState(() { selectedDate = pickedDate; });
+                          }
+                        },
+                      )
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    final amount = double.tryParse(amountController.text);
+                    if (amount != null && amount >= 0) {
+                      final isar = DatabaseService().isar;
+                      txn.amount = amount;
+                      txn.date = selectedDate;
+                      if (txn.type != TransactionType.updateValue) {
+                        txn.type = isSelected[0] ? TransactionType.invest : TransactionType.withdraw;
+                      }
+                      await isar.writeTxn(() async {
+                        await isar.transactions.put(txn);
+                      });
+                      ref.invalidate(assetTransactionHistoryProvider(assetId));
+                      ref.invalidate(valueAssetPerformanceProvider(assetId));
+                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                    }
+                  },
+                  child: const Text('保存修改'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }  
 }
