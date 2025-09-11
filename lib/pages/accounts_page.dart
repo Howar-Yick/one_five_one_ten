@@ -1,18 +1,19 @@
-// lib/pages/accounts_page.dart (Final, Corrected Version)
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:isar/isar.dart';
 import 'package:one_five_one_ten/models/account.dart';
+import 'package:one_five_one_ten/models/account_transaction.dart';
+import 'package:one_five_one_ten/models/asset.dart';
+import 'package:one_five_one_ten/models/position_snapshot.dart'; // <--- 修正：添加此行
+import 'package:one_five_one_ten/models/transaction.dart';       // <--- 修正：添加此行
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/widgets/account_card.dart';
-import 'package:isar/isar.dart'; // ✅ 关键：引入 Isar 扩展方法（findAll 等）
 
-// --- MAJOR CHANGE: Using FutureProvider instead of StreamProvider ---
-// This fetches a snapshot of the data when requested. It is simpler and more robust.
-final accountsProvider = FutureProvider<List<Account>>((ref) {
+/// 用 FutureProvider 拉取账户列表
+final accountsProvider = FutureProvider<List<Account>>((ref) async {
   final isar = DatabaseService().isar;
-  // .findAll() is a standard method to get all results of a query. This will work.
-  return isar.accounts.where().findAll();
+  // ❗️关键：where() 之后先 anyId()，再 findAll()
+  return isar.accounts.where().anyId().findAll();
 });
 
 class AccountsPage extends ConsumerWidget {
@@ -20,7 +21,7 @@ class AccountsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final accountsAsyncValue = ref.watch(accountsProvider);
+    final accountsAsync = ref.watch(accountsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -28,16 +29,13 @@ class AccountsPage extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () {
-              // We now pass the 'ref' to the dialog so it can trigger a refresh.
-              _showAddAccountDialog(context, ref);
-            },
+            onPressed: () => _showAddAccountDialog(context, ref),
           ),
         ],
       ),
-      body: accountsAsyncValue.when(
+      body: accountsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) => Center(child: Text('发生错误: $err')),
+        error: (e, _) => Center(child: Text('加载失败：$e')),
         data: (accounts) {
           if (accounts.isEmpty) {
             return Center(
@@ -47,67 +45,123 @@ class AccountsPage extends ConsumerWidget {
               ),
             );
           }
-          return ListView.builder(
-            itemCount: accounts.length,
-            itemBuilder: (context, index) {
-              final account = accounts[index];
-              return AccountCard(account: account);
-            },
+          return RefreshIndicator(
+            onRefresh: () => ref.refresh(accountsProvider.future),
+            child: ListView.builder(
+              itemCount: accounts.length,
+              itemBuilder: (context, index) {
+                final account = accounts[index];
+                // 使用 GestureDetector 来包裹 AccountCard 以添加长按事件
+                return GestureDetector(
+                  onLongPress: () => _confirmDeleteAccount(context, ref, account),
+                  child: AccountCard(account: account),
+                );
+              },
+            ),
           );
         },
       ),
     );
   }
 
-  // --- MINOR CHANGE: The dialog now accepts a WidgetRef ---
   void _showAddAccountDialog(BuildContext context, WidgetRef ref) {
-    final TextEditingController nameController = TextEditingController();
+    final nameController = TextEditingController();
     showDialog(
       context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('添加新账户'),
-          content: TextField(
-            controller: nameController,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '账户名称',
-              hintText: '例如：国金证券',
-            ),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('添加新账户'),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '账户名称',
+            hintText: '例如：国金证券',
           ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('取消'),
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-              },
-            ),
-            TextButton(
-              child: const Text('保存'),
-              onPressed: () async {
-                final String name = nameController.text.trim();
-                if (name.isNotEmpty) {
-                  final newAccount = Account()
-                    ..name = name
-                    ..createdAt = DateTime.now();
-                  final isar = DatabaseService().isar;
-                  await isar.writeTxn(() async {
-                    await isar.accounts.put(newAccount);
-                  });
-
-                  // --- ADDED LOGIC: Manually refresh the list ---
-                  // This tells Riverpod that the data is stale and needs to be fetched again.
-                  ref.invalidate(accountsProvider);
-
-                  if (dialogContext.mounted) {
-                    Navigator.of(dialogContext).pop();
-                  }
-                }
-              },
-            ),
-          ],
-        );
-      },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) return;
+              final isar = DatabaseService().isar;
+              final account = Account()
+                ..name = name
+                ..createdAt = DateTime.now();
+              await isar.writeTxn(() async {
+                await isar.accounts.put(account);
+              });
+              ref.invalidate(accountsProvider);
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
     );
+  }
+
+  /// 删除账户（会级联清理该账户关联的交易与资产）
+  Future<void> _confirmDeleteAccount(
+      BuildContext context, WidgetRef ref, Account account) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        title: const Text('删除账户'),
+        content: Text('确认删除“${account.name}”以及其所有相关记录吗？此操作不可撤销。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dCtx).pop(false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.of(dCtx).pop(true),
+            child: const Text('删除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    final isar = DatabaseService().isar;
+    await isar.writeTxn(() async {
+      // 1. 获取并删除所有关联的资产及其子记录
+      await account.trackedAssets.load();
+      final assets = account.trackedAssets.toList();
+      for (final asset in assets) {
+        await asset.snapshots.load();
+        await asset.transactions.load();
+        if (asset.snapshots.isNotEmpty) {
+          await isar.collection<PositionSnapshot>().deleteAll(asset.snapshots.map((s) => s.id).toList());
+        }
+        if (asset.transactions.isNotEmpty) {
+          await isar.collection<Transaction>().deleteAll(asset.transactions.map((t) => t.id).toList());
+        }
+      }
+      if (assets.isNotEmpty) {
+        await isar.collection<Asset>().deleteAll(assets.map((a) => a.id).toList());
+      }
+
+      // 2. 获取并删除该账户的顶层交易记录
+      final txnIds = await isar.collection<AccountTransaction>()
+          .filter()
+          .account((q) => q.idEqualTo(account.id))
+          .idProperty()
+          .findAll();
+      if (txnIds.isNotEmpty) {
+        await isar.collection<AccountTransaction>().deleteAll(txnIds);
+      }
+      
+      // 3. 最后删除账户本身
+      await isar.accounts.delete(account.id);
+    });
+
+    ref.invalidate(accountsProvider);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已删除账户：${account.name}')),
+      );
+    }
   }
 }
