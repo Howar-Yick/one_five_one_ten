@@ -8,6 +8,7 @@ import 'package:one_five_one_ten/pages/add_edit_asset_page.dart';
 import 'package:one_five_one_ten/pages/transaction_history_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
+import 'package:one_five_one_ten/pages/share_asset_detail_page.dart';
 
 final accountDetailProvider =
     FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
@@ -374,7 +375,7 @@ class AccountDetailPage extends ConsumerWidget {
               return const Card(child: ListTile(title: Text('暂无持仓资产')));
             }
             return Column(
-              children: assets.map((asset) => _buildAssetCard(asset)).toList(),
+              children: assets.map((asset) => _buildAssetCard(context, asset)).toList(),
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -384,7 +385,7 @@ class AccountDetailPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildAssetCard(Asset asset) {
+  Widget _buildAssetCard(BuildContext context, Asset asset) { // 增加 context 参数
     return Card(
       child: ListTile(
         leading: Icon(asset.trackingMethod == AssetTrackingMethod.shareBased
@@ -395,7 +396,19 @@ class AccountDetailPage extends ConsumerWidget {
             asset.trackingMethod == AssetTrackingMethod.shareBased ? '份额法' : '价值法'),
         trailing: const Icon(Icons.arrow_forward_ios),
         onTap: () {
-          // TODO: 点击后跳转到对应资产的详情页
+          // --- 关键修改：根据资产类型，跳转到不同页面 ---
+          if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ShareAssetDetailPage(assetId: asset.id),
+              ),
+            );
+          } else {
+            // TODO: 将来跳转到价值法资产详情页
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('价值法资产详情页待开发')),
+            );
+          }
         },
       ),
     );

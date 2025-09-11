@@ -25,6 +25,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   final _sharesController = TextEditingController();
   final _costController = TextEditingController();
   final _initialInvestmentController = TextEditingController();
+  final _latestPriceController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
 
   @override
@@ -34,6 +35,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     _sharesController.dispose();
     _costController.dispose();
     _initialInvestmentController.dispose();
+    _latestPriceController.dispose();
     super.dispose();
   }
 
@@ -60,6 +62,12 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     try {
       if (_selectedMethod == AssetTrackingMethod.shareBased) {
         newAsset.code = _codeController.text.trim();
+        final priceText = _latestPriceController.text.trim();
+        if (priceText.isNotEmpty) {
+          newAsset.latestPrice = double.tryParse(priceText) ?? 0.0;
+          newAsset.priceUpdateDate = DateTime.now();
+        }
+        
         final snapshot = PositionSnapshot()
           ..totalShares = double.parse(_sharesController.text)
           ..averageCost = double.parse(_costController.text)
@@ -72,7 +80,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           await newAsset.account.save();
           await snapshot.asset.save();
         });
-      } else {
+      } else { // 价值法
         final initialInvestment =
             double.parse(_initialInvestmentController.text);
         final transaction = Transaction()
@@ -216,6 +224,13 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
             (value == null || value.isEmpty || double.tryParse(value) == null)
                 ? '请输入有效的数字'
                 : null,
+      ),
+      const SizedBox(height: 16),
+      TextFormField(
+        controller: _latestPriceController,
+        decoration: const InputDecoration(
+            labelText: '最新价格 (可选)', border: OutlineInputBorder()),
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
       ),
     ];
   }

@@ -17,8 +17,11 @@ class Asset {
   @Index(type: IndexType.value)
   late String name;
 
-  // --- 修正：将 String? code 修改为 String code = '' ---
-  String code = ''; // 资产代码, 给予一个默认的空值
+  String code = '';
+  double latestPrice = 0;
+  
+  // --- 新增：价格更新日期 ---
+  DateTime? priceUpdateDate;
 
   @Enumerated(EnumType.name)
   late AssetTrackingMethod trackingMethod;

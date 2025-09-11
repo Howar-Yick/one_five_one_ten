@@ -22,13 +22,18 @@ const AssetSchema = CollectionSchema(
       name: r'code',
       type: IsarType.string,
     ),
-    r'name': PropertySchema(
+    r'latestPrice': PropertySchema(
       id: 1,
+      name: r'latestPrice',
+      type: IsarType.double,
+    ),
+    r'name': PropertySchema(
+      id: 2,
       name: r'name',
       type: IsarType.string,
     ),
     r'trackingMethod': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'trackingMethod',
       type: IsarType.string,
       enumMap: _AssettrackingMethodEnumValueMap,
@@ -102,8 +107,9 @@ void _assetSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeString(offsets[0], object.code);
-  writer.writeString(offsets[1], object.name);
-  writer.writeString(offsets[2], object.trackingMethod.name);
+  writer.writeDouble(offsets[1], object.latestPrice);
+  writer.writeString(offsets[2], object.name);
+  writer.writeString(offsets[3], object.trackingMethod.name);
 }
 
 Asset _assetDeserialize(
@@ -115,9 +121,10 @@ Asset _assetDeserialize(
   final object = Asset();
   object.code = reader.readString(offsets[0]);
   object.id = id;
-  object.name = reader.readString(offsets[1]);
+  object.latestPrice = reader.readDouble(offsets[1]);
+  object.name = reader.readString(offsets[2]);
   object.trackingMethod =
-      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[2])] ??
+      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[3])] ??
           AssetTrackingMethod.valueBased;
   return object;
 }
@@ -132,8 +139,10 @@ P _assetDeserializeProp<P>(
     case 0:
       return (reader.readString(offset)) as P;
     case 1:
-      return (reader.readString(offset)) as P;
+      return (reader.readDouble(offset)) as P;
     case 2:
+      return (reader.readString(offset)) as P;
+    case 3:
       return (_AssettrackingMethodValueEnumMap[
               reader.readStringOrNull(offset)] ??
           AssetTrackingMethod.valueBased) as P;
@@ -566,6 +575,68 @@ extension AssetQueryFilter on QueryBuilder<Asset, Asset, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> latestPriceEqualTo(
+    double value, {
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'latestPrice',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> latestPriceGreaterThan(
+    double value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'latestPrice',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> latestPriceLessThan(
+    double value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'latestPrice',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> latestPriceBetween(
+    double lower,
+    double upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'latestPrice',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterFilterCondition> nameEqualTo(
     String value, {
     bool caseSensitive = true,
@@ -968,6 +1039,18 @@ extension AssetQuerySortBy on QueryBuilder<Asset, Asset, QSortBy> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortByLatestPrice() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'latestPrice', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortByLatestPriceDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'latestPrice', Sort.desc);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterSortBy> sortByName() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'name', Sort.asc);
@@ -1018,6 +1101,18 @@ extension AssetQuerySortThenBy on QueryBuilder<Asset, Asset, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenByLatestPrice() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'latestPrice', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenByLatestPriceDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'latestPrice', Sort.desc);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterSortBy> thenByName() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'name', Sort.asc);
@@ -1051,6 +1146,12 @@ extension AssetQueryWhereDistinct on QueryBuilder<Asset, Asset, QDistinct> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QDistinct> distinctByLatestPrice() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'latestPrice');
+    });
+  }
+
   QueryBuilder<Asset, Asset, QDistinct> distinctByName(
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -1077,6 +1178,12 @@ extension AssetQueryProperty on QueryBuilder<Asset, Asset, QQueryProperty> {
   QueryBuilder<Asset, String, QQueryOperations> codeProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'code');
+    });
+  }
+
+  QueryBuilder<Asset, double, QQueryOperations> latestPriceProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'latestPrice');
     });
   }
 
