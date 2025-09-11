@@ -3,6 +3,7 @@ import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
+import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/utils/xirr.dart';
 
 class CalculatorService {
@@ -20,7 +21,7 @@ class CalculatorService {
         totalInvested += txn.amount;
       } else if (txn.type == TransactionType.withdraw) {
         totalWithdrawn += txn.amount;
-      } else if (txn.type == TransactionType.updateTotalValue) {
+      } else if (txn.type == TransactionType.updateValue) { // <-- 修正：updateTotalValue -> updateValue
         lastUpdate = txn;
       }
     }
@@ -84,14 +85,13 @@ class CalculatorService {
     final averageCost = latestSnapshot.averageCost;
     final totalCost = totalShares * averageCost;
     
-    // TODO: 暂时手动设置最新价，后续从网络同步
     final latestPrice = asset.latestPrice == 0 ? averageCost : asset.latestPrice; 
     final marketValue = totalShares * latestPrice;
     final totalProfit = marketValue - totalCost;
     final profitRate = totalCost == 0 ? 0 : totalProfit / totalCost;
 
     double annualizedReturn = 0.0;
-    if (snapshots.length >= 1) { // 只要有一次快照就可以开始计算
+    if (snapshots.length >= 1) {
       final dates = <DateTime>[];
       final cashflows = <double>[];
 
@@ -108,8 +108,8 @@ class CalculatorService {
         }
       }
       
-      // 使用当前日期或快照最后日期作为终点
-      dates.add(DateTime.now().difference(snapshots.last.date).inDays > 1 ? DateTime.now() : snapshots.last.date);
+      final lastDate = snapshots.last.date;
+      dates.add(DateTime.now().difference(lastDate).inDays > 1 ? DateTime.now() : lastDate);
       cashflows.add(marketValue);
       
       try {
@@ -117,7 +117,7 @@ class CalculatorService {
           annualizedReturn = xirr(dates, cashflows);
         }
       } catch (e) {
-        // 计算失败
+        //
       }
     }
 
@@ -130,6 +130,65 @@ class CalculatorService {
       'totalShares': totalShares,
       'averageCost': averageCost,
       'latestPrice': latestPrice,
+    };
+  }
+
+  Future<Map<String, dynamic>> calculateValueAssetPerformance(Asset asset) async {
+    await asset.transactions.load();
+    final transactions = asset.transactions.toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    double totalInvested = 0;
+    double totalWithdrawn = 0;
+    Transaction? lastUpdate;
+
+    for (var txn in transactions) {
+      if (txn.type == TransactionType.invest) {
+        totalInvested += txn.amount;
+      } else if (txn.type == TransactionType.withdraw) {
+        totalWithdrawn += txn.amount;
+      } else if (txn.type == TransactionType.updateValue) { // <-- 修正：updateTotalValue -> updateValue
+        lastUpdate = txn;
+      }
+    }
+
+    final double netInvestment = totalInvested - totalWithdrawn;
+    final double currentValue = lastUpdate?.amount ?? 0.0;
+    final double totalProfit = currentValue - netInvestment;
+    final double profitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested;
+
+    double annualizedReturn = 0.0;
+    final cashflows = <double>[];
+    final dates = <DateTime>[];
+
+    for (var txn in transactions) {
+      if (txn.type == TransactionType.invest) {
+        cashflows.add(-txn.amount);
+        dates.add(txn.date);
+      } else if (txn.type == TransactionType.withdraw) {
+        cashflows.add(txn.amount);
+        dates.add(txn.date);
+      }
+    }
+
+    if (lastUpdate != null && cashflows.isNotEmpty) {
+      cashflows.add(currentValue);
+      dates.add(lastUpdate.date);
+      if (cashflows.any((cf) => cf > 0) && cashflows.any((cf) => cf < 0)) {
+        try {
+          annualizedReturn = xirr(dates, cashflows);
+        } catch (e) {
+          annualizedReturn = 0.0;
+        }
+      }
+    }
+    
+    return {
+      'currentValue': currentValue,
+      'netInvestment': netInvestment,
+      'totalProfit': totalProfit,
+      'profitRate': profitRate,
+      'annualizedReturn': annualizedReturn,
     };
   }
 }

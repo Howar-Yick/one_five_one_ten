@@ -4,11 +4,14 @@ import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
 import 'package:one_five_one_ten/models/asset.dart';
+import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/pages/add_edit_asset_page.dart';
+import 'package:one_five_one_ten/pages/share_asset_detail_page.dart';
 import 'package:one_five_one_ten/pages/transaction_history_page.dart';
+import 'package:one_five_one_ten/pages/value_asset_detail_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
-import 'package:one_five_one_ten/pages/share_asset_detail_page.dart';
+import 'package:one_five_one_ten/models/position_snapshot.dart';
 
 final accountDetailProvider =
     FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
@@ -268,7 +271,6 @@ class AccountDetailPage extends ConsumerWidget {
       BuildContext context, WidgetRef ref, Account account) {
     final valueController = TextEditingController();
     DateTime selectedDate = DateTime.now();
-
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -279,31 +281,18 @@ class AccountDetailPage extends ConsumerWidget {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(
-                      controller: valueController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                          labelText: '当前总资产价值', prefixText: '¥ ')),
+                  TextField(controller: valueController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: '当前总资产价值', prefixText: '¥ ')),
                   const SizedBox(height: 16),
                   Row(
                     children: [
                       const Text("日期:", style: TextStyle(fontSize: 16)),
                       const Spacer(),
                       TextButton(
-                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate),
-                            style: const TextStyle(fontSize: 16)),
+                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
                         onPressed: () async {
-                          final DateTime? pickedDate = await showDatePicker(
-                            context: context,
-                            initialDate: selectedDate,
-                            firstDate: DateTime(2000),
-                            lastDate: DateTime.now(),
-                          );
+                          final DateTime? pickedDate = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime.now());
                           if (pickedDate != null) {
-                            setState(() {
-                              selectedDate = pickedDate;
-                            });
+                            setState(() { selectedDate = pickedDate; });
                           }
                         },
                       )
@@ -312,9 +301,7 @@ class AccountDetailPage extends ConsumerWidget {
                 ],
               ),
               actions: [
-                TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    child: const Text('取消')),
+                TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
                 TextButton(
                   onPressed: () async {
                     final value = double.tryParse(valueController.text);
@@ -323,15 +310,14 @@ class AccountDetailPage extends ConsumerWidget {
                       final newTxn = AccountTransaction()
                         ..amount = value
                         ..date = selectedDate
-                        ..type = TransactionType.updateTotalValue
+                        ..type = TransactionType.updateValue // <-- 修正：updateTotalValue -> updateValue
                         ..account.value = account;
                       await isar.writeTxn(() async {
                         await isar.accountTransactions.put(newTxn);
                         await newTxn.account.save();
                       });
                       ref.invalidate(accountPerformanceProvider(account.id));
-                      if (dialogContext.mounted)
-                        Navigator.of(dialogContext).pop();
+                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
                     }
                   },
                   child: const Text('保存'),
@@ -375,7 +361,7 @@ class AccountDetailPage extends ConsumerWidget {
               return const Card(child: ListTile(title: Text('暂无持仓资产')));
             }
             return Column(
-              children: assets.map((asset) => _buildAssetCard(context, asset)).toList(),
+              children: assets.map((asset) => _buildAssetCard(context, ref, asset)).toList(),
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -385,7 +371,7 @@ class AccountDetailPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildAssetCard(BuildContext context, Asset asset) { // 增加 context 参数
+  Widget _buildAssetCard(BuildContext context, WidgetRef ref, Asset asset) { // 增加 ref 参数
     return Card(
       child: ListTile(
         leading: Icon(asset.trackingMethod == AssetTrackingMethod.shareBased
@@ -396,7 +382,6 @@ class AccountDetailPage extends ConsumerWidget {
             asset.trackingMethod == AssetTrackingMethod.shareBased ? '份额法' : '价值法'),
         trailing: const Icon(Icons.arrow_forward_ios),
         onTap: () {
-          // --- 关键修改：根据资产类型，跳转到不同页面 ---
           if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -404,11 +389,16 @@ class AccountDetailPage extends ConsumerWidget {
               ),
             );
           } else {
-            // TODO: 将来跳转到价值法资产详情页
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('价值法资产详情页待开发')),
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ValueAssetDetailPage(assetId: asset.id),
+              ),
             );
           }
+        },
+        // --- 新增：长按删除功能 ---
+        onLongPress: () {
+          _showDeleteAssetConfirmationDialog(context, ref, asset);
         },
       ),
     );
@@ -432,4 +422,37 @@ class AccountDetailPage extends ConsumerWidget {
       ),
     );
   }
+
+  void _showDeleteAssetConfirmationDialog(BuildContext context, WidgetRef ref, Asset asset) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('确认删除 "${asset.name}"'),
+        content: const Text('删除此资产将同时删除其下所有的交易记录和持仓快照，此操作无法撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final isar = DatabaseService().isar;
+              await isar.writeTxn(() async {
+                // 安全删除：先删除所有关联的子对象，再删除资产本身
+                await asset.snapshots.load();
+                await asset.transactions.load();
+                await isar.positionSnapshots.deleteAll(asset.snapshots.map((s) => s.id).toList());
+                await isar.transactions.deleteAll(asset.transactions.map((t) => t.id).toList());
+                await isar.assets.delete(asset.id);
+              });
+              // 刷新列表
+              ref.invalidate(trackedAssetsProvider(accountId));
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+            },
+            child: const Text('删除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }  
 }

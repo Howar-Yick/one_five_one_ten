@@ -32,8 +32,13 @@ const AssetSchema = CollectionSchema(
       name: r'name',
       type: IsarType.string,
     ),
-    r'trackingMethod': PropertySchema(
+    r'priceUpdateDate': PropertySchema(
       id: 3,
+      name: r'priceUpdateDate',
+      type: IsarType.dateTime,
+    ),
+    r'trackingMethod': PropertySchema(
+      id: 4,
       name: r'trackingMethod',
       type: IsarType.string,
       enumMap: _AssettrackingMethodEnumValueMap,
@@ -109,7 +114,8 @@ void _assetSerialize(
   writer.writeString(offsets[0], object.code);
   writer.writeDouble(offsets[1], object.latestPrice);
   writer.writeString(offsets[2], object.name);
-  writer.writeString(offsets[3], object.trackingMethod.name);
+  writer.writeDateTime(offsets[3], object.priceUpdateDate);
+  writer.writeString(offsets[4], object.trackingMethod.name);
 }
 
 Asset _assetDeserialize(
@@ -123,8 +129,9 @@ Asset _assetDeserialize(
   object.id = id;
   object.latestPrice = reader.readDouble(offsets[1]);
   object.name = reader.readString(offsets[2]);
+  object.priceUpdateDate = reader.readDateTimeOrNull(offsets[3]);
   object.trackingMethod =
-      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[3])] ??
+      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[4])] ??
           AssetTrackingMethod.valueBased;
   return object;
 }
@@ -143,6 +150,8 @@ P _assetDeserializeProp<P>(
     case 2:
       return (reader.readString(offset)) as P;
     case 3:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 4:
       return (_AssettrackingMethodValueEnumMap[
               reader.readStringOrNull(offset)] ??
           AssetTrackingMethod.valueBased) as P;
@@ -765,6 +774,75 @@ extension AssetQueryFilter on QueryBuilder<Asset, Asset, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> priceUpdateDateIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'priceUpdateDate',
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> priceUpdateDateIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'priceUpdateDate',
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> priceUpdateDateEqualTo(
+      DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'priceUpdateDate',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> priceUpdateDateGreaterThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'priceUpdateDate',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> priceUpdateDateLessThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'priceUpdateDate',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> priceUpdateDateBetween(
+    DateTime? lower,
+    DateTime? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'priceUpdateDate',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterFilterCondition> trackingMethodEqualTo(
     AssetTrackingMethod value, {
     bool caseSensitive = true,
@@ -1063,6 +1141,18 @@ extension AssetQuerySortBy on QueryBuilder<Asset, Asset, QSortBy> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortByPriceUpdateDate() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'priceUpdateDate', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortByPriceUpdateDateDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'priceUpdateDate', Sort.desc);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterSortBy> sortByTrackingMethod() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'trackingMethod', Sort.asc);
@@ -1125,6 +1215,18 @@ extension AssetQuerySortThenBy on QueryBuilder<Asset, Asset, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenByPriceUpdateDate() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'priceUpdateDate', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenByPriceUpdateDateDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'priceUpdateDate', Sort.desc);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterSortBy> thenByTrackingMethod() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'trackingMethod', Sort.asc);
@@ -1159,6 +1261,12 @@ extension AssetQueryWhereDistinct on QueryBuilder<Asset, Asset, QDistinct> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QDistinct> distinctByPriceUpdateDate() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'priceUpdateDate');
+    });
+  }
+
   QueryBuilder<Asset, Asset, QDistinct> distinctByTrackingMethod(
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -1190,6 +1298,12 @@ extension AssetQueryProperty on QueryBuilder<Asset, Asset, QQueryProperty> {
   QueryBuilder<Asset, String, QQueryOperations> nameProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'name');
+    });
+  }
+
+  QueryBuilder<Asset, DateTime?, QQueryOperations> priceUpdateDateProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'priceUpdateDate');
     });
   }
 

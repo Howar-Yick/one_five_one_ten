@@ -116,12 +116,18 @@ P _accountTransactionDeserializeProp<P>(
 const _AccountTransactiontypeEnumValueMap = {
   r'invest': r'invest',
   r'withdraw': r'withdraw',
-  r'updateTotalValue': r'updateTotalValue',
+  r'updateValue': r'updateValue',
+  r'buy': r'buy',
+  r'sell': r'sell',
+  r'dividend': r'dividend',
 };
 const _AccountTransactiontypeValueEnumMap = {
   r'invest': TransactionType.invest,
   r'withdraw': TransactionType.withdraw,
-  r'updateTotalValue': TransactionType.updateTotalValue,
+  r'updateValue': TransactionType.updateValue,
+  r'buy': TransactionType.buy,
+  r'sell': TransactionType.sell,
+  r'dividend': TransactionType.dividend,
 };
 
 Id _accountTransactionGetId(AccountTransaction object) {
