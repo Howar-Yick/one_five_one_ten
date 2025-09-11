@@ -107,61 +107,100 @@ class AccountsPage extends ConsumerWidget {
   /// 删除账户（会级联清理该账户关联的交易与资产）
   Future<void> _confirmDeleteAccount(
       BuildContext context, WidgetRef ref, Account account) async {
-    final ok = await showDialog<bool>(
+    
+    // 使用 StatefulBuilder 来管理对话框内的状态（输入框内容和按钮是否可用）
+    showDialog<bool>(
       context: context,
-      builder: (dCtx) => AlertDialog(
-        title: const Text('删除账户'),
-        content: Text('确认删除“${account.name}”以及其所有相关记录吗？此操作不可撤销。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(dCtx).pop(false), child: const Text('取消')),
-          TextButton(
-            onPressed: () => Navigator.of(dCtx).pop(true),
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
+      builder: (dialogContext) {
+        final controller = TextEditingController();
+        bool isButtonEnabled = false;
 
-    if (ok != true) return;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('删除账户'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('此操作不可撤销。请输入账户名称 "${account.name}" 以确认删除。'),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      labelText: '账户名称',
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      // 监听输入，当输入与账户名完全一致时，激活按钮
+                      setState(() {
+                        isButtonEnabled = (value == account.name);
+                      });
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('取消'),
+                ),
+                // 根据 isButtonEnabled 状态决定按钮是否可点击
+                TextButton(
+                  onPressed: isButtonEnabled ? () => Navigator.of(dialogContext).pop(true) : null,
+                  child: Text(
+                    '删除',
+                    style: TextStyle(
+                      color: isButtonEnabled ? Colors.red : Colors.grey,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).then((ok) async { // 使用 .then() 来处理对话框关闭后的逻辑
+      if (ok != true) return;
 
-    final isar = DatabaseService().isar;
-    await isar.writeTxn(() async {
-      // 1. 获取并删除所有关联的资产及其子记录
-      await account.trackedAssets.load();
-      final assets = account.trackedAssets.toList();
-      for (final asset in assets) {
-        await asset.snapshots.load();
-        await asset.transactions.load();
-        if (asset.snapshots.isNotEmpty) {
-          await isar.collection<PositionSnapshot>().deleteAll(asset.snapshots.map((s) => s.id).toList());
+      final isar = DatabaseService().isar;
+      await isar.writeTxn(() async {
+        // --- 级联删除逻辑保持不变 ---
+        await account.trackedAssets.load();
+        final assets = account.trackedAssets.toList();
+        for (final asset in assets) {
+          await asset.snapshots.load();
+          await asset.transactions.load();
+          if (asset.snapshots.isNotEmpty) {
+            await isar.collection<PositionSnapshot>().deleteAll(asset.snapshots.map((s) => s.id).toList());
+          }
+          if (asset.transactions.isNotEmpty) {
+            await isar.collection<Transaction>().deleteAll(asset.transactions.map((t) => t.id).toList());
+          }
         }
-        if (asset.transactions.isNotEmpty) {
-          await isar.collection<Transaction>().deleteAll(asset.transactions.map((t) => t.id).toList());
+        if (assets.isNotEmpty) {
+          await isar.collection<Asset>().deleteAll(assets.map((a) => a.id).toList());
         }
-      }
-      if (assets.isNotEmpty) {
-        await isar.collection<Asset>().deleteAll(assets.map((a) => a.id).toList());
-      }
 
-      // 2. 获取并删除该账户的顶层交易记录
-      final txnIds = await isar.collection<AccountTransaction>()
-          .filter()
-          .account((q) => q.idEqualTo(account.id))
-          .idProperty()
-          .findAll();
-      if (txnIds.isNotEmpty) {
-        await isar.collection<AccountTransaction>().deleteAll(txnIds);
+        final txnIds = await isar.collection<AccountTransaction>()
+            .filter()
+            .account((q) => q.idEqualTo(account.id))
+            .idProperty()
+            .findAll();
+        if (txnIds.isNotEmpty) {
+          await isar.collection<AccountTransaction>().deleteAll(txnIds);
+        }
+        
+        await isar.accounts.delete(account.id);
+      });
+
+      ref.invalidate(accountsProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已删除账户：${account.name}')),
+        );
       }
-      
-      // 3. 最后删除账户本身
-      await isar.accounts.delete(account.id);
     });
-
-    ref.invalidate(accountsProvider);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已删除账户：${account.name}')),
-      );
-    }
   }
 }
