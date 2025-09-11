@@ -216,6 +216,13 @@ class ShareAssetDetailPage extends ConsumerWidget {
 
                       ref.invalidate(shareAssetPerformanceProvider(assetId));
                       if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+
+                      // --- 新增逻辑：跳转到历史记录页 ---
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => SnapshotHistoryPage(assetId: asset.id),
+                        ),
+                      );
                     }
                   },
                   child: const Text('保存'),

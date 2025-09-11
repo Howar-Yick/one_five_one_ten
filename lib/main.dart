@@ -1,6 +1,7 @@
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:one_five_one_ten/pages/accounts_page.dart';
+import 'package:one_five_one_ten/pages/main_nav_page.dart'; // 引入新的主导航页
 import 'package:one_five_one_ten/services/database_service.dart';
 
 Future<void> main() async {
@@ -25,9 +26,9 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       themeMode: ThemeMode.system,
-      home: const AccountsPage(),
-      // --- 在这里添加下面这一行 ---
-      debugShowCheckedModeBanner: false, 
+      // 将 home 修改为我们的新主页
+      home: const MainNavPage(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }

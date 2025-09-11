@@ -102,8 +102,8 @@ class ValueAssetDetailPage extends ConsumerWidget {
     );
   }
 
-  void _showInvestWithdrawDialog(BuildContext context, WidgetRef ref, Asset asset) {
-    // 这个对话框与顶层账户的几乎完全一样，只是创建的是 Transaction 对象
+  void _showInvestWithdrawDialog(
+      BuildContext context, WidgetRef ref, Asset asset) {
     final amountController = TextEditingController();
     final List<bool> isSelected = [true, false];
     DateTime selectedDate = DateTime.now();
@@ -115,7 +115,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
           builder: (context, setState) {
             return AlertDialog(
               title: const Text('资金操作'),
-              content: Column(
+              content: /* ... 内容不变 ... */ Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ToggleButtons(
@@ -161,8 +161,16 @@ class ValueAssetDetailPage extends ConsumerWidget {
                         await isar.transactions.put(newTxn);
                         await newTxn.asset.save();
                       });
+                      
                       ref.invalidate(valueAssetPerformanceProvider(asset.id));
                       if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                      
+                      // --- 新增逻辑：跳转到历史记录页 ---
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AssetTransactionHistoryPage(assetId: asset.id),
+                        ),
+                      );
                     }
                   },
                   child: const Text('保存'),
@@ -175,7 +183,8 @@ class ValueAssetDetailPage extends ConsumerWidget {
     );
   }
 
-  void _showUpdateValueDialog(BuildContext context, WidgetRef ref, Asset asset) {
+  void _showUpdateValueDialog(
+      BuildContext context, WidgetRef ref, Asset asset) {
     final valueController = TextEditingController();
     DateTime selectedDate = DateTime.now();
     showDialog(
@@ -185,7 +194,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
           builder: (context, setState) {
             return AlertDialog(
               title: const Text('更新资产总值'),
-              content: Column(
+              content: /* ... 内容不变 ... */ Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(controller: valueController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: '当前资产总价值', prefixText: '¥ ')),
@@ -221,8 +230,16 @@ class ValueAssetDetailPage extends ConsumerWidget {
                         await isar.transactions.put(newTxn);
                         await newTxn.asset.save();
                       });
+                      
                       ref.invalidate(valueAssetPerformanceProvider(asset.id));
                       if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+
+                      // --- 新增逻辑：跳转到历史记录页 ---
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AssetTransactionHistoryPage(assetId: asset.id),
+                        ),
+                      );
                     }
                   },
                   child: const Text('保存'),

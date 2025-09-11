@@ -26,6 +26,8 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 同时监听 asset 和 history，因为按钮需要 asset 对象
+    final asyncAsset = ref.watch(valueAssetDetailProvider(assetId));
     final historyAsync = ref.watch(assetTransactionHistoryProvider(assetId));
 
     return Scaffold(
@@ -47,6 +49,28 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) => Center(child: Text('加载失败: $err')),
+      ),
+      // --- 新增：悬浮操作按钮 ---
+      floatingActionButton: asyncAsset.when(
+        data: (asset) => asset == null ? const SizedBox.shrink() : PopupMenuButton(
+          icon: const CircleAvatar(
+            child: Icon(Icons.add),
+          ),
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'invest_withdraw',
+              child: const Text('资金操作'),
+              onTap: () => _showInvestWithdrawDialog(context, ref, asset),
+            ),
+            PopupMenuItem(
+              value: 'update_value',
+              child: const Text('更新总值'),
+              onTap: () => _showUpdateValueDialog(context, ref, asset),
+            ),
+          ],
+        ),
+        loading: () => const SizedBox.shrink(),
+        error: (_, __) => const SizedBox.shrink(),
       ),
     );
   }
@@ -106,6 +130,156 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
       ),
     );
   }
+
+  void _showInvestWithdrawDialog(
+      BuildContext context, WidgetRef ref, Asset asset) {
+    final amountController = TextEditingController();
+    final List<bool> isSelected = [true, false];
+    DateTime selectedDate = DateTime.now();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('资金操作'),
+              content: /* ... 内容不变 ... */ Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ToggleButtons(
+                    isSelected: isSelected,
+                    onPressed: (index) => setState(() { isSelected[0] = index == 0; isSelected[1] = index == 1; }),
+                    borderRadius: BorderRadius.circular(8.0),
+                    children: const [
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text('投入')),
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text('转出')),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(controller: amountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: '金额', prefixText: '¥ ')),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text("日期:", style: TextStyle(fontSize: 16)),
+                      const Spacer(),
+                      TextButton(
+                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
+                        onPressed: () async {
+                          final pickedDate = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime.now());
+                          if (pickedDate != null) setState(() => selectedDate = pickedDate);
+                        },
+                      )
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
+                TextButton(
+                  onPressed: () async {
+                    final amount = double.tryParse(amountController.text);
+                    if (amount != null && amount > 0) {
+                      final isar = DatabaseService().isar;
+                      final newTxn = Transaction()
+                        ..amount = amount
+                        ..date = selectedDate
+                        ..type = isSelected[0] ? TransactionType.invest : TransactionType.withdraw
+                        ..asset.value = asset;
+                      await isar.writeTxn(() async {
+                        await isar.transactions.put(newTxn);
+                        await newTxn.asset.save();
+                      });
+                      
+                      ref.invalidate(valueAssetPerformanceProvider(asset.id));
+                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                      
+                      // --- 新增逻辑：跳转到历史记录页 ---
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AssetTransactionHistoryPage(assetId: asset.id),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('保存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showUpdateValueDialog(
+      BuildContext context, WidgetRef ref, Asset asset) {
+    final valueController = TextEditingController();
+    DateTime selectedDate = DateTime.now();
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('更新资产总值'),
+              content: /* ... 内容不变 ... */ Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(controller: valueController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: '当前资产总价值', prefixText: '¥ ')),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text("日期:", style: TextStyle(fontSize: 16)),
+                      const Spacer(),
+                      TextButton(
+                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
+                        onPressed: () async {
+                          final pickedDate = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime.now());
+                          if (pickedDate != null) setState(() => selectedDate = pickedDate);
+                        },
+                      )
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
+                TextButton(
+                  onPressed: () async {
+                    final value = double.tryParse(valueController.text);
+                    if (value != null) {
+                      final isar = DatabaseService().isar;
+                      final newTxn = Transaction()
+                        ..amount = value
+                        ..date = selectedDate
+                        ..type = TransactionType.updateValue
+                        ..asset.value = asset;
+                      await isar.writeTxn(() async {
+                        await isar.transactions.put(newTxn);
+                        await newTxn.asset.save();
+                      });
+                      
+                      ref.invalidate(valueAssetPerformanceProvider(asset.id));
+                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+
+                      // --- 新增逻辑：跳转到历史记录页 ---
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AssetTransactionHistoryPage(assetId: asset.id),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('保存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }    
 
   void _showEditTransactionDialog(
       BuildContext context, WidgetRef ref, Transaction txn) {
