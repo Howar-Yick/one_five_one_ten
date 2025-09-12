@@ -10,6 +10,14 @@ enum AssetTrackingMethod {
   shareBased,
 }
 
+// --- 新增：资产子类型枚举 ---
+enum AssetSubType {
+  stock,      // 股票
+  etf,        // 场内基金
+  mutualFund, // 场外基金
+  other,      // 其他
+}
+
 @collection
 class Asset {
   Id id = Isar.autoIncrement;
@@ -19,12 +27,14 @@ class Asset {
 
   String code = '';
   double latestPrice = 0;
-  
-  // --- 新增：价格更新日期 ---
   DateTime? priceUpdateDate;
 
   @Enumerated(EnumType.name)
   late AssetTrackingMethod trackingMethod;
+
+  // --- 新增：资产子类型字段 ---
+  @Enumerated(EnumType.name)
+  late AssetSubType subType;
 
   final account = IsarLink<Account>();
 

@@ -37,8 +37,14 @@ const AssetSchema = CollectionSchema(
       name: r'priceUpdateDate',
       type: IsarType.dateTime,
     ),
-    r'trackingMethod': PropertySchema(
+    r'subType': PropertySchema(
       id: 4,
+      name: r'subType',
+      type: IsarType.string,
+      enumMap: _AssetsubTypeEnumValueMap,
+    ),
+    r'trackingMethod': PropertySchema(
+      id: 5,
       name: r'trackingMethod',
       type: IsarType.string,
       enumMap: _AssettrackingMethodEnumValueMap,
@@ -101,6 +107,7 @@ int _assetEstimateSize(
   var bytesCount = offsets.last;
   bytesCount += 3 + object.code.length * 3;
   bytesCount += 3 + object.name.length * 3;
+  bytesCount += 3 + object.subType.name.length * 3;
   bytesCount += 3 + object.trackingMethod.name.length * 3;
   return bytesCount;
 }
@@ -115,7 +122,8 @@ void _assetSerialize(
   writer.writeDouble(offsets[1], object.latestPrice);
   writer.writeString(offsets[2], object.name);
   writer.writeDateTime(offsets[3], object.priceUpdateDate);
-  writer.writeString(offsets[4], object.trackingMethod.name);
+  writer.writeString(offsets[4], object.subType.name);
+  writer.writeString(offsets[5], object.trackingMethod.name);
 }
 
 Asset _assetDeserialize(
@@ -130,8 +138,11 @@ Asset _assetDeserialize(
   object.latestPrice = reader.readDouble(offsets[1]);
   object.name = reader.readString(offsets[2]);
   object.priceUpdateDate = reader.readDateTimeOrNull(offsets[3]);
+  object.subType =
+      _AssetsubTypeValueEnumMap[reader.readStringOrNull(offsets[4])] ??
+          AssetSubType.stock;
   object.trackingMethod =
-      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[4])] ??
+      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[5])] ??
           AssetTrackingMethod.valueBased;
   return object;
 }
@@ -152,6 +163,9 @@ P _assetDeserializeProp<P>(
     case 3:
       return (reader.readDateTimeOrNull(offset)) as P;
     case 4:
+      return (_AssetsubTypeValueEnumMap[reader.readStringOrNull(offset)] ??
+          AssetSubType.stock) as P;
+    case 5:
       return (_AssettrackingMethodValueEnumMap[
               reader.readStringOrNull(offset)] ??
           AssetTrackingMethod.valueBased) as P;
@@ -160,6 +174,18 @@ P _assetDeserializeProp<P>(
   }
 }
 
+const _AssetsubTypeEnumValueMap = {
+  r'stock': r'stock',
+  r'etf': r'etf',
+  r'mutualFund': r'mutualFund',
+  r'other': r'other',
+};
+const _AssetsubTypeValueEnumMap = {
+  r'stock': AssetSubType.stock,
+  r'etf': AssetSubType.etf,
+  r'mutualFund': AssetSubType.mutualFund,
+  r'other': AssetSubType.other,
+};
 const _AssettrackingMethodEnumValueMap = {
   r'valueBased': r'valueBased',
   r'shareBased': r'shareBased',
@@ -843,6 +869,136 @@ extension AssetQueryFilter on QueryBuilder<Asset, Asset, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> subTypeEqualTo(
+    AssetSubType value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'subType',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> subTypeGreaterThan(
+    AssetSubType value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'subType',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> subTypeLessThan(
+    AssetSubType value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'subType',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> subTypeBetween(
+    AssetSubType lower,
+    AssetSubType upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'subType',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> subTypeStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'subType',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> subTypeEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'subType',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> subTypeContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'subType',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> subTypeMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'subType',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> subTypeIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'subType',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> subTypeIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'subType',
+        value: '',
+      ));
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterFilterCondition> trackingMethodEqualTo(
     AssetTrackingMethod value, {
     bool caseSensitive = true,
@@ -1153,6 +1309,18 @@ extension AssetQuerySortBy on QueryBuilder<Asset, Asset, QSortBy> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortBySubType() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'subType', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortBySubTypeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'subType', Sort.desc);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterSortBy> sortByTrackingMethod() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'trackingMethod', Sort.asc);
@@ -1227,6 +1395,18 @@ extension AssetQuerySortThenBy on QueryBuilder<Asset, Asset, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenBySubType() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'subType', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenBySubTypeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'subType', Sort.desc);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterSortBy> thenByTrackingMethod() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'trackingMethod', Sort.asc);
@@ -1267,6 +1447,13 @@ extension AssetQueryWhereDistinct on QueryBuilder<Asset, Asset, QDistinct> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QDistinct> distinctBySubType(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'subType', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QDistinct> distinctByTrackingMethod(
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -1304,6 +1491,12 @@ extension AssetQueryProperty on QueryBuilder<Asset, Asset, QQueryProperty> {
   QueryBuilder<Asset, DateTime?, QQueryOperations> priceUpdateDateProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'priceUpdateDate');
+    });
+  }
+
+  QueryBuilder<Asset, AssetSubType, QQueryOperations> subTypeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'subType');
     });
   }
 

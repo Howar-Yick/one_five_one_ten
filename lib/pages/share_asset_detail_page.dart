@@ -6,6 +6,9 @@ import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/pages/snapshot_history_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
+import 'package:one_five_one_ten/services/price_sync_service.dart';
+import 'package:one_five_one_ten/pages/add_edit_asset_page.dart';
+
 
 final shareAssetDetailProvider = FutureProvider.autoDispose.family<Asset?, int>((ref, assetId) {
   final isar = DatabaseService().isar;
@@ -46,12 +49,47 @@ class ShareAssetDetailPage extends ConsumerWidget {
         title: Text(asyncAsset.asData?.value?.name ?? '加载中...'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.price_change_outlined),
-            tooltip: '手动更新价格',
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: '编辑资产',
             onPressed: () {
               final asset = asyncAsset.asData?.value;
               if (asset != null) {
-                _showUpdatePriceDialog(context, ref, asset);
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => AddEditAssetPage(accountId: asset.account.value!.id, assetId: asset.id),
+                  ),
+                );
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.sync),
+            tooltip: '同步最新价格',
+            onPressed: () async {
+              final asset = asyncAsset.asData?.value;
+              if (asset != null) {
+                ScaffoldMessenger.of(context).removeCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('正在同步价格...'),
+                  duration: Duration(seconds: 2),
+                ));
+
+                final newPrice = await PriceSyncService().syncPrice(asset.code);
+                
+                ScaffoldMessenger.of(context).removeCurrentSnackBar();
+
+                if (newPrice != null) {
+                  final isar = DatabaseService().isar;
+                  asset.latestPrice = newPrice;
+                  asset.priceUpdateDate = DateTime.now();
+                  await isar.writeTxn(() async => await isar.assets.put(asset));
+                  ref.invalidate(shareAssetPerformanceProvider(assetId));
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('价格同步成功！')));
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('同步失败，请手动更新')));
+                  await Future.delayed(const Duration(milliseconds: 100));
+                  if(context.mounted) _showUpdatePriceDialog(context, ref, asset);
+                }
               }
             },
           )
@@ -60,11 +98,12 @@ class ShareAssetDetailPage extends ConsumerWidget {
       body: asyncAsset.when(
         data: (asset) {
           if (asset == null) return const Center(child: Text('未找到该资产'));
-          // --- 修正：移除 _buildSnapshotHistory 的调用 ---
           return ListView(
             padding: const EdgeInsets.all(16.0),
             children: [
               _buildPerformanceCard(context, ref, asset),
+              const SizedBox(height: 24),
+              _buildSnapshotHistory(context, ref, asset),
             ],
           );
         },
@@ -74,10 +113,12 @@ class ShareAssetDetailPage extends ConsumerWidget {
     );
   }
 
-  // --- 修正：此方法现在与价值法页面的布局完全一致 ---
   Widget _buildPerformanceCard(BuildContext context, WidgetRef ref, Asset asset) {
     final asyncPerformance = ref.watch(shareAssetPerformanceProvider(assetId));
-    final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
+    
+    // 修正：为不同用途定义不同的格式化工具
+    final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥'); // 2位小数，用于总额
+    final priceFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥', decimalDigits: 3); // 3位小数，用于单价
     final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
 
     return asyncPerformance.when(
@@ -120,9 +161,9 @@ class ShareAssetDetailPage extends ConsumerWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text('最新价: ${currencyFormat.format(performance['latestPrice'] ?? 0.0)}', style: TextStyle(color: Colors.grey.shade400)),
+                        Text('最新价: ${priceFormat.format(performance['latestPrice'] ?? 0.0)}', style: TextStyle(color: Colors.grey.shade400)),
                         if(priceUpdateDate != null)
-                          Text(DateFormat('yyyy-MM-dd').format(priceUpdateDate), style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                          Text(DateFormat('yyyy-MM-dd HH:mm').format(priceUpdateDate), style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
                       ],
                     ),
                   ],
@@ -148,6 +189,32 @@ class ShareAssetDetailPage extends ConsumerWidget {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (err, stack) => Center(child: Text('计算失败: $err')),
+    );
+  }
+
+  Widget _buildSnapshotHistory(BuildContext context, WidgetRef ref, Asset asset) {
+     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('持仓快照历史', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            IconButton(
+              icon: const Icon(Icons.history),
+              tooltip: '管理历史快照',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => SnapshotHistoryPage(assetId: asset.id),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        const Divider(height: 20),
+      ],
     );
   }
 
@@ -216,13 +283,6 @@ class ShareAssetDetailPage extends ConsumerWidget {
 
                       ref.invalidate(shareAssetPerformanceProvider(assetId));
                       if (dialogContext.mounted) Navigator.of(dialogContext).pop();
-
-                      // --- 新增逻辑：跳转到历史记录页 ---
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => SnapshotHistoryPage(assetId: asset.id),
-                        ),
-                      );
                     }
                   },
                   child: const Text('保存'),

@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/asset.dart';
-import 'package:one_five_one_ten/models/transaction.dart'; // 引入Transaction
+import 'package:one_five_one_ten/models/transaction.dart';
+import 'package:one_five_one_ten/pages/add_edit_asset_page.dart';
+import 'package:one_five_one_ten/pages/asset_transaction_history_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
-import 'package:one_five_one_ten/pages/asset_transaction_history_page.dart';
 
 final valueAssetDetailProvider = FutureProvider.autoDispose.family<Asset?, int>((ref, assetId) {
   final isar = DatabaseService().isar;
   return isar.assets.get(assetId);
 });
 
-// 新增：用于计算价值法资产性能的Provider
 final valueAssetPerformanceProvider = FutureProvider.autoDispose.family<Map<String, dynamic>, int>((ref, assetId) async {
   final asset = await ref.watch(valueAssetDetailProvider(assetId).future);
   if (asset == null) throw '未找到资产';
@@ -31,6 +31,22 @@ class ValueAssetDetailPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(asyncAsset.asData?.value?.name ?? '加载中...'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: '编辑资产',
+            onPressed: () {
+              final asset = asyncAsset.asData?.value;
+              if (asset != null) {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => AddEditAssetPage(accountId: asset.account.value!.id, assetId: asset.id),
+                  ),
+                );
+              }
+            },
+          )
+        ],
       ),
       body: asyncPerformance.when(
         data: (performance) {
@@ -55,9 +71,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
     final profitRate = (performance['profitRate'] ?? 0.0) as double;
     final annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
     Color profitColor = totalProfit > 0 ? Colors.red.shade400 : Colors.green.shade400;
-    if (totalProfit == 0) {
-      profitColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
-    }
+    if (totalProfit == 0) profitColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
 
     return Card(
       child: Padding(
@@ -69,7 +83,6 @@ class ValueAssetDetailPage extends ConsumerWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('资产概览', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                // --- 激活这里的按钮 ---
                 IconButton(
                   icon: const Icon(Icons.history),
                   tooltip: '查看更新记录',
@@ -102,8 +115,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
     );
   }
 
-  void _showInvestWithdrawDialog(
-      BuildContext context, WidgetRef ref, Asset asset) {
+  void _showInvestWithdrawDialog(BuildContext context, WidgetRef ref, Asset asset) {
     final amountController = TextEditingController();
     final List<bool> isSelected = [true, false];
     DateTime selectedDate = DateTime.now();
@@ -115,7 +127,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
           builder: (context, setState) {
             return AlertDialog(
               title: const Text('资金操作'),
-              content: /* ... 内容不变 ... */ Column(
+              content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ToggleButtons(
@@ -161,16 +173,15 @@ class ValueAssetDetailPage extends ConsumerWidget {
                         await isar.transactions.put(newTxn);
                         await newTxn.asset.save();
                       });
-                      
                       ref.invalidate(valueAssetPerformanceProvider(asset.id));
-                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
-                      
-                      // --- 新增逻辑：跳转到历史记录页 ---
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AssetTransactionHistoryPage(assetId: asset.id),
-                        ),
-                      );
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => AssetTransactionHistoryPage(assetId: asset.id),
+                          ),
+                        );
+                      }
                     }
                   },
                   child: const Text('保存'),
@@ -183,8 +194,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
     );
   }
 
-  void _showUpdateValueDialog(
-      BuildContext context, WidgetRef ref, Asset asset) {
+  void _showUpdateValueDialog(BuildContext context, WidgetRef ref, Asset asset) {
     final valueController = TextEditingController();
     DateTime selectedDate = DateTime.now();
     showDialog(
@@ -194,7 +204,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
           builder: (context, setState) {
             return AlertDialog(
               title: const Text('更新资产总值'),
-              content: /* ... 内容不变 ... */ Column(
+              content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(controller: valueController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: '当前资产总价值', prefixText: '¥ ')),
@@ -230,16 +240,15 @@ class ValueAssetDetailPage extends ConsumerWidget {
                         await isar.transactions.put(newTxn);
                         await newTxn.asset.save();
                       });
-                      
                       ref.invalidate(valueAssetPerformanceProvider(asset.id));
-                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
-
-                      // --- 新增逻辑：跳转到历史记录页 ---
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AssetTransactionHistoryPage(assetId: asset.id),
-                        ),
-                      );
+                      if (dialogContext.mounted) {
+                         Navigator.of(dialogContext).pop();
+                         Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => AssetTransactionHistoryPage(assetId: asset.id),
+                          ),
+                        );
+                      }
                     }
                   },
                   child: const Text('保存'),
