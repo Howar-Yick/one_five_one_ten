@@ -19,6 +19,8 @@ final valueAssetPerformanceProvider = FutureProvider.autoDispose.family<Map<Stri
   return CalculatorService().calculateValueAssetPerformance(asset);
 });
 
+
+
 class ValueAssetDetailPage extends ConsumerWidget {
   final int assetId;
   const ValueAssetDetailPage({super.key, required this.assetId});
