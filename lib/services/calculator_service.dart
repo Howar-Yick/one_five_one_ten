@@ -143,10 +143,8 @@ class CalculatorService {
     transactions.sort((a, b) => a.date.compareTo(b.date));
 
     final List<FlSpot> spots = [];
-    double currentNetInvestment = 0;
     double latestValue = 0;
 
-    // 创建一个Map来存储每一天的最终价值
     final Map<DateTime, double> dailyValues = {};
 
     for (var txn in transactions) {
@@ -155,22 +153,18 @@ class CalculatorService {
         dailyValues[day] = txn.amount;
       }
     }
-    
-    // 如果没有更新总值的记录，则无法绘制图表
+
     if (dailyValues.isEmpty) return [];
-    
+
     final startDate = transactions.first.date;
     final endDate = DateTime.now();
-    
-    // 遍历从第一笔交易到今天的每一天
+
     for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
       final day = DateTime(startDate.year, startDate.month, startDate.day + i);
-      
-      // 如果当天有更新价值的记录，则使用它
+
       if (dailyValues.containsKey(day)) {
         latestValue = dailyValues[day]!;
       }
-      // 否则，latestValue会保持上一天的值（结转）
 
       spots.add(FlSpot(day.millisecondsSinceEpoch.toDouble(), latestValue));
     }
@@ -182,11 +176,11 @@ class CalculatorService {
     final isar = DatabaseService().isar;
     final allTransactions = await isar.collection<AccountTransaction>().where().findAll();
     if (allTransactions.isEmpty) return [];
-    
+
     allTransactions.sort((a, b) => a.date.compareTo(b.date));
 
     final Map<DateTime, Map<int, double>> dailyAccountValues = {};
-    
+
     for (var txn in allTransactions) {
       if (txn.type == TransactionType.updateValue) {
         final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
@@ -197,13 +191,13 @@ class CalculatorService {
         dailyAccountValues[day]![accountId] = txn.amount;
       }
     }
-    
+
     if (dailyAccountValues.isEmpty) return [];
-    
+
     final List<FlSpot> spots = [];
     final startDate = allTransactions.first.date;
     final endDate = DateTime.now();
-    
+
     Map<int, double> latestValues = {};
 
     for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
@@ -214,13 +208,13 @@ class CalculatorService {
           latestValues[accountId] = value;
         });
       }
-      
+
       double totalValue = latestValues.values.fold(0.0, (sum, item) => sum + item);
       spots.add(FlSpot(day.millisecondsSinceEpoch.toDouble(), totalValue));
     }
-    
+
     return spots;
-  }  
+  }
 
   Future<Map<String, dynamic>> calculateValueAssetPerformance(Asset asset) async {
     await asset.transactions.load();

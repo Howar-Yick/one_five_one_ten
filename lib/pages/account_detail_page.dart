@@ -13,6 +13,7 @@ import 'package:one_five_one_ten/pages/transaction_history_page.dart';
 import 'package:one_five_one_ten/pages/value_asset_detail_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 final accountDetailProvider =
     FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
@@ -396,7 +397,7 @@ class AccountDetailPage extends ConsumerWidget {
             loading: () => const SizedBox.shrink(),
             error: (e,s) => const SizedBox.shrink(),
           ),
-        
+
         const SizedBox(height: 24),
 
         Row(
@@ -554,6 +555,18 @@ class AccountDetailPage extends ConsumerWidget {
 
   Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots) {
     final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: '¥');
+    
+    // --- 新增：智能计算日期间隔 ---
+    double? bottomInterval;
+    if (spots.isNotEmpty) {
+      final firstDate = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
+      final lastDate = DateTime.fromMillisecondsSinceEpoch(spots.last.x.toInt());
+      final durationDays = lastDate.difference(firstDate).inDays;
+      if (durationDays > 30) { // 如果时间跨度超过一个月，自动计算间隔
+        bottomInterval = (spots.last.x - spots.first.x) / 5; // 大约显示5个标签
+      }
+    }
+
     return SizedBox(
       height: 200,
       child: LineChart(
@@ -582,7 +595,8 @@ class AccountDetailPage extends ConsumerWidget {
             leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 50, getTitlesWidget: (value, meta) => Text(currencyFormat.format(value), style: const TextStyle(fontSize: 10)))),
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 30, interval: spots.length > 7 ? (spots.first.x - spots.last.x).abs() / 4 : null, getTitlesWidget: (value, meta) => Padding(
+            // --- 修正：使用计算出的 interval ---
+            bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 30, interval: bottomInterval, getTitlesWidget: (value, meta) => Padding(
               padding: const EdgeInsets.only(top: 8.0),
               child: Text(DateFormat('yy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(value.toInt())), style: const TextStyle(fontSize: 10)),
             ))),

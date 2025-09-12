@@ -6,14 +6,15 @@ import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 
 final globalPerformanceProvider = FutureProvider<Map<String, dynamic>>((ref) async {
-  // 当任何一个账户的数据发生变化时，我们希望这个Provider能刷新
-  // 这是一个简化的刷新机制，更复杂的可以监听所有账户
-  // 为简单起见，我们暂时不加自动刷新，后续可以优化
   return CalculatorService().calculateGlobalPerformance();
 });
 
+final globalHistoryProvider = FutureProvider<List<FlSpot>>((ref) {
+  ref.watch(globalPerformanceProvider);
+  return CalculatorService().getGlobalValueHistory();
+});
+
 final assetAllocationProvider = FutureProvider<Map<AssetSubType, double>>((ref) {
-  // 当全局数据变化时，这个也应该刷新
   ref.watch(globalPerformanceProvider); 
   return CalculatorService().calculateAssetAllocation();
 });
@@ -26,31 +27,21 @@ class DashboardPage extends ConsumerStatefulWidget {
 }
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
-  int _touchedIndex = -1; // -1 表示没有扇区被触摸
+  int _touchedIndex = -1;
 
   String _getSubTypeLabel(AssetSubType subType) {
     switch (subType) {
-      case AssetSubType.stock:
-        return '股票';
-      case AssetSubType.etf:
-        return '场内基金';
-      case AssetSubType.mutualFund:
-        return '场外基金';
-      case AssetSubType.other:
-      default:
-        return '其他资产';
+      case AssetSubType.stock: return '股票';
+      case AssetSubType.etf: return '场内基金';
+      case AssetSubType.mutualFund: return '场外基金';
+      case AssetSubType.other: default: return '其他资产';
     }
   }
 
-  // 为不同资产类型分配颜色
   Color _getColorForSubType(AssetSubType subType, int index) {
     final colors = [
-      Colors.blue.shade400,
-      Colors.green.shade400,
-      Colors.orange.shade400,
-      Colors.purple.shade400,
-      Colors.red.shade400,
-      Colors.teal.shade400,
+      Colors.blue.shade400, Colors.green.shade400, Colors.orange.shade400,
+      Colors.purple.shade400, Colors.red.shade400, Colors.teal.shade400,
     ];
     return colors[index % colors.length];
   }
@@ -59,6 +50,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Widget build(BuildContext context) {
     final asyncPerformance = ref.watch(globalPerformanceProvider);
     final asyncAllocation = ref.watch(assetAllocationProvider);
+    final asyncHistory = ref.watch(globalHistoryProvider);
     
     final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
     final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
@@ -73,6 +65,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             onPressed: () {
               ref.invalidate(globalPerformanceProvider);
               ref.invalidate(assetAllocationProvider);
+              ref.invalidate(globalHistoryProvider);
             },
           )
         ],
@@ -81,6 +74,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         onRefresh: () async {
           ref.invalidate(globalPerformanceProvider);
           ref.invalidate(assetAllocationProvider);
+          ref.invalidate(globalHistoryProvider);
         },
         child: ListView(
           padding: const EdgeInsets.all(16.0),
@@ -113,6 +107,27 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               },
               loading: () => const Card(child: SizedBox(height: 170, child: Center(child: CircularProgressIndicator()))),
               error: (err, stack) => Card(child: SizedBox(height: 170, child: Center(child: Text('加载失败: $err')))),
+            ),
+            const SizedBox(height: 24),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('总资产趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 24),
+                    asyncHistory.when(
+                      data: (spots) {
+                        if (spots.isEmpty) return const SizedBox(height: 200, child: Center(child: Text('暂无历史数据以生成图表')));
+                        return _buildHistoryChart(context, spots);
+                      },
+                      loading: () => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
+                      error: (err, stack) => SizedBox(height: 200, child: Center(child: Text('图表加载失败: $err'))),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 24),
             Card(
@@ -216,6 +231,59 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         style: const TextStyle(
           color: Colors.white,
           fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots) {
+    final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: '¥');
+    
+    double? bottomInterval;
+    if (spots.length > 1) {
+      final firstDate = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
+      final lastDate = DateTime.fromMillisecondsSinceEpoch(spots.last.x.toInt());
+      final durationDays = lastDate.difference(firstDate).inDays;
+      if (durationDays > 30) {
+        bottomInterval = (spots.last.x - spots.first.x) / 5;
+      }
+    }
+
+    return SizedBox(
+      height: 200,
+      child: LineChart(
+        LineChartData(
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              barWidth: 3,
+              color: Theme.of(context).primaryColor,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
+                show: true,
+                gradient: LinearGradient(
+                  colors: [
+                    Theme.of(context).primaryColor.withOpacity(0.3),
+                    Theme.of(context).primaryColor.withOpacity(0.0)
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+            ),
+          ],
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 50, getTitlesWidget: (value, meta) => Text(currencyFormat.format(value), style: const TextStyle(fontSize: 10)))),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 30, interval: bottomInterval, getTitlesWidget: (value, meta) => Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: Text(DateFormat('yy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(value.toInt())), style: const TextStyle(fontSize: 10)),
+            ))),
+          ),
+          gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => const FlLine(color: Colors.grey, strokeWidth: 0.2)),
+          borderData: FlBorderData(show: false),
         ),
       ),
     );

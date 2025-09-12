@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:gbk_codec/gbk_codec.dart';
 import 'package:one_five_one_ten/models/asset.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 class PriceSyncService {
   void _log(String message) {
@@ -27,7 +28,39 @@ class PriceSyncService {
     }
   }
 
-  
+  Future<List<FlSpot>> syncNavHistory(String assetCode) async {
+    if (assetCode.isEmpty) return [];
+    _log('开始同步历史净值: "$assetCode"');
+    final url = Uri.parse('http://fund.eastmoney.com/pingzhongdata/$assetCode.js');
+
+    try {
+      final response = await http.get(url).timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        String body = response.body;
+        const startMarker = 'var Data_netWorthTrend = ';
+        final startIndex = body.indexOf(startMarker);
+        if (startIndex == -1) return [];
+
+        final endIndex = body.indexOf('];', startIndex);
+        if (endIndex == -1) return [];
+
+        final jsonArrayString = body.substring(startIndex + startMarker.length, endIndex + 1);
+        final List<dynamic> historyData = json.decode(jsonArrayString);
+
+        final List<FlSpot> spots = historyData.map((data) {
+          final date = DateTime.fromMillisecondsSinceEpoch(data['x']);
+          final value = (data['y'] as num).toDouble();
+          return FlSpot(date.millisecondsSinceEpoch.toDouble(), value);
+        }).toList();
+
+        _log('成功解析 ${spots.length} 个历史净值数据点');
+        return spots;
+      }
+    } catch (e) {
+      _log('!!! 历史净值同步异常: $e');
+    }
+    return [];
+  }  
 
   Future<double?> _syncFromSina(String assetCode) async {
     if (assetCode.isEmpty) return null;
