@@ -90,7 +90,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         await isar.assets.put(assetToUpdate);
       });
       
-      ref.invalidate(trackedAssetsProvider(widget.accountId));
+      ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
       if(assetToUpdate.trackingMethod == AssetTrackingMethod.shareBased) {
         ref.invalidate(shareAssetDetailProvider(assetToUpdate.id));
       } else {
@@ -149,7 +149,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         });
       }
       
-      ref.invalidate(trackedAssetsProvider(widget.accountId));
+      ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
     }
     
     if (mounted) Navigator.of(context).pop();
@@ -236,6 +236,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           ChoiceChip(
             label: const Text('股票'),
             selected: _selectedSubType == AssetSubType.stock,
+            // --- 修正：移除了 !_isEditing 的限制 ---
             onSelected: (selected) {
               if (selected) setState(() => _selectedSubType = AssetSubType.stock);
             },
@@ -243,6 +244,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           ChoiceChip(
             label: const Text('场内基金(ETF)'),
             selected: _selectedSubType == AssetSubType.etf,
+            // --- 修正：移除了 !_isEditing 的限制 ---
             onSelected: (selected) {
               if (selected) setState(() => _selectedSubType = AssetSubType.etf);
             },
@@ -250,6 +252,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           ChoiceChip(
             label: const Text('场外基金'),
             selected: _selectedSubType == AssetSubType.mutualFund,
+            // --- 修正：移除了 !_isEditing 的限制 ---
             onSelected: (selected) {
               if (selected) setState(() => _selectedSubType = AssetSubType.mutualFund);
             },
@@ -287,7 +290,6 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   }
 
   List<Widget> _buildValueBasedForm() {
-    // 价值法资产，我们默认给它一个 "other" 子类型
     if (!_isEditing) _selectedSubType = AssetSubType.other;
     return [
       if (!_isEditing)

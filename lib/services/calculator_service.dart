@@ -1,3 +1,4 @@
+import 'package:fl_chart/fl_chart.dart'; 
 import 'package:isar/isar.dart';
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
@@ -5,6 +6,7 @@ import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/utils/xirr.dart';
+import 'package:one_five_one_ten/services/database_service.dart'; // <--- 修正：添加这一行
 
 class CalculatorService {
   Future<Map<String, dynamic>> calculateAccountPerformance(Account account) async {
@@ -21,7 +23,7 @@ class CalculatorService {
         totalInvested += txn.amount;
       } else if (txn.type == TransactionType.withdraw) {
         totalWithdrawn += txn.amount;
-      } else if (txn.type == TransactionType.updateValue) { // <-- 修正：updateTotalValue -> updateValue
+      } else if (txn.type == TransactionType.updateValue) {
         lastUpdate = txn;
       }
     }
@@ -133,6 +135,93 @@ class CalculatorService {
     };
   }
 
+  Future<List<FlSpot>> getAccountValueHistory(Account account) async {
+    await account.transactions.load();
+    final transactions = account.transactions.toList();
+    if (transactions.isEmpty) return [];
+
+    transactions.sort((a, b) => a.date.compareTo(b.date));
+
+    final List<FlSpot> spots = [];
+    double currentNetInvestment = 0;
+    double latestValue = 0;
+
+    // 创建一个Map来存储每一天的最终价值
+    final Map<DateTime, double> dailyValues = {};
+
+    for (var txn in transactions) {
+      final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
+      if (txn.type == TransactionType.updateValue) {
+        dailyValues[day] = txn.amount;
+      }
+    }
+    
+    // 如果没有更新总值的记录，则无法绘制图表
+    if (dailyValues.isEmpty) return [];
+    
+    final startDate = transactions.first.date;
+    final endDate = DateTime.now();
+    
+    // 遍历从第一笔交易到今天的每一天
+    for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
+      final day = DateTime(startDate.year, startDate.month, startDate.day + i);
+      
+      // 如果当天有更新价值的记录，则使用它
+      if (dailyValues.containsKey(day)) {
+        latestValue = dailyValues[day]!;
+      }
+      // 否则，latestValue会保持上一天的值（结转）
+
+      spots.add(FlSpot(day.millisecondsSinceEpoch.toDouble(), latestValue));
+    }
+
+    return spots;
+  }
+
+  Future<List<FlSpot>> getGlobalValueHistory() async {
+    final isar = DatabaseService().isar;
+    final allTransactions = await isar.collection<AccountTransaction>().where().findAll();
+    if (allTransactions.isEmpty) return [];
+    
+    allTransactions.sort((a, b) => a.date.compareTo(b.date));
+
+    final Map<DateTime, Map<int, double>> dailyAccountValues = {};
+    
+    for (var txn in allTransactions) {
+      if (txn.type == TransactionType.updateValue) {
+        final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
+        final accountId = txn.account.value?.id ?? -1;
+        if(accountId == -1) continue;
+
+        dailyAccountValues.putIfAbsent(day, () => {});
+        dailyAccountValues[day]![accountId] = txn.amount;
+      }
+    }
+    
+    if (dailyAccountValues.isEmpty) return [];
+    
+    final List<FlSpot> spots = [];
+    final startDate = allTransactions.first.date;
+    final endDate = DateTime.now();
+    
+    Map<int, double> latestValues = {};
+
+    for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
+      final day = DateTime(startDate.year, startDate.month, startDate.day + i);
+
+      if (dailyAccountValues.containsKey(day)) {
+        dailyAccountValues[day]!.forEach((accountId, value) {
+          latestValues[accountId] = value;
+        });
+      }
+      
+      double totalValue = latestValues.values.fold(0.0, (sum, item) => sum + item);
+      spots.add(FlSpot(day.millisecondsSinceEpoch.toDouble(), totalValue));
+    }
+    
+    return spots;
+  }  
+
   Future<Map<String, dynamic>> calculateValueAssetPerformance(Asset asset) async {
     await asset.transactions.load();
     final transactions = asset.transactions.toList()
@@ -147,7 +236,7 @@ class CalculatorService {
         totalInvested += txn.amount;
       } else if (txn.type == TransactionType.withdraw) {
         totalWithdrawn += txn.amount;
-      } else if (txn.type == TransactionType.updateValue) { // <-- 修正：updateTotalValue -> updateValue
+      } else if (txn.type == TransactionType.updateValue) {
         lastUpdate = txn;
       }
     }
@@ -189,6 +278,99 @@ class CalculatorService {
       'totalProfit': totalProfit,
       'profitRate': profitRate,
       'annualizedReturn': annualizedReturn,
+    };
+  }
+
+  Future<Map<AssetSubType, double>> calculateAssetAllocation() async {
+    final isar = DatabaseService().isar;
+    final allAssets = await isar.assets.where().findAll();
+
+    final Map<AssetSubType, double> allocation = {};
+
+    for (final asset in allAssets) {
+      Map<String, dynamic> performance;
+      if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
+        performance = await calculateShareAssetPerformance(asset);
+        // 对于份额法，我们使用 marketValue
+        final value = (performance['marketValue'] ?? 0.0) as double;
+        // 按子类型累加
+        allocation.update(asset.subType, (existing) => existing + value, ifAbsent: () => value);
+      } else { // 价值法
+        performance = await calculateValueAssetPerformance(asset);
+        // 对于价值法，我们使用 currentValue
+        final value = (performance['currentValue'] ?? 0.0) as double;
+        // 价值法资产的子类型我们默认为 other
+        allocation.update(AssetSubType.other, (existing) => existing + value, ifAbsent: () => value);
+      }
+    }
+
+    // 移除总价值为0或负数的类别，避免在饼图中显示
+    allocation.removeWhere((key, value) => value <= 0);
+
+    return allocation;
+  }  
+
+  Future<Map<String, dynamic>> calculateGlobalPerformance() async {
+    final isar = DatabaseService().isar;
+    final allAccounts = await isar.accounts.where().anyId().findAll();
+    // 同时获取所有顶层交易记录
+    final allTransactions = await isar.collection<AccountTransaction>().where().findAll();
+
+    double totalValue = 0;
+    double totalNetInvestment = 0;
+    double totalInvested = 0; // 需要总投入来计算总收益率
+
+    for (final account in allAccounts) {
+      // 复用账户计算逻辑来获取每个账户的当前价值和净投入
+      final performance = await calculateAccountPerformance(account);
+      totalValue += (performance['currentValue'] ?? 0.0) as double;
+      totalNetInvestment += (performance['netInvestment'] ?? 0.0) as double;
+    }
+    
+    // 为了计算总收益率，我们需要遍历所有交易来获取总投入
+    for (final txn in allTransactions) {
+      if (txn.type == TransactionType.invest) {
+        totalInvested += txn.amount;
+      }
+    }
+
+    final double totalProfit = totalValue - totalNetInvestment;
+    final double totalProfitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested;
+
+    // --- 新增：计算全局年化收益率 ---
+    double globalAnnualizedReturn = 0.0;
+    final cashflows = <double>[];
+    final dates = <DateTime>[];
+
+    for (var txn in allTransactions) {
+      if (txn.type == TransactionType.invest) {
+        cashflows.add(-txn.amount);
+        dates.add(txn.date);
+      } else if (txn.type == TransactionType.withdraw) {
+        cashflows.add(txn.amount);
+        dates.add(txn.date);
+      }
+    }
+
+    // 只要有现金流发生，并且总资产有价值，就进行计算
+    if (cashflows.isNotEmpty && totalValue > 0) {
+      cashflows.add(totalValue);
+      dates.add(DateTime.now()); // 以今天作为最终价值的日期
+      
+      if (cashflows.any((cf) => cf > 0) && cashflows.any((cf) => cf < 0)) {
+        try {
+          globalAnnualizedReturn = xirr(dates, cashflows);
+        } catch (e) {
+          // 计算失败
+        }
+      }
+    }
+
+    return {
+      'totalValue': totalValue,
+      'totalProfit': totalProfit,
+      'totalProfitRate': totalProfitRate,
+      'globalAnnualizedReturn': globalAnnualizedReturn, // 返回新计算出的值
     };
   }
 }

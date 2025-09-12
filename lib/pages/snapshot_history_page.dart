@@ -212,7 +212,11 @@ class SnapshotHistoryPage extends ConsumerWidget {
             onPressed: () async {
               final isar = DatabaseService().isar;
               await isar.writeTxn(() async => await isar.positionSnapshots.delete(snapshot.id));
+              
+              // --- 关键修正：同时刷新历史列表和详情页的计算结果 ---
+              ref.invalidate(snapshotHistoryProvider(assetId));
               ref.invalidate(shareAssetPerformanceProvider(assetId));
+
               if (dialogContext.mounted) Navigator.of(dialogContext).pop();
             },
             child: const Text('删除', style: TextStyle(color: Colors.red)),

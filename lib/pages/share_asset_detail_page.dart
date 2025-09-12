@@ -3,12 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
+import 'package:one_five_one_ten/pages/add_edit_asset_page.dart';
 import 'package:one_five_one_ten/pages/snapshot_history_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/services/price_sync_service.dart';
-import 'package:one_five_one_ten/pages/add_edit_asset_page.dart';
-
 
 final shareAssetDetailProvider = FutureProvider.autoDispose.family<Asset?, int>((ref, assetId) {
   final isar = DatabaseService().isar;
@@ -74,7 +73,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
                   duration: Duration(seconds: 2),
                 ));
 
-                final newPrice = await PriceSyncService().syncPrice(asset.code);
+                final newPrice = await PriceSyncService().syncPrice(asset);
                 
                 ScaffoldMessenger.of(context).removeCurrentSnackBar();
 
@@ -102,8 +101,6 @@ class ShareAssetDetailPage extends ConsumerWidget {
             padding: const EdgeInsets.all(16.0),
             children: [
               _buildPerformanceCard(context, ref, asset),
-              const SizedBox(height: 24),
-              _buildSnapshotHistory(context, ref, asset),
             ],
           );
         },
@@ -116,9 +113,10 @@ class ShareAssetDetailPage extends ConsumerWidget {
   Widget _buildPerformanceCard(BuildContext context, WidgetRef ref, Asset asset) {
     final asyncPerformance = ref.watch(shareAssetPerformanceProvider(assetId));
     
-    // 修正：为不同用途定义不同的格式化工具
+    // 为不同目的创建不同的格式化工具
     final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥'); // 2位小数，用于总额
-    final priceFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥', decimalDigits: 3); // 3位小数，用于单价
+    final navFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥', decimalDigits: 4); // 4位小数，用于场外基金净值
+    final priceFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥', decimalDigits: 3); // 3位小数，用于场内基金/股票价格
     final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
 
     return asyncPerformance.when(
@@ -127,8 +125,11 @@ class ShareAssetDetailPage extends ConsumerWidget {
         final profitRate = (performance['profitRate'] ?? 0.0) as double;
         final annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
         final priceUpdateDate = asset.priceUpdateDate;
-        Color profitColor = totalProfit > 0 ? Colors.red.shade400 : Colors.green.shade400;
+        Color profitColor = totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade400;
         if (totalProfit == 0) profitColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
+
+        // 根据子类型选择不同的价格格式化工具
+        final currentPriceFormat = asset.subType == AssetSubType.mutualFund ? navFormat : priceFormat;
 
         return Card(
           child: Padding(
@@ -161,7 +162,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text('最新价: ${priceFormat.format(performance['latestPrice'] ?? 0.0)}', style: TextStyle(color: Colors.grey.shade400)),
+                        Text('最新价: ${currentPriceFormat.format(performance['latestPrice'] ?? 0.0)}', style: TextStyle(color: Colors.grey.shade400)),
                         if(priceUpdateDate != null)
                           Text(DateFormat('yyyy-MM-dd HH:mm').format(priceUpdateDate), style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
                       ],
@@ -189,32 +190,6 @@ class ShareAssetDetailPage extends ConsumerWidget {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (err, stack) => Center(child: Text('计算失败: $err')),
-    );
-  }
-
-  Widget _buildSnapshotHistory(BuildContext context, WidgetRef ref, Asset asset) {
-     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('持仓快照历史', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            IconButton(
-              icon: const Icon(Icons.history),
-              tooltip: '管理历史快照',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => SnapshotHistoryPage(assetId: asset.id),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-        const Divider(height: 20),
-      ],
     );
   }
 
@@ -280,9 +255,16 @@ class ShareAssetDetailPage extends ConsumerWidget {
                         await isar.positionSnapshots.put(newSnapshot);
                         await newSnapshot.asset.save();
                       });
-
+                      
                       ref.invalidate(shareAssetPerformanceProvider(assetId));
-                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                         Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (_) => SnapshotHistoryPage(assetId: asset.id),
+                          ),
+                        );
+                      }
                     }
                   },
                   child: const Text('保存'),
@@ -319,6 +301,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
                   asset.priceUpdateDate = DateTime.now();
                   await isar.writeTxn(() async => await isar.assets.put(asset));
                   ref.invalidate(shareAssetPerformanceProvider(assetId));
+
                   if(dialogContext.mounted) Navigator.of(dialogContext).pop();
                 }
               },
