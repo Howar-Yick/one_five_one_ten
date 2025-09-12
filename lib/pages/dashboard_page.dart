@@ -50,7 +50,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Widget build(BuildContext context) {
     final asyncPerformance = ref.watch(globalPerformanceProvider);
     final asyncAllocation = ref.watch(assetAllocationProvider);
-    
+
     final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
     final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
 
@@ -104,27 +104,30 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               error: (err, stack) => Card(child: SizedBox(height: 170, child: Center(child: Text('加载失败: $err')))),
             ),
             const SizedBox(height: 24),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('总资产趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 24),
-                    ref.watch(globalHistoryProvider).when(
-                          data: (spots) {
-                            if (spots.length < 2) return const SizedBox(height: 200, child: Center(child: Text('历史数据不足，无法生成图表')));
-                            return _buildHistoryChart(context, spots);
-                          },
-                          loading: () => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
-                          error: (err, stack) => SizedBox(height: 200, child: Center(child: Text('图表加载失败: $err'))),
-                        ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
+
+            // --- 移除总资产趋势图表 ---
+            // Card(
+            //   child: Padding(
+            //     padding: const EdgeInsets.all(16.0),
+            //     child: Column(
+            //       crossAxisAlignment: CrossAxisAlignment.start,
+            //       children: [
+            //         const Text('总资产趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            //         const SizedBox(height: 24),
+            //         ref.watch(globalHistoryProvider).when(
+            //               data: (spots) {
+            //                 if (spots.length < 2) return const SizedBox(height: 200, child: Center(child: Text('历史数据不足，无法生成图表')));
+            //                 return _buildHistoryChart(context, spots);
+            //               },
+            //               loading: () => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
+            //               error: (err, stack) => SizedBox(height: 200, child: Center(child: Text('图表加载失败: $err'))),
+            //             ),
+            //       ],
+            //     ),
+            //   ),
+            // ),
+            // const SizedBox(height: 24),
+
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -138,7 +141,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         if (allocation.isEmpty) {
                           return const SizedBox(height: 200, child: Center(child: Text('暂无持仓资产数据')));
                         }
-                        
+
                         final totalAssetValue = allocation.values.fold(0.0, (sum, item) => sum + item);
                         int colorIndex = 0;
 
@@ -166,7 +169,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                                     final radius = isTouched ? 90.0 : 80.0;
                                     final entry = allocation.entries.elementAt(index);
                                     final percentage = (entry.value / totalAssetValue) * 100;
-                                    
+
                                     return PieChartSectionData(
                                       value: entry.value,
                                       title: '${percentage.toStringAsFixed(1)}%',
