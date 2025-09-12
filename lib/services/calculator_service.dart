@@ -7,6 +7,7 @@ import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/utils/xirr.dart';
 import 'package:one_five_one_ten/services/database_service.dart'; // <--- 修正：添加这一行
+import 'package:intl/intl.dart';
 
 class CalculatorService {
   Future<Map<String, dynamic>> calculateAccountPerformance(Account account) async {
@@ -137,84 +138,106 @@ class CalculatorService {
 
   Future<List<FlSpot>> getAccountValueHistory(Account account) async {
     await account.transactions.load();
-    final transactions = account.transactions.toList();
-    if (transactions.isEmpty) return [];
+    final valueUpdates = account.transactions
+        .where((txn) => txn.type == TransactionType.updateValue)
+        .toList();
 
-    transactions.sort((a, b) => a.date.compareTo(b.date));
+    if (valueUpdates.isEmpty) return [];
 
-    final List<FlSpot> spots = [];
-    double latestValue = 0;
-
-    final Map<DateTime, double> dailyValues = {};
-
-    for (var txn in transactions) {
+    final Map<DateTime, AccountTransaction> latestDailyUpdates = {};
+    for (final txn in valueUpdates) {
       final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
-      if (txn.type == TransactionType.updateValue) {
-        dailyValues[day] = txn.amount;
+      if (!latestDailyUpdates.containsKey(day) || txn.date.isAfter(latestDailyUpdates[day]!.date)) {
+        latestDailyUpdates[day] = txn;
       }
     }
 
-    if (dailyValues.isEmpty) return [];
+    if (latestDailyUpdates.length < 2) return [];
 
-    final startDate = transactions.first.date;
-    final endDate = DateTime.now();
+    final sortedTxs = latestDailyUpdates.values.toList()..sort((a, b) => a.date.compareTo(b.date));
 
-    for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
-      final day = DateTime(startDate.year, startDate.month, startDate.day + i);
-
-      if (dailyValues.containsKey(day)) {
-        latestValue = dailyValues[day]!;
-      }
-
-      spots.add(FlSpot(day.millisecondsSinceEpoch.toDouble(), latestValue));
-    }
-
-    return spots;
+    return sortedTxs.map((txn) {
+      final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
+      return FlSpot(day.millisecondsSinceEpoch.toDouble(), txn.amount);
+    }).toList();
   }
 
   Future<List<FlSpot>> getGlobalValueHistory() async {
     final isar = DatabaseService().isar;
-    final allTransactions = await isar.collection<AccountTransaction>().where().findAll();
+    final allTransactions = await isar.collection<AccountTransaction>()
+        .where()
+        .filter()
+        .typeEqualTo(TransactionType.updateValue)
+        .findAll();
+
     if (allTransactions.isEmpty) return [];
 
-    allTransactions.sort((a, b) => a.date.compareTo(b.date));
-
-    final Map<DateTime, Map<int, double>> dailyAccountValues = {};
-
-    for (var txn in allTransactions) {
-      if (txn.type == TransactionType.updateValue) {
-        final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
-        final accountId = txn.account.value?.id ?? -1;
-        if(accountId == -1) continue;
-
-        dailyAccountValues.putIfAbsent(day, () => {});
-        dailyAccountValues[day]![accountId] = txn.amount;
+    final Map<String, AccountTransaction> latestDailyAccountUpdates = {};
+    for (final txn in allTransactions) {
+      final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
+      final accountId = txn.account.value?.id ?? -1;
+      if (accountId == -1) continue;
+      
+      final key = "${DateFormat('yyyy-MM-dd').format(day)}-$accountId";
+      
+      if (!latestDailyAccountUpdates.containsKey(key) || txn.date.isAfter(latestDailyAccountUpdates[key]!.date)) {
+        latestDailyAccountUpdates[key] = txn;
       }
     }
 
-    if (dailyAccountValues.isEmpty) return [];
+    final dailyTotalValues = <DateTime, double>{};
+    final latestValuesByAccount = <int, double>{};
+    
+    final allUpdateDays = latestDailyAccountUpdates.values
+        .map((txn) => DateTime(txn.date.year, txn.date.month, txn.date.day))
+        .toSet().toList()..sort();
+    
+    if (allUpdateDays.length < 2) return [];
+    
+    for (final day in allUpdateDays) {
+      final todaysUpdates = latestDailyAccountUpdates.values.where((txn) {
+        final txnDay = DateTime(txn.date.year, txn.date.month, txn.date.day);
+        return txnDay.isAtSameMomentAs(day);
+      });
 
-    final List<FlSpot> spots = [];
-    final startDate = allTransactions.first.date;
-    final endDate = DateTime.now();
-
-    Map<int, double> latestValues = {};
-
-    for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
-      final day = DateTime(startDate.year, startDate.month, startDate.day + i);
-
-      if (dailyAccountValues.containsKey(day)) {
-        dailyAccountValues[day]!.forEach((accountId, value) {
-          latestValues[accountId] = value;
-        });
+      for (final txn in todaysUpdates) {
+        latestValuesByAccount[txn.account.value!.id] = txn.amount;
       }
-
-      double totalValue = latestValues.values.fold(0.0, (sum, item) => sum + item);
-      spots.add(FlSpot(day.millisecondsSinceEpoch.toDouble(), totalValue));
+      
+      dailyTotalValues[day] = latestValuesByAccount.values.fold(0.0, (prev, element) => prev + element);
     }
-
-    return spots;
+    
+    final sortedEntries = dailyTotalValues.entries.toList()..sort((a,b) => a.key.compareTo(b.key));
+    return sortedEntries.map((entry) {
+      return FlSpot(entry.key.millisecondsSinceEpoch.toDouble(), entry.value);
+    }).toList();
   }
+
+  Future<List<FlSpot>> getValueAssetHistory(Asset asset) async {
+    await asset.transactions.load();
+    final valueUpdates = asset.transactions
+        .where((txn) => txn.type == TransactionType.updateValue)
+        .toList();
+
+    if (valueUpdates.isEmpty) return [];
+
+    final Map<DateTime, Transaction> latestDailyUpdates = {};
+    for (final txn in valueUpdates) {
+      final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
+      if (!latestDailyUpdates.containsKey(day) || txn.date.isAfter(latestDailyUpdates[day]!.date)) {
+        latestDailyUpdates[day] = txn;
+      }
+    }
+
+    if (latestDailyUpdates.length < 2) return [];
+
+    final sortedTxs = latestDailyUpdates.values.toList()..sort((a, b) => a.date.compareTo(b.date));
+
+    return sortedTxs.map((txn) {
+      final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
+      return FlSpot(day.millisecondsSinceEpoch.toDouble(), txn.amount);
+    }).toList();
+  }  
 
   Future<Map<String, dynamic>> calculateValueAssetPerformance(Asset asset) async {
     await asset.transactions.load();

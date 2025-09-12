@@ -555,15 +555,25 @@ class AccountDetailPage extends ConsumerWidget {
 
   Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots) {
     final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: '¥');
-    
-    // --- 新增：智能计算日期间隔 ---
+    final colorScheme = Theme.of(context).colorScheme;
+
+    if (spots.length < 2) {
+      return const SizedBox(
+        height: 200,
+        child: Center(
+          child: Text('历史数据不足，无法生成图表'),
+        ),
+      );
+    }
+
     double? bottomInterval;
-    if (spots.isNotEmpty) {
-      final firstDate = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
-      final lastDate = DateTime.fromMillisecondsSinceEpoch(spots.last.x.toInt());
-      final durationDays = lastDate.difference(firstDate).inDays;
-      if (durationDays > 30) { // 如果时间跨度超过一个月，自动计算间隔
-        bottomInterval = (spots.last.x - spots.first.x) / 5; // 大约显示5个标签
+    if (spots.length > 1) {
+      final firstMs = spots.first.x;
+      final lastMs = spots.last.x;
+      final durationMillis = (lastMs - firstMs).abs();
+      const desiredLabelCount = 4.0;
+      if (durationMillis > 0) {
+        bottomInterval = durationMillis / desiredLabelCount;
       }
     }
 
@@ -571,38 +581,62 @@ class AccountDetailPage extends ConsumerWidget {
       height: 200,
       child: LineChart(
         LineChartData(
+          minX: spots.first.x,
+          maxX: spots.last.x,
           lineBarsData: [
             LineChartBarData(
               spots: spots,
-              isCurved: true,
+              isCurved: false, // 修正：确保曲线是直线连接，避免“回旋”
               barWidth: 3,
-              color: Theme.of(context).primaryColor,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                gradient: LinearGradient(
-                  colors: [
-                    Theme.of(context).primaryColor.withOpacity(0.3),
-                    Theme.of(context).primaryColor.withOpacity(0.0)
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
+              color: colorScheme.primary, // 修正：使用主题主色
+              dotData: const FlDotData(show: true),
+              belowBarData: BarAreaData(show: false),
             ),
           ],
           titlesData: FlTitlesData(
-            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 50, getTitlesWidget: (value, meta) => Text(currencyFormat.format(value), style: const TextStyle(fontSize: 10)))),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 50,
+                getTitlesWidget: (value, meta) => Text(currencyFormat.format(value), style: const TextStyle(fontSize: 10)),
+              ),
+            ),
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            // --- 修正：使用计算出的 interval ---
-            bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 30, interval: bottomInterval, getTitlesWidget: (value, meta) => Padding(
-              padding: const EdgeInsets.only(top: 8.0),
-              child: Text(DateFormat('yy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(value.toInt())), style: const TextStyle(fontSize: 10)),
-            ))),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 30,
+                interval: bottomInterval,
+                getTitlesWidget: (value, meta) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(DateFormat('yy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(value.toInt())), style: const TextStyle(fontSize: 10), textAlign: TextAlign.center,),
+                  );
+                }
+              ),
+            ),
           ),
-          gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => const FlLine(color: Colors.grey, strokeWidth: 0.2)),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1),
+          ),
           borderData: FlBorderData(show: false),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots.map((spot) {
+                  final date = DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(spot.x.toInt()));
+                  final value = NumberFormat.currency(locale: 'zh_CN', symbol: '¥').format(spot.y);
+                  return LineTooltipItem(
+                    '$date\n$value',
+                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  );
+                }).toList();
+              },
+            ),
+          ),
         ),
       ),
     );
