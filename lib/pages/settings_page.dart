@@ -1,4 +1,3 @@
-// lib/pages/settings_page.dart
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -6,9 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/services/onedrive_service.dart';
+import 'package:one_five_one_ten/services/sync_service.dart';
 
+// 认证状态 Provider
 final onedriveAuthStateProvider = FutureProvider<OneDriveAuthState>((ref) async {
   return OneDriveService().getAuthState();
+});
+
+// 自动同步开关 Provider
+final autoSyncProvider = FutureProvider<bool>((ref) async {
+  return SyncService.instance.isEnabled();
 });
 
 class SettingsPage extends ConsumerWidget {
@@ -17,6 +23,7 @@ class SettingsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authAsync = ref.watch(onedriveAuthStateProvider);
+    final autoSyncEnabled = ref.watch(autoSyncProvider).value ?? true;
 
     return Scaffold(
       appBar: AppBar(
@@ -42,7 +49,12 @@ class SettingsPage extends ConsumerWidget {
                       ElevatedButton(
                         onPressed: () async {
                           final ok = await OneDriveService().signInWithDeviceCode(context);
-                          if (ok) ref.invalidate(onedriveAuthStateProvider);
+                          if (ok) {
+                            ref.invalidate(onedriveAuthStateProvider);
+                            // 登录成功后，立即启用并触发一次同步
+                            await SyncService.instance.setEnabled(true, triggerSync: true);
+                            ref.invalidate(autoSyncProvider);
+                          }
                         },
                         child: const Text('登录 Microsoft 账户'),
                       ),
@@ -57,27 +69,30 @@ class SettingsPage extends ConsumerWidget {
                           tooltip: '登出',
                           onPressed: () async {
                             await OneDriveService().signOut();
+                            await SyncService.instance.setEnabled(false); // 登出时禁用自动同步
                             ref.invalidate(onedriveAuthStateProvider);
+                            ref.invalidate(autoSyncProvider);
                           },
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () => _uploadToCloud(context),
-                              child: const Text('上传到云端'),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () => _downloadFromCloud(context),
-                              child: const Text('从云端恢复'),
-                            ),
-                          ),
-                        ],
+                      SwitchListTile(
+                        title: const Text('自动云端同步'),
+                        subtitle: const Text('数据变更后自动上传，应用启动时自动下载'),
+                        value: autoSyncEnabled,
+                        onChanged: (val) async {
+                           await SyncService.instance.setEnabled(val);
+                           ref.invalidate(autoSyncProvider);
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.sync),
+                        title: const Text('立即同步'),
+                        subtitle: const Text('手动触发一次拉取和推送'),
+                        onTap: () async {
+                          await SyncService.instance.start();
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('同步已触发')));
+                        },
                       ),
                     ],
                   ],
@@ -103,63 +118,16 @@ class SettingsPage extends ConsumerWidget {
             leading: const Icon(Icons.restore_page_outlined),
             title: const Text('从本地恢复'),
             subtitle: const Text('从备份文件中导入数据（将覆盖当前数据）'),
-            onTap: () => _restoreData(context),
+            onTap: () => _restoreData(context, ref),
           ),
         ],
       ),
     );
   }
 
-  // ======= 云端：上传到 OneDrive =======
-  Future<void> _uploadToCloud(BuildContext context) async {
-    final isar = DatabaseService().isar;
-    final messenger = ScaffoldMessenger.of(context);
-
-    try {
-      // 先导出到临时文件，再读成 bytes
-      final tmp = File('${Directory.systemTemp.path}/one_five_one_ten_upload_${DateTime.now().millisecondsSinceEpoch}.isar');
-      await isar.copyToFile(tmp.path);
-      final bytes = await tmp.readAsBytes();
-      await tmp.delete();
-
-      final fileName = 'backup_${DateTime.now().toIso8601String().split("T").first}.isar';
-      final ok = await OneDriveService().uploadBackup(Uint8List.fromList(bytes), fileName);
-      if (ok) {
-        messenger.showSnackBar(SnackBar(content: Text('上传成功：$fileName')));
-      } else {
-        messenger.showSnackBar(const SnackBar(content: Text('上传失败，请检查登录与网络')));
-      }
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('上传失败：$e')));
-    }
-  }
-
-  // ======= 云端：从 OneDrive 下载并恢复 =======
-  Future<void> _downloadFromCloud(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final result = await OneDriveService().downloadLatestBackup();
-      if (result == null) {
-        messenger.showSnackBar(const SnackBar(content: Text('云端未找到备份')));
-        return;
-      }
-
-      final (fileName, bytes) = result;
-
-      final isar = DatabaseService().isar;
-      final dbPath = isar.path!;
-      await isar.close();
-      final file = File(dbPath);
-      await file.writeAsBytes(bytes, flush: true);
-
-      // 重新初始化，避免空引用
-      await DatabaseService().init();
-
-      messenger.showSnackBar(SnackBar(content: Text('恢复成功：$fileName（如未看到变化，手动重启应用）')));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('恢复失败：$e')));
-    }
-  }
+  // ======= 云端上传/下载（手动按钮，已被SyncService替代，但保留本地逻辑） =======
+  // Future<void> _uploadToCloud... (我们使用 SyncService._pushIfDirty 代替)
+  // Future<void> _downloadFromCloud... (我们使用 SyncService._pullIfRemoteNewer 代替)
 
   // ======= 本地：备份到文件 =======
   Future<void> _backupData(BuildContext context) async {
@@ -184,7 +152,7 @@ class SettingsPage extends ConsumerWidget {
   }
 
   // ======= 本地：从文件恢复 =======
-  Future<void> _restoreData(BuildContext context) async {
+  Future<void> _restoreData(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
 
     final confirmed = await showDialog<bool>(
@@ -211,13 +179,18 @@ class SettingsPage extends ConsumerWidget {
     final dbPath = isar.path!;
 
     try {
+      // 在恢复前，停止所有同步服务
+      await SyncService.instance.stop();
       await isar.close();
       File(backupPath).copySync(dbPath);
       messenger.showSnackBar(const SnackBar(content: Text('恢复成功！请手动重启 App 以加载新数据。')));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('恢复失败：$e')));
     } finally {
+      // 重新启动数据库和服务
       await DatabaseService().init();
+      ref.invalidate(onedriveAuthStateProvider);
+      ref.invalidate(autoSyncProvider);
     }
   }
 }

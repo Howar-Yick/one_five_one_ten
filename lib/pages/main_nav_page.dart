@@ -1,8 +1,8 @@
-// lib/pages/main_nav_page.dart
 import 'package:flutter/material.dart';
 import 'package:one_five_one_ten/pages/accounts_page.dart';
 import 'package:one_five_one_ten/pages/dashboard_page.dart';
 import 'package:one_five_one_ten/pages/settings_page.dart';
+import 'package:one_five_one_ten/services/sync_service.dart'; // 引入同步服务
 
 class MainNavPage extends StatefulWidget {
   const MainNavPage({super.key});
@@ -12,9 +12,8 @@ class MainNavPage extends StatefulWidget {
 }
 
 class _MainNavPageState extends State<MainNavPage> {
-  int _selectedIndex = 0; // 当前选中的页面索引
+  int _selectedIndex = 0;
 
-  // 将我们的三个主页面放入一个列表
   static const List<Widget> _pages = <Widget>[
     DashboardPage(),
     AccountsPage(),
@@ -26,13 +25,25 @@ class _MainNavPageState extends State<MainNavPage> {
       _selectedIndex = index;
     });
   }
+  
+  @override
+  void initState() {
+    super.initState();
+    // 启动App时，开始同步服务
+    SyncService.instance.start();
+  }
+  
+  @override
+  void dispose() {
+    // 停止服务（虽然单例通常不需要停止，但这取决于生命周期管理）
+    // SyncService.instance.stop(); // 我们可以让它常驻
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // 主体内容根据索引显示不同的页面
       body: _pages.elementAt(_selectedIndex),
-      // 底部导航栏
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(

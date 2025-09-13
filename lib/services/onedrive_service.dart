@@ -1,8 +1,8 @@
-// lib/services/onedrive_service.dart
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:one_five_one_ten/models/cloud_manifest.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -13,45 +13,33 @@ class OneDriveAuthState {
 }
 
 class OneDriveService {
-  // TODO: 用你的应用的 Client ID 替换（Azure Portal 上的 Application (client) ID）
+  // ！！！关键：请用您在Azure Portal上注册的 Application (client) ID 替换这里的示例ID
   static const String _clientId = '09dc69e1-9dd1-419e-920e-7ed97fe26980';
 
-  // common=多租户+MSA；如只想个人账户可改成 'consumers'
-  static const String _tenant = 'consumers';
+  static const String _tenant = 'common';
   static const String _authority = 'https://login.microsoftonline.com/$_tenant';
   static const String _scope = 'offline_access Files.ReadWrite.AppFolder openid profile';
-
-  // Graph
   static const String _graph = 'https://graph.microsoft.com/v1.0';
 
-  // 存储键
   static const _kAccessToken = 'od_access_token';
   static const _kRefreshToken = 'od_refresh_token';
   static const _kExpiresAt   = 'od_expires_at';
   static const _kUsername    = 'od_username';
 
-  // 设备码登录
   Future<bool> signInWithDeviceCode(BuildContext context) async {
     final codeRes = await http.post(
       Uri.parse('$_authority/oauth2/v2.0/devicecode'),
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {'client_id': _clientId, 'scope': _scope},
     );
-if (codeRes.statusCode != 200) {
-  try {
-    final m = json.decode(codeRes.body) as Map<String, dynamic>;
-    final err = m['error'];
-    final desc = m['error_description'];
-    _toast(context, '获取设备码失败：$err\n$desc');
-  } catch (_) {
-    _toast(context, '获取设备码失败：${codeRes.statusCode} ${codeRes.body}');
-  }
-  return false;
-}
+    if (codeRes.statusCode != 200) {
+      _toast(context, '获取设备码失败：${codeRes.statusCode}');
+      return false;
+    }
     final data = json.decode(codeRes.body) as Map<String, dynamic>;
     final deviceCode = data['device_code'] as String;
     final userCode = data['user_code'] as String;
-    final verifyUrl = (data['verification_uri_complete'] ?? data['verification_uri']) as String;
+    final verifyUrl = data['verification_uri'] as String;
     int interval = (data['interval'] as num?)?.toInt() ?? 5;
 
     bool? proceed = await showDialog<bool>(
@@ -93,7 +81,6 @@ if (codeRes.statusCode != 200) {
 
     if (proceed != true) return false;
 
-    // 轮询 token
     while (true) {
       await Future.delayed(Duration(seconds: interval));
       final tokenRes = await http.post(
@@ -112,7 +99,6 @@ if (codeRes.statusCode != 200) {
         final refreshToken = body['refresh_token'] as String?;
         final expiresIn = (body['expires_in'] as num?)?.toInt() ?? 3600;
 
-        // 取用户名
         String? username;
         try {
           final me = await http.get(
@@ -136,7 +122,7 @@ if (codeRes.statusCode != 200) {
       } else {
         final err = (body['error'] ?? '').toString();
         if (err == 'authorization_pending') {
-          continue; // 用户还没完成
+          continue;
         } else if (err == 'slow_down') {
           interval += 2;
         } else {
@@ -174,7 +160,6 @@ if (codeRes.statusCode != 200) {
     if (access != null && now < expiresAtMs) return access;
     if (refresh == null) return null;
 
-    // 刷新
     final res = await http.post(
       Uri.parse('$_authority/oauth2/v2.0/token'),
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -199,7 +184,6 @@ if (codeRes.statusCode != 200) {
     return access;
   }
 
-  // 确保 App 根目录（approot）下存在 one_five_one_ten 文件夹
   Future<void> _ensureAppFolder(String accessToken) async {
     final createRes = await http.post(
       Uri.parse('$_graph/me/drive/special/approot/children'),
@@ -213,11 +197,9 @@ if (codeRes.statusCode != 200) {
         '@microsoft.graph.conflictBehavior': 'replace',
       }),
     );
-    // 409/400 说明已存在或已创建，不必特殊处理
     if (createRes.statusCode == 201 || createRes.statusCode == 409 || createRes.statusCode == 400) return;
   }
 
-  // 上传备份（覆盖同名文件）
   Future<bool> uploadBackup(Uint8List bytes, String fileName) async {
     final token = await _validAccessToken();
     if (token == null) return false;
@@ -235,7 +217,6 @@ if (codeRes.statusCode != 200) {
     return res.statusCode == 200 || res.statusCode == 201;
   }
 
-  // 下载最新备份（按修改时间倒序取第一个）
   Future<(String fileName, Uint8List bytes)?> downloadLatestBackup() async {
     final token = await _validAccessToken();
     if (token == null) return null;
@@ -263,7 +244,32 @@ if (codeRes.statusCode != 200) {
     return (name, Uint8List.fromList(dlRes.bodyBytes));
   }
 
+  Future<CloudManifest?> getManifest() async {
+    final token = await _validAccessToken();
+    if (token == null) return null;
+    final uri = Uri.parse('$_graph/me/drive/special/approot:/one_five_one_ten/manifest.json:/content');
+    final res = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+    if (res.statusCode == 200) {
+      return CloudManifest.fromJson(json.decode(res.body) as Map<String, dynamic>);
+    }
+    return null;
+  }
+
+  Future<bool> putManifest(CloudManifest m) async {
+    final token = await _validAccessToken();
+    if (token == null) return false;
+    await _ensureAppFolder(token);
+    final uri = Uri.parse('$_graph/me/drive/special/approot:/one_five_one_ten/manifest.json:/content');
+    final res = await http.put(
+      uri,
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+      body: json.encode(m.toJson()),
+    );
+    return res.statusCode == 200 || res.statusCode == 201;
+  }
+
   void _toast(BuildContext context, String msg) {
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 }
