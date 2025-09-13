@@ -62,6 +62,47 @@ class PriceSyncService {
     return [];
   }  
 
+  // --- 新增：为股票/ETF同步历史日K线数据 ---
+  Future<List<FlSpot>> syncKLineHistory(String assetCode) async {
+    if (assetCode.isEmpty) return [];
+
+    String fullCode = assetCode.toLowerCase().trim();
+    if (!fullCode.startsWith('sh') && !fullCode.startsWith('sz')) {
+      if (fullCode.startsWith('6')) fullCode = 'sh$fullCode';
+      else if (fullCode.startsWith('5')) fullCode = 'sh$fullCode';
+      else if (fullCode.startsWith('0') || fullCode.startsWith('3')) fullCode = 'sz$fullCode';
+      else if (fullCode.startsWith('1')) fullCode = 'sz$fullCode';
+      else return [];
+    }
+
+    _log('开始同步K线历史: "$fullCode"');
+    // 这是新浪的日K线接口，scale=240代表日线，datalen=1023表示获取最近1023个数据点
+    final url = Uri.parse('http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=$fullCode&scale=240&ma=no&datalen=1023');
+    _log('K线接口: 请求URL: $url');
+
+    try {
+      final response = await http.get(url).timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        // 这个接口直接返回JSON数组，无需GBK解码
+        final List<dynamic> historyData = json.decode(response.body);
+        if (historyData.isEmpty) return [];
+
+        final List<FlSpot> spots = historyData.map((data) {
+          final Map<String, dynamic> dayData = data as Map<String, dynamic>;
+          final date = DateTime.parse(dayData['day']); // 日期格式 "2023-01-01"
+          final value = double.parse(dayData['close']); // 收盘价
+          return FlSpot(date.millisecondsSinceEpoch.toDouble(), value);
+        }).toList();
+
+        _log('成功解析 ${spots.length} 个K线数据点');
+        return spots;
+      }
+    } catch (e) {
+      _log('!!! K线历史同步异常: $e');
+    }
+    return [];
+  }  
+
   Future<double?> _syncFromSina(String assetCode) async {
     if (assetCode.isEmpty) return null;
 

@@ -10,13 +10,18 @@ import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/services/price_sync_service.dart';
 import 'package:fl_chart/fl_chart.dart';
 
-// Provider 用于获取场外基金的历史净值数据点
+/// --- 修正：让此Provider更智能，可以处理所有份额法资产 ---
 final assetNavHistoryProvider = FutureProvider.autoDispose.family<List<FlSpot>, Asset>((ref, asset) {
-  if (asset.subType == AssetSubType.mutualFund) {
-    return PriceSyncService().syncNavHistory(asset.code);
+  final service = PriceSyncService();
+  switch (asset.subType) {
+    case AssetSubType.mutualFund:
+      return service.syncNavHistory(asset.code); // 场外基金调用旧方法
+    case AssetSubType.stock:
+    case AssetSubType.etf:
+      return service.syncKLineHistory(asset.code); // 股票和ETF调用新方法
+    default:
+      return Future.value([]);
   }
-  // 对于股票和ETF，暂时不生成图表（因为我们没有它们完整的历史价格API）
-  return Future.value([]);
 });
 
 final shareAssetDetailProvider = FutureProvider.autoDispose.family<Asset?, int>((ref, assetId) {
@@ -196,7 +201,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
                 ));
 
                 final newPrice = await PriceSyncService().syncPrice(asset);
-                
+
                 ScaffoldMessenger.of(context).removeCurrentSnackBar();
 
                 if (newPrice != null) {
@@ -205,6 +210,8 @@ class ShareAssetDetailPage extends ConsumerWidget {
                   asset.priceUpdateDate = DateTime.now();
                   await isar.writeTxn(() async => await isar.assets.put(asset));
                   ref.invalidate(shareAssetPerformanceProvider(assetId));
+                  // 价格同步成功后，也刷新一下历史曲线图
+                  ref.invalidate(assetNavHistoryProvider(asset));
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('价格同步成功！')));
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('同步失败，请手动更新')));
@@ -225,29 +232,28 @@ class ShareAssetDetailPage extends ConsumerWidget {
               _buildPerformanceCard(context, ref, asset),
               const SizedBox(height: 24),
 
-              // --- 新增：调用历史净值图表 ---
-              if (asset.subType == AssetSubType.mutualFund) // 只对场外基金显示
-                ref.watch(assetNavHistoryProvider(asset)).when(
-                  data: (spots) {
-                    if (spots.length < 2) return const SizedBox.shrink();
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('历史净值趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 24),
-                            _buildHistoryChart(context, spots),
-                          ],
-                        ),
+              // --- 修正：移除了 if 判断，让所有份额法资产都尝试加载图表 ---
+              ref.watch(assetNavHistoryProvider(asset)).when(
+                data: (spots) {
+                  if (spots.length < 2) return const SizedBox.shrink(); // 如果没有数据点（比如“其他”类型），则不显示
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('历史价格趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 24),
+                          _buildHistoryChart(context, spots),
+                        ],
                       ),
-                    );
-                  },
-                  loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (e,s) => const SizedBox.shrink(),
-                ),
-              
+                    ),
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e,s) => const SizedBox.shrink(),
+              ),
+
               const SizedBox(height: 24),
               _buildSnapshotHistory(context, ref, asset),
             ],
