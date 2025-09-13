@@ -16,7 +16,7 @@ class OneDriveService {
   // ！！！关键：请用您在Azure Portal上注册的 Application (client) ID 替换这里的示例ID
   static const String _clientId = '09dc69e1-9dd1-419e-920e-7ed97fe26980';
 
-  static const String _tenant = 'common';
+  static const String _tenant = 'consumers';
   static const String _authority = 'https://login.microsoftonline.com/$_tenant';
   static const String _scope = 'offline_access Files.ReadWrite.AppFolder openid profile';
   static const String _graph = 'https://graph.microsoft.com/v1.0';
@@ -39,7 +39,7 @@ class OneDriveService {
     final data = json.decode(codeRes.body) as Map<String, dynamic>;
     final deviceCode = data['device_code'] as String;
     final userCode = data['user_code'] as String;
-    final verifyUrl = data['verification_uri'] as String;
+    final verifyUrl = (data['verification_uri_complete'] ?? data['verification_uri']) as String;
     int interval = (data['interval'] as num?)?.toInt() ?? 5;
 
     bool? proceed = await showDialog<bool>(
@@ -132,6 +132,15 @@ class OneDriveService {
       }
     }
   }
+
+  Future<Uint8List?> downloadBackupByName(String fileName) async {
+  final token = await _validAccessToken();
+  if (token == null) return null;
+  final uri = Uri.parse('$_graph/me/drive/special/approot:/one_five_one_ten/$fileName:/content');
+  final res = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+  if (res.statusCode == 200) return Uint8List.fromList(res.bodyBytes);
+  return null;
+}  
 
   Future<void> signOut() async {
     final prefs = await SharedPreferences.getInstance();

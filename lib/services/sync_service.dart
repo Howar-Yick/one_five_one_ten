@@ -17,6 +17,8 @@ import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 
 class SyncService with WidgetsBindingObserver {
+  static const _kLastSyncHash = 'last_sync_hash';
+  static const _kLastSyncVersion = 'last_sync_ver'; 
   SyncService._();
   static final instance = SyncService._();
 
@@ -56,6 +58,14 @@ class SyncService with WidgetsBindingObserver {
     _poll?.cancel();
     _poll = Timer.periodic(const Duration(minutes: 30), (_) => _safeSync());
   }
+
+  Future<bool> _uploadSnapshot(String fileName) async {
+  final tmp = File('${Directory.systemTemp.path}/ofot_${DateTime.now().millisecondsSinceEpoch}.isar');
+  await _ds.isar.copyToFile(tmp.path);
+  final bytes = await tmp.readAsBytes();
+  await tmp.delete();
+  return await _od.uploadBackup(Uint8List.fromList(bytes), fileName);
+}
 
   // 修正：stop 方法，改为调用 _cancelDbWatchers
   Future<void> stop() async {
@@ -111,70 +121,91 @@ class SyncService with WidgetsBindingObserver {
   }
 
   Future<bool> _pullIfRemoteNewer() async {
-    final m = await _od.getManifest();
-    if (m == null) return false;
+  final m = await _od.getManifest();
+  if (m == null) return false;
 
-    final localHash = await _calcLocalDbHash();
-    if (localHash == m.dbHash) return false;
+  final sp = await SharedPreferences.getInstance();
+  final baselineHash = sp.getString(_kLastSyncHash);
+  final baselineVer  = sp.getInt(_kLastSyncVersion) ?? 0;
 
-    final remoteTime = DateTime.tryParse(m.updatedAtUtc)?.toUtc();
-    final localTime = await _readLocalUpdatedUtc();
-    if (remoteTime == null) return false;
+  final localHash = await _calcLocalDbHash();
+  final remoteHash = m.dbHash;
+  final remoteVer  = m.version;
 
-    if (localTime == null || remoteTime.isAfter(localTime)) {
-      final latest = await _od.downloadLatestBackup();
-      if (latest == null) return false;
-      final (_, bytes) = latest;
+  // 情况 A：本地未改动（等于基线）且云端版本号更高 -> 安全拉取并覆盖
+  final localUnchanged = (baselineHash == null) || (localHash == baselineHash);
+  if (localUnchanged && remoteVer > baselineVer && remoteHash != localHash) {
+    final bytes = await _od.downloadBackupByName(m.fileName);
+    if (bytes == null) return false;
 
-      final path = _ds.isar.path!;
-      
-      // 关键：在关闭前，取消所有数据库监听
-      _cancelDbWatchers();
-      await _ds.isar.close();
-      
-      await File(path).writeAsBytes(bytes, flush: true);
+    _cancelDbWatchers();
+    final path = _ds.isar.path!;
+    await _ds.isar.close();
+    await File(path).writeAsBytes(bytes, flush: true);
+    await DatabaseService().init();
+    _startDbWatchers();
 
-      // 使用 DatabaseService().init() 重开数据库
-      await DatabaseService().init();
+    await sp.setString(_kLastSyncHash, remoteHash);
+    await sp.setInt(_kLastSyncVersion, remoteVer);
+    return true;
+  }
 
-      // 重开库后必须重新挂载监听
-      _startDbWatchers();
-
-      final sp = await SharedPreferences.getInstance();
-      await sp.setString('db_last_utc', remoteTime.toIso8601String());
-      await sp.setString('db_last_hash', m.dbHash);
-      return true;
-    }
+  // 情况 B：两端都改动（本地 != 基线 且 云端版本 > 基线）-> 冲突：不覆盖云端，上传一个本地冲突副本
+  final localChanged = (baselineHash != null) && (localHash != baselineHash);
+  final remoteAdvanced = remoteVer > baselineVer;
+  final remoteChangedFromBaseline = (remoteHash != baselineHash) || remoteAdvanced;
+  if (localChanged && remoteChangedFromBaseline) {
+    final conflictName =
+        'backup_conflict_${_deviceId}_${DateTime.now().toUtc().toIso8601String().replaceAll(':','-')}.isar';
+    await _uploadSnapshot(conflictName);
+    // 提示：可以在 UI 上给出“检测到冲突，已将本地另存为冲突快照”的 SnackBar
     return false;
   }
 
+  // 其他情况：不需要拉
+  return false;
+}
+
   Future<void> _pushIfDirty() async {
     final sp = await SharedPreferences.getInstance();
+    final m = await _od.getManifest();
+    final baselineHash = sp.getString(_kLastSyncHash);
+    final baselineVer  = sp.getInt(_kLastSyncVersion) ?? 0;
+
     final localHash = await _calcLocalDbHash();
-    final lastHash = sp.getString('db_last_hash');
 
-    if (lastHash == localHash) return;
+    // 本地与云端完全一致 -> 基线同步修正即可
+    if (m != null && localHash == m.dbHash) {
+      if (localHash != baselineHash) {
+        await sp.setString(_kLastSyncHash, localHash);
+        await sp.setInt(_kLastSyncVersion, m.version);
+      }
+      return;
+    }
 
-    final tmp = File('${Directory.systemTemp.path}/ofot_${DateTime.now().millisecondsSinceEpoch}.isar');
-    await _ds.isar.copyToFile(tmp.path);
-    final bytes = await tmp.readAsBytes();
-    await tmp.delete();
+    // 只有在“云端仍处于基线版本（或 manifest 不存在）”时，才安全推
+    final canPush = (m == null) || (m.version == baselineVer && m.dbHash == baselineHash);
+    if (!canPush) {
+      // 云端比基线新，先给 _pullIfRemoteNewer 处理（含冲突检测）
+      return;
+    }
 
-    final fileName = 'backup_${DateTime.now().toUtc().toIso8601String().replaceAll(':', '-')}.isar';
-    final ok = await _od.uploadBackup(Uint8List.fromList(bytes), fileName);
+    // 安全推送：上传快照 + bump manifest 版本
+    final fileName = 'backup_${DateTime.now().toUtc().toIso8601String().replaceAll(':','-')}.isar';
+    final ok = await _uploadSnapshot(fileName);
     if (!ok) return;
 
-    final manifest = CloudManifest(
-      version: ((await _od.getManifest())?.version ?? 0) + 1,
+    final newM = CloudManifest(
+      version: (m?.version ?? 0) + 1,
       updatedAtUtc: DateTime.now().toUtc().toIso8601String(),
       deviceId: _deviceId,
       dbHash: localHash,
       fileName: fileName,
     );
-    await _od.putManifest(manifest);
+    await _od.putManifest(newM);
 
-    await sp.setString('db_last_hash', localHash);
-    await sp.setString('db_last_utc', manifest.updatedAtUtc);
+    await sp.setString(_kLastSyncHash, localHash);
+    await sp.setInt(_kLastSyncVersion, newM.version);
   }
 
   Future<String> _calcLocalDbHash() async {
