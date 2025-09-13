@@ -8,6 +8,16 @@ import 'package:one_five_one_ten/pages/snapshot_history_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/services/price_sync_service.dart';
+import 'package:fl_chart/fl_chart.dart';
+
+// Provider 用于获取场外基金的历史净值数据点
+final assetNavHistoryProvider = FutureProvider.autoDispose.family<List<FlSpot>, Asset>((ref, asset) {
+  if (asset.subType == AssetSubType.mutualFund) {
+    return PriceSyncService().syncNavHistory(asset.code);
+  }
+  // 对于股票和ETF，暂时不生成图表（因为我们没有它们完整的历史价格API）
+  return Future.value([]);
+});
 
 final shareAssetDetailProvider = FutureProvider.autoDispose.family<Asset?, int>((ref, assetId) {
   final isar = DatabaseService().isar;
@@ -38,6 +48,118 @@ final snapshotHistoryProvider = StreamProvider.autoDispose.family<List<PositionS
 class ShareAssetDetailPage extends ConsumerWidget {
   final int assetId;
   const ShareAssetDetailPage({super.key, required this.assetId});
+
+  Widget _buildSnapshotHistory(BuildContext context, WidgetRef ref, Asset asset) {
+    final asyncSnapshots = ref.watch(snapshotHistoryProvider(assetId)); // This provider is already defined at the top of the file
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('持仓快照历史', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            IconButton(
+              icon: const Icon(Icons.history),
+              tooltip: '管理历史快照',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => SnapshotHistoryPage(assetId: asset.id),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        const Divider(height: 20),
+        // We can show the latest snapshot here as a preview
+        asyncSnapshots.when(
+          data: (snapshots) {
+            if (snapshots.isEmpty) return const Card(child: ListTile(title: Text('暂无快照记录')));
+            final latest = snapshots.first; // The list is already sorted descending by date
+            return ListTile(
+              leading: const Icon(Icons.history_toggle_off_outlined),
+              title: Text('最新快照: 份额 ${latest.totalShares.toStringAsFixed(2)}'),
+              subtitle: Text(DateFormat('yyyy-MM-dd').format(latest.date)),
+            );
+          },
+          loading: () => const SizedBox.shrink(),
+          error: (e, s) => const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }  
+
+  // 这是我们统一的、使用直线风格的图表构建方法
+  Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots) {
+    final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: '¥');
+    final colorScheme = Theme.of(context).colorScheme;
+
+    double? bottomInterval;
+    if (spots.length > 1) {
+      final firstMs = spots.first.x;
+      final lastMs = spots.last.x;
+      final durationMillis = (lastMs - firstMs).abs();
+      const desiredLabelCount = 4.0;
+      if (durationMillis > 0) {
+        bottomInterval = durationMillis / desiredLabelCount;
+      }
+    }
+
+    return SizedBox(
+      height: 200,
+      child: LineChart(
+        LineChartData(
+          minX: spots.first.x,
+          maxX: spots.last.x,
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: false, // 使用直线
+              barWidth: 3,
+              color: colorScheme.primary, 
+              dotData: const FlDotData(show: true), // 显示数据点
+              belowBarData: BarAreaData(show: false),
+            ),
+          ],
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 50, getTitlesWidget: (value, meta) => Text(currencyFormat.format(value), style: const TextStyle(fontSize: 10)))),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true, 
+                reservedSize: 30, 
+                interval: bottomInterval, 
+                getTitlesWidget: (value, meta) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(DateFormat('yy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(value.toInt())), style: const TextStyle(fontSize: 10), textAlign: TextAlign.center,),
+                  );
+                }
+              )
+            ),
+          ),
+          gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1)),
+          borderData: FlBorderData(show: false),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots.map((spot) {
+                  final date = DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(spot.x.toInt()));
+                  final value = NumberFormat.currency(locale: 'zh_CN', symbol: '¥').format(spot.y);
+                  return LineTooltipItem(
+                    '$date\n$value',
+                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  );
+                }).toList();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }  
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -101,6 +223,33 @@ class ShareAssetDetailPage extends ConsumerWidget {
             padding: const EdgeInsets.all(16.0),
             children: [
               _buildPerformanceCard(context, ref, asset),
+              const SizedBox(height: 24),
+
+              // --- 新增：调用历史净值图表 ---
+              if (asset.subType == AssetSubType.mutualFund) // 只对场外基金显示
+                ref.watch(assetNavHistoryProvider(asset)).when(
+                  data: (spots) {
+                    if (spots.length < 2) return const SizedBox.shrink();
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('历史净值趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 24),
+                            _buildHistoryChart(context, spots),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (e,s) => const SizedBox.shrink(),
+                ),
+              
+              const SizedBox(height: 24),
+              _buildSnapshotHistory(context, ref, asset),
             ],
           );
         },
