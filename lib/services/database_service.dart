@@ -7,7 +7,7 @@ import 'package:one_five_one_ten/models/transaction.dart'; // <--- 新增 import
 import 'package:path_provider/path_provider.dart';
 
 class DatabaseService {
-  late final Isar isar;
+  late Isar isar;
   DatabaseService._();
   static final DatabaseService _instance = DatabaseService._();
   factory DatabaseService() => _instance;

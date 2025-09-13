@@ -18,9 +18,13 @@ dependencies:
   flutter_riverpod: ^2.4.9
   cupertino_icons: ^1.0.2
   intl: ^0.19.0
-  http: ^1.1.0 
   gbk_codec: ^0.4.0
   fl_chart: ^0.68.0
+  file_picker: ^8.0.0+1
+  msal_flutter: ^2.0.1
+  http: ^1.2.2
+  shared_preferences: ^2.3.2
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
