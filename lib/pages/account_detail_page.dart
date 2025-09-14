@@ -37,6 +37,7 @@ final trackedAssetsWithPerformanceProvider =
   final isar = DatabaseService().isar;
   final calculator = CalculatorService();
 
+  // 监听账户对象的变化，以便在子资产列表变化时刷新
   return isar.accounts
       .watchObject(accountId, fireImmediately: true)
       .asyncMap((account) async {
@@ -45,6 +46,7 @@ final trackedAssetsWithPerformanceProvider =
     await account.trackedAssets.load();
     final assets = account.trackedAssets.toList();
     
+    // 异步计算所有子资产的业绩
     final List<Map<String, dynamic>> results = [];
     for (final asset in assets) {
       Map<String, dynamic> performanceData;
@@ -63,6 +65,7 @@ final trackedAssetsWithPerformanceProvider =
 });
 
 final accountHistoryProvider = FutureProvider.autoDispose.family<List<FlSpot>, Account>((ref, account) {
+  // 依赖业绩provider，当业绩刷新时（例如添加了新交易），图表也自动刷新
   ref.watch(accountPerformanceProvider(account.id));
   return CalculatorService().getAccountValueHistory(account);
 });
@@ -523,41 +526,19 @@ class AccountDetailPage extends ConsumerWidget {
     showDialog<bool>(
       context: context,
       builder: (dialogContext) {
-        final controller = TextEditingController();
-        bool isButtonEnabled = false;
-
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
               title: Text('删除资产 "${asset.name}"'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('此操作不可撤销，将删除此资产下的所有记录。\n请输入资产名称以确认:'),
-                  const SizedBox(height: 8),
-                  Text(asset.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    decoration: const InputDecoration(hintText: '在此处输入名称'),
-                    onChanged: (value) {
-                      setState(() {
-                        isButtonEnabled = (value == asset.name);
-                      });
-                    },
-                  ),
-                ],
-              ),
+              content: const Text('此操作不可撤销，将删除此资产下的所有记录。'),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(false),
                   child: const Text('取消'),
                 ),
                 TextButton(
-                  onPressed: isButtonEnabled ? () => Navigator.of(dialogContext).pop(true) : null,
-                  child: Text('删除', style: TextStyle(color: isButtonEnabled ? Colors.red : Colors.grey)),
+                  onPressed:() => Navigator.of(dialogContext).pop(true),
+                  child: const Text('删除', style: TextStyle(color: Colors.red)),
                 ),
               ],
             );
