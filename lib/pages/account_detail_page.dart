@@ -86,13 +86,18 @@ class AccountDetailPage extends ConsumerWidget {
             return const Center(child: CircularProgressIndicator());
           }
           final account = asyncAccount.asData!.value!;
-          return ListView(
-            padding: const EdgeInsets.all(16.0),
-            children: [
-              _buildMacroView(context, ref, account, performance),
-              const SizedBox(height: 24),
-              _buildMicroView(context, ref, accountId),
-            ],
+          return RefreshIndicator(
+             onRefresh: () async {
+                ref.invalidate(accountPerformanceProvider(accountId));
+             },
+            child: ListView(
+              padding: const EdgeInsets.all(16.0),
+              children: [
+                _buildMacroView(context, ref, account, performance),
+                const SizedBox(height: 24),
+                _buildMicroView(context, ref, accountId),
+              ],
+            ),
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -401,7 +406,7 @@ class AccountDetailPage extends ConsumerWidget {
                     children: [
                       const Text('账户净值趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 24),
-                      _buildHistoryChart(context, spots),
+                      _buildHistoryChart(context, spots, account),
                     ],
                   ),
                 ),
@@ -518,19 +523,41 @@ class AccountDetailPage extends ConsumerWidget {
     showDialog<bool>(
       context: context,
       builder: (dialogContext) {
+        final controller = TextEditingController();
+        bool isButtonEnabled = false;
+
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
               title: Text('删除资产 "${asset.name}"'),
-              content: const Text('此操作不可撤销，将删除此资产下的所有记录。'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('此操作不可撤销，将删除此资产下的所有记录。\n请输入资产名称以确认:'),
+                  const SizedBox(height: 8),
+                  Text(asset.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    decoration: const InputDecoration(hintText: '在此处输入名称'),
+                    onChanged: (value) {
+                      setState(() {
+                        isButtonEnabled = (value == asset.name);
+                      });
+                    },
+                  ),
+                ],
+              ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(false),
                   child: const Text('取消'),
                 ),
                 TextButton(
-                  onPressed:() => Navigator.of(dialogContext).pop(true),
-                  child: const Text('删除', style: TextStyle(color: Colors.red)),
+                  onPressed: isButtonEnabled ? () => Navigator.of(dialogContext).pop(true) : null,
+                  child: Text('删除', style: TextStyle(color: isButtonEnabled ? Colors.red : Colors.grey)),
                 ),
               ],
             );
@@ -562,8 +589,8 @@ class AccountDetailPage extends ConsumerWidget {
     });
   }
 
-  Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots) {
-    final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: '¥');
+  Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots, Account account) {
+    final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: getCurrencySymbol(account.currency));
     final colorScheme = Theme.of(context).colorScheme;
     
     double? bottomInterval;
@@ -618,7 +645,7 @@ class AccountDetailPage extends ConsumerWidget {
               getTooltipItems: (touchedSpots) {
                 return touchedSpots.map((spot) {
                   final date = DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(spot.x.toInt()));
-                  final value = NumberFormat.currency(locale: 'zh_CN', symbol: '¥').format(spot.y);
+                  final value = formatCurrency(spot.y, account.currency);
                   return LineTooltipItem(
                     '$date\n$value',
                     const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),

@@ -62,33 +62,38 @@ class ValueAssetDetailPage extends ConsumerWidget {
             return const Center(child: CircularProgressIndicator());
           }
           final asset = asyncAsset.asData!.value!;
-          return ListView(
-            padding: const EdgeInsets.all(16.0),
-            children: [
-              _buildPerformanceCard(context, ref, asset, performance),
-              const SizedBox(height: 24),
-              // 调用图表
-              ref.watch(valueAssetHistoryProvider(asset)).when(
-                data: (spots) {
-                  if (spots.length < 2) return const SizedBox.shrink();
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('资产净值趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 24),
-                          _buildHistoryChart(context, spots),
-                        ],
+          return RefreshIndicator(
+            onRefresh: () async {
+              ref.invalidate(valueAssetPerformanceProvider(assetId));
+            },
+            child: ListView(
+              padding: const EdgeInsets.all(16.0),
+              children: [
+                _buildPerformanceCard(context, ref, asset, performance),
+                const SizedBox(height: 24),
+                // --- 新增：调用图表 ---
+                ref.watch(valueAssetHistoryProvider(asset)).when(
+                  data: (spots) {
+                    if (spots.length < 2) return const SizedBox.shrink();
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('资产净值趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 24),
+                            _buildLineChart(context, spots, asset),
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
-                loading: () => const SizedBox.shrink(),
-                error: (e,s) => const SizedBox.shrink(),
-              ),
-            ],
+                    );
+                  },
+                  loading: () => const SizedBox.shrink(),
+                  error: (err, stack) => const SizedBox.shrink(),
+                ),
+              ],
+            ),
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -297,9 +302,32 @@ class ValueAssetDetailPage extends ConsumerWidget {
     );
   }
 
-  // --- 新增：独立的图表构建方法 ---
-  Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots) {
-    final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: '¥');
+  Widget _buildHistoryChart(BuildContext context, WidgetRef ref, Asset asset) {
+    final asyncHistory = ref.watch(valueAssetHistoryProvider(asset));
+    return asyncHistory.when(
+      data: (spots) {
+        if (spots.length < 2) return const SizedBox.shrink();
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('资产净值趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 24),
+                _buildLineChart(context, spots, asset), // 传入asset
+              ],
+            ),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (err, stack) => const SizedBox.shrink(),
+    );
+  }
+  
+  Widget _buildLineChart(BuildContext context, List<FlSpot> spots, Asset asset) {
+    final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: getCurrencySymbol(asset.currency));
     final colorScheme = Theme.of(context).colorScheme;
     
     double? bottomInterval;
@@ -354,7 +382,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
               getTooltipItems: (touchedSpots) {
                 return touchedSpots.map((spot) {
                   final date = DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(spot.x.toInt()));
-                  final value = NumberFormat.currency(locale: 'zh_CN', symbol: '¥').format(spot.y);
+                  final value = formatCurrency(spot.y, asset.currency);
                   return LineTooltipItem(
                     '$date\n$value',
                     const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),

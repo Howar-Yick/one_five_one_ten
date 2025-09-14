@@ -30,7 +30,7 @@ final snapshotHistoryProvider = StreamProvider.autoDispose.family<List<PositionS
     if (asset != null) {
       await asset.snapshots.load();
       final snapshots = asset.snapshots.toList();
-      snapshots.sort((a, b) => b.date.compareTo(a.date));
+      snapshots.sort((a, b) => b.date.compareTo(a.date)); // 按日期降序，显示最新
       return snapshots;
     }
     return [];
@@ -116,37 +116,43 @@ class ShareAssetDetailPage extends ConsumerWidget {
       body: asyncAsset.when(
         data: (asset) {
           if (asset == null) return const Center(child: Text('未找到该资产'));
-          return ListView(
-            padding: const EdgeInsets.all(16.0),
-            children: [
-              _buildPerformanceCard(context, ref, asset),
-              const SizedBox(height: 24),
-
-              // 为所有份额法资产（股票/ETF/场外）显示图表
-              ref.watch(assetNavHistoryProvider(asset)).when(
-                data: (spots) {
-                  if (spots.length < 2) return const SizedBox.shrink(); 
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('历史价格趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 24),
-                          _buildHistoryChart(context, spots, asset), // 传入asset
-                        ],
+          return RefreshIndicator(
+            onRefresh: () async {
+               ref.invalidate(shareAssetPerformanceProvider(assetId));
+               ref.invalidate(assetNavHistoryProvider(asset));
+            },
+            child: ListView(
+              padding: const EdgeInsets.all(16.0),
+              children: [
+                _buildPerformanceCard(context, ref, asset),
+                const SizedBox(height: 24),
+                
+                // 为所有份额法资产（股票/ETF/场外）显示图表
+                ref.watch(assetNavHistoryProvider(asset)).when(
+                  data: (spots) {
+                    if (spots.length < 2) return const SizedBox.shrink(); 
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('历史价格趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 24),
+                            _buildHistoryChart(context, spots, asset), // 传入asset
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e,s) => const SizedBox.shrink(),
-              ),
-              
-              const SizedBox(height: 24),
-              _buildSnapshotHistory(context, ref, asset),
-            ],
+                    );
+                  },
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (e,s) => const SizedBox.shrink(),
+                ),
+                
+                const SizedBox(height: 24),
+                _buildSnapshotHistory(context, ref, asset),
+              ],
+            ),
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -218,7 +224,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    icon: const Icon(Icons.sync),
+                    icon: const Icon(Icons.sync_alt), // 更改图标以示区分
                     label: const Text('更新持仓快照'),
                     onPressed: () => _showUpdateSnapshotDialog(context, ref, asset),
                   ),
@@ -243,7 +249,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
           children: [
             const Text('持仓快照历史', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             IconButton(
-              icon: const Icon(Icons.edit_note), // 使用不同的图标
+              icon: const Icon(Icons.edit_note), 
               tooltip: '管理历史快照',
               onPressed: () {
                 Navigator.of(context).push(
@@ -291,7 +297,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(controller: sharesController, decoration: const InputDecoration(labelText: '最新总份额'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                  TextField(controller: costController, decoration: const InputDecoration(labelText: '最新单位成本'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                  TextField(controller: costController, decoration: InputDecoration(labelText: '最新单位成本', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                   TextField(controller: priceController, decoration: InputDecoration(labelText: '最新价格 (可选)', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                   const SizedBox(height: 16),
                   Row(
@@ -333,14 +339,14 @@ class ShareAssetDetailPage extends ConsumerWidget {
                       
                       await isar.writeTxn(() async {
                         await isar.assets.put(asset);
-                        await isar.positionSnapshots.put(newSnapshot);
+                        await isar.collection<PositionSnapshot>().put(newSnapshot);
                         await newSnapshot.asset.save();
                       });
 
                       ref.invalidate(shareAssetPerformanceProvider(assetId));
                       if (dialogContext.mounted) {
                         Navigator.of(dialogContext).pop();
-                         Navigator.of(context).pushReplacement( // 使用Replacement确保历史列表刷新
+                         Navigator.of(context).pushReplacement( 
                           MaterialPageRoute(
                             builder: (_) => SnapshotHistoryPage(assetId: asset.id),
                           ),
@@ -380,7 +386,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
                   final isar = DatabaseService().isar;
                   asset.latestPrice = price;
                   asset.priceUpdateDate = DateTime.now();
-                  await isar.writeTxn(() async => await isar.assets.put(asset));
+                  await isar.writeTxn(() async => await isar.collection<Asset>().put(asset));
                   ref.invalidate(shareAssetPerformanceProvider(assetId));
 
                   if(dialogContext.mounted) Navigator.of(dialogContext).pop();
