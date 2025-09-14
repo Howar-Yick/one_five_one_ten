@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:isar/isar.dart'; 
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
 import 'package:one_five_one_ten/models/asset.dart';
@@ -13,7 +14,7 @@ import 'package:one_five_one_ten/pages/transaction_history_page.dart';
 import 'package:one_five_one_ten/pages/value_asset_detail_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
-import 'package:fl_chart/fl_chart.dart';
+import 'package:one_five_one_ten/utils/currency_formatter.dart';
 
 final accountDetailProvider =
     FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
@@ -102,14 +103,13 @@ class AccountDetailPage extends ConsumerWidget {
 
   Widget _buildMacroView(BuildContext context, WidgetRef ref, Account account,
       Map<String, dynamic> performance) {
-    final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
     final percentFormat =
         NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
     final totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final profitRate = (performance['profitRate'] ?? 0.0) as double;
     final annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
     Color profitColor =
-        totalProfit > 0 ? Colors.red.shade400 : Colors.green.shade400;
+        totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade400;
     if (totalProfit == 0) {
       profitColor =
           Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
@@ -145,17 +145,17 @@ class AccountDetailPage extends ConsumerWidget {
             _buildMetricRow(
               context,
               '当前总值:',
-              currencyFormat.format(performance['currentValue'] ?? 0.0),
+              formatCurrency(performance['currentValue'] ?? 0.0, account.currency),
             ),
             _buildMetricRow(
               context,
               '净投入:',
-              currencyFormat.format(performance['netInvestment'] ?? 0.0),
+              formatCurrency(performance['netInvestment'] ?? 0.0, account.currency),
             ),
             _buildMetricRow(
               context,
               '总收益:',
-              '${currencyFormat.format(totalProfit)} (${percentFormat.format(profitRate)})',
+              '${formatCurrency(totalProfit, account.currency)} (${percentFormat.format(profitRate)})',
               color: profitColor,
             ),
             _buildMetricRow(
@@ -227,16 +227,15 @@ class AccountDetailPage extends ConsumerWidget {
                       controller: amountController,
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                          labelText: '金额', prefixText: '¥ ')),
+                      decoration: InputDecoration(
+                          labelText: '金额', prefixText: getCurrencySymbol(account.currency))),
                   const SizedBox(height: 16),
                   Row(
                     children: [
                       const Text("日期:", style: TextStyle(fontSize: 16)),
                       const Spacer(),
                       TextButton(
-                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate),
-                            style: const TextStyle(fontSize: 16)),
+                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
                         onPressed: () async {
                           final pickedDate = await showDatePicker(
                             context: context,
@@ -271,13 +270,22 @@ class AccountDetailPage extends ConsumerWidget {
                             ? TransactionType.invest
                             : TransactionType.withdraw
                         ..account.value = account;
+                      
                       await isar.writeTxn(() async {
-                        await isar.accountTransactions.put(newTxn);
+                        await isar.collection<AccountTransaction>().put(newTxn);
                         await newTxn.account.save();
                       });
-                      ref.invalidate(accountPerformanceProvider(account.id));
-                      if (dialogContext.mounted)
+                      
+                      ref.invalidate(accountPerformanceProvider(account.id)); 
+                      
+                      if (dialogContext.mounted) {
                         Navigator.of(dialogContext).pop();
+                         Navigator.of(context).push( 
+                          MaterialPageRoute(
+                            builder: (_) => TransactionHistoryPage(accountId: account.id),
+                          ),
+                        );
+                      }
                     }
                   },
                   child: const Text('保存'),
@@ -309,16 +317,15 @@ class AccountDetailPage extends ConsumerWidget {
                       controller: valueController,
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                          labelText: '当前总资产价值', prefixText: '¥ ')),
+                      decoration: InputDecoration(
+                          labelText: '当前总资产价值', prefixText: getCurrencySymbol(account.currency))),
                   const SizedBox(height: 16),
                   Row(
                     children: [
                       const Text("日期:", style: TextStyle(fontSize: 16)),
                       const Spacer(),
                       TextButton(
-                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate),
-                            style: const TextStyle(fontSize: 16)),
+                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
                         onPressed: () async {
                           final DateTime? pickedDate = await showDatePicker(
                             context: context,
@@ -352,12 +359,18 @@ class AccountDetailPage extends ConsumerWidget {
                         ..type = TransactionType.updateValue
                         ..account.value = account;
                       await isar.writeTxn(() async {
-                        await isar.accountTransactions.put(newTxn);
+                        await isar.collection<AccountTransaction>().put(newTxn);
                         await newTxn.account.save();
                       });
                       ref.invalidate(accountPerformanceProvider(account.id));
-                      if (dialogContext.mounted)
+                      if (dialogContext.mounted) {
                         Navigator.of(dialogContext).pop();
+                         Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => TransactionHistoryPage(accountId: account.id),
+                          ),
+                        );
+                      }
                     }
                   },
                   child: const Text('保存'),
@@ -379,7 +392,7 @@ class AccountDetailPage extends ConsumerWidget {
         if(account != null)
           ref.watch(accountHistoryProvider(account)).when(
             data: (spots) {
-              if (spots.isEmpty) return const SizedBox.shrink();
+              if (spots.length < 2) return const SizedBox.shrink();
               return Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
@@ -397,7 +410,7 @@ class AccountDetailPage extends ConsumerWidget {
             loading: () => const SizedBox.shrink(),
             error: (e,s) => const SizedBox.shrink(),
           ),
-
+        
         const SizedBox(height: 24),
 
         Row(
@@ -438,7 +451,6 @@ class AccountDetailPage extends ConsumerWidget {
     final Asset asset = assetData['asset'];
     final Map<String, dynamic> performance = assetData['performance'];
     
-    final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
     final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
 
     final double totalValue = (asset.trackingMethod == AssetTrackingMethod.shareBased
@@ -457,7 +469,7 @@ class AccountDetailPage extends ConsumerWidget {
         leading: Icon(asset.trackingMethod == AssetTrackingMethod.shareBased 
           ? Icons.pie_chart_outline
           : Icons.account_balance_wallet_outlined),
-        title: Text(asset.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text('${asset.name} (${asset.currency})', style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -465,8 +477,8 @@ class AccountDetailPage extends ConsumerWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(child: Text('市值/价值: ${currencyFormat.format(totalValue)}', overflow: TextOverflow.ellipsis)),
-                Text('收益: ${currencyFormat.format(totalProfit)} (${percentFormat.format(profitRate)})', 
+                Expanded(child: Text('市值/价值: ${formatCurrency(totalValue, asset.currency)}', overflow: TextOverflow.ellipsis)),
+                Text('收益: ${formatCurrency(totalProfit, asset.currency)} (${percentFormat.format(profitRate)})', 
                   style: TextStyle(color: profitColor)),
               ],
             ),
@@ -474,7 +486,7 @@ class AccountDetailPage extends ConsumerWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(''),
+                const Text(''), // 占位符
                 Text('年化: ${percentFormat.format(annualizedReturn)}',
                   style: TextStyle(color: profitColor, fontSize: 12)),
               ],
@@ -506,9 +518,6 @@ class AccountDetailPage extends ConsumerWidget {
     showDialog<bool>(
       context: context,
       builder: (dialogContext) {
-        final controller = TextEditingController();
-        bool isButtonEnabled = false;
-
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
@@ -556,16 +565,7 @@ class AccountDetailPage extends ConsumerWidget {
   Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots) {
     final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: '¥');
     final colorScheme = Theme.of(context).colorScheme;
-
-    if (spots.length < 2) {
-      return const SizedBox(
-        height: 200,
-        child: Center(
-          child: Text('历史数据不足，无法生成图表'),
-        ),
-      );
-    }
-
+    
     double? bottomInterval;
     if (spots.length > 1) {
       final firstMs = spots.first.x;
@@ -586,42 +586,32 @@ class AccountDetailPage extends ConsumerWidget {
           lineBarsData: [
             LineChartBarData(
               spots: spots,
-              isCurved: false, // 修正：确保曲线是直线连接，避免“回旋”
+              isCurved: false,
               barWidth: 3,
-              color: colorScheme.primary, // 修正：使用主题主色
+              color: colorScheme.primary, 
               dotData: const FlDotData(show: true),
               belowBarData: BarAreaData(show: false),
             ),
           ],
           titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 50,
-                getTitlesWidget: (value, meta) => Text(currencyFormat.format(value), style: const TextStyle(fontSize: 10)),
-              ),
-            ),
+            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 50, getTitlesWidget: (value, meta) => Text(currencyFormat.format(value), style: const TextStyle(fontSize: 10)))),
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 30,
-                interval: bottomInterval,
+                showTitles: true, 
+                reservedSize: 30, 
+                interval: bottomInterval, 
                 getTitlesWidget: (value, meta) {
                   return Padding(
                     padding: const EdgeInsets.only(top: 8.0),
                     child: Text(DateFormat('yy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(value.toInt())), style: const TextStyle(fontSize: 10), textAlign: TextAlign.center,),
                   );
                 }
-              ),
+              )
             ),
           ),
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1),
-          ),
+          gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1)),
           borderData: FlBorderData(show: false),
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(

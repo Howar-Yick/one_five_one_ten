@@ -1,21 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:isar/isar.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/pages/add_edit_asset_page.dart';
 import 'package:one_five_one_ten/pages/asset_transaction_history_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
-import 'package:fl_chart/fl_chart.dart';
-
-// Provider 用于获取单个价值法资产的历史数据点
-final valueAssetHistoryProvider = FutureProvider.autoDispose.family<List<FlSpot>, Asset>((ref, asset) {
-  // 当资产的业绩数据变化时（例如用户添加新交易），图表也应该自动刷新
-  ref.watch(valueAssetPerformanceProvider(asset.id));
-  // 调用我们已在 CalculatorService 中创建的、使用新混合逻辑的函数
-  return CalculatorService().getValueAssetHistory(asset);
-});
+import 'package:one_five_one_ten/utils/currency_formatter.dart';
 
 final valueAssetDetailProvider = FutureProvider.autoDispose.family<Asset?, int>((ref, assetId) {
   final isar = DatabaseService().isar;
@@ -28,82 +22,14 @@ final valueAssetPerformanceProvider = FutureProvider.autoDispose.family<Map<Stri
   return CalculatorService().calculateValueAssetPerformance(asset);
 });
 
-
+final valueAssetHistoryProvider = FutureProvider.autoDispose.family<List<FlSpot>, Asset>((ref, asset) {
+  ref.watch(valueAssetPerformanceProvider(asset.id));
+  return CalculatorService().getValueAssetHistory(asset);
+});
 
 class ValueAssetDetailPage extends ConsumerWidget {
   final int assetId;
   const ValueAssetDetailPage({super.key, required this.assetId});
-
-  // 这是我们统一的、使用直线风格的图表构建方法
-  Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots) {
-    final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: '¥');
-    final colorScheme = Theme.of(context).colorScheme;
-
-    double? bottomInterval;
-    if (spots.length > 1) {
-      final firstMs = spots.first.x;
-      final lastMs = spots.last.x;
-      final durationMillis = (lastMs - firstMs).abs();
-      const desiredLabelCount = 4.0;
-      if (durationMillis > 0) {
-        bottomInterval = durationMillis / desiredLabelCount;
-      }
-    }
-
-    return SizedBox(
-      height: 200,
-      child: LineChart(
-        LineChartData(
-          minX: spots.first.x,
-          maxX: spots.last.x,
-          lineBarsData: [
-            LineChartBarData(
-              spots: spots,
-              isCurved: false, // 使用直线
-              barWidth: 3,
-              color: colorScheme.primary, 
-              dotData: const FlDotData(show: true), // 显示数据点
-              belowBarData: BarAreaData(show: false),
-            ),
-          ],
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 50, getTitlesWidget: (value, meta) => Text(currencyFormat.format(value), style: const TextStyle(fontSize: 10)))),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true, 
-                reservedSize: 30, 
-                interval: bottomInterval, 
-                getTitlesWidget: (value, meta) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(DateFormat('yy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(value.toInt())), style: const TextStyle(fontSize: 10), textAlign: TextAlign.center,),
-                  );
-                }
-              )
-            ),
-          ),
-          gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1)),
-          borderData: FlBorderData(show: false),
-          lineTouchData: LineTouchData(
-            touchTooltipData: LineTouchTooltipData(
-              getTooltipItems: (touchedSpots) {
-                return touchedSpots.map((spot) {
-                  final date = DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(spot.x.toInt()));
-                  final value = NumberFormat.currency(locale: 'zh_CN', symbol: '¥').format(spot.y);
-                  return LineTooltipItem(
-                    '$date\n$value',
-                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                  );
-                }).toList();
-              },
-            ),
-          ),
-        ),
-      ),
-    );
-  }  
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -132,14 +58,16 @@ class ValueAssetDetailPage extends ConsumerWidget {
       ),
       body: asyncPerformance.when(
         data: (performance) {
+          if (asyncAsset.asData?.value == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
           final asset = asyncAsset.asData!.value!;
           return ListView(
             padding: const EdgeInsets.all(16.0),
             children: [
               _buildPerformanceCard(context, ref, asset, performance),
               const SizedBox(height: 24),
-
-              // --- 新增：调用图表 ---
+              // 调用图表
               ref.watch(valueAssetHistoryProvider(asset)).when(
                 data: (spots) {
                   if (spots.length < 2) return const SizedBox.shrink();
@@ -170,12 +98,11 @@ class ValueAssetDetailPage extends ConsumerWidget {
   }
 
   Widget _buildPerformanceCard(BuildContext context, WidgetRef ref, Asset asset, Map<String, dynamic> performance) {
-    final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
     final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
     final totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final profitRate = (performance['profitRate'] ?? 0.0) as double;
     final annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
-    Color profitColor = totalProfit > 0 ? Colors.red.shade400 : Colors.green.shade400;
+    Color profitColor = totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade400;
     if (totalProfit == 0) profitColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
 
     return Card(
@@ -202,9 +129,9 @@ class ValueAssetDetailPage extends ConsumerWidget {
               ],
             ),
             const Divider(height: 20),
-            _buildMetricRow(context, '当前总值:', currencyFormat.format(performance['currentValue'] ?? 0.0)),
-            _buildMetricRow(context, '净投入:', currencyFormat.format(performance['netInvestment'] ?? 0.0)),
-            _buildMetricRow(context, '总收益:', '${currencyFormat.format(totalProfit)} (${percentFormat.format(profitRate)})', color: profitColor),
+            _buildMetricRow(context, '当前总值:', formatCurrency(performance['currentValue'] ?? 0.0, asset.currency)),
+            _buildMetricRow(context, '净投入:', formatCurrency(performance['netInvestment'] ?? 0.0, asset.currency)),
+            _buildMetricRow(context, '总收益:', '${formatCurrency(totalProfit, asset.currency)} (${percentFormat.format(profitRate)})', color: profitColor),
             _buildMetricRow(context, '年化收益率:', percentFormat.format(annualizedReturn), color: annualizedReturn > 0 ? Colors.red.shade400 : Colors.green.shade400),
             const SizedBox(height: 16),
             Row(
@@ -245,7 +172,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  TextField(controller: amountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: '金额', prefixText: '¥ ')),
+                  TextField(controller: amountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: '金额', prefixText: getCurrencySymbol(asset.currency))),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -269,15 +196,19 @@ class ValueAssetDetailPage extends ConsumerWidget {
                     final amount = double.tryParse(amountController.text);
                     if (amount != null && amount > 0) {
                       final isar = DatabaseService().isar;
+                      final isInvest = isSelected[0];
+
                       final newTxn = Transaction()
                         ..amount = amount
                         ..date = selectedDate
-                        ..type = isSelected[0] ? TransactionType.invest : TransactionType.withdraw
+                        ..type = isInvest ? TransactionType.invest : TransactionType.withdraw
                         ..asset.value = asset;
+                        
                       await isar.writeTxn(() async {
-                        await isar.transactions.put(newTxn);
+                        await isar.collection<Transaction>().put(newTxn);
                         await newTxn.asset.save();
                       });
+                      
                       ref.invalidate(valueAssetPerformanceProvider(asset.id));
                       if (dialogContext.mounted) {
                         Navigator.of(dialogContext).pop();
@@ -312,7 +243,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(controller: valueController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: '当前资产总价值', prefixText: '¥ ')),
+                  TextField(controller: valueController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: '当前资产总价值', prefixText: getCurrencySymbol(asset.currency))),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -363,6 +294,77 @@ class ValueAssetDetailPage extends ConsumerWidget {
           },
         );
       },
+    );
+  }
+
+  // --- 新增：独立的图表构建方法 ---
+  Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots) {
+    final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: '¥');
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    double? bottomInterval;
+    if (spots.length > 1) {
+      final firstMs = spots.first.x;
+      final lastMs = spots.last.x;
+      final durationMillis = (lastMs - firstMs).abs();
+      const desiredLabelCount = 4.0;
+      if (durationMillis > 0) {
+        bottomInterval = durationMillis / desiredLabelCount;
+      }
+    }
+
+    return SizedBox(
+      height: 200,
+      child: LineChart(
+        LineChartData(
+          minX: spots.first.x,
+          maxX: spots.last.x,
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: false,
+              barWidth: 3,
+              color: colorScheme.primary, 
+              dotData: const FlDotData(show: true),
+              belowBarData: BarAreaData(show: false),
+            ),
+          ],
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 50, getTitlesWidget: (value, meta) => Text(currencyFormat.format(value), style: const TextStyle(fontSize: 10)))),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true, 
+                reservedSize: 30, 
+                interval: bottomInterval, 
+                getTitlesWidget: (value, meta) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(DateFormat('yy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(value.toInt())), style: const TextStyle(fontSize: 10), textAlign: TextAlign.center,),
+                  );
+                }
+              )
+            ),
+          ),
+          gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1)),
+          borderData: FlBorderData(show: false),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots.map((spot) {
+                  final date = DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(spot.x.toInt()));
+                  final value = NumberFormat.currency(locale: 'zh_CN', symbol: '¥').format(spot.y);
+                  return LineTooltipItem(
+                    '$date\n$value',
+                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  );
+                }).toList();
+              },
+            ),
+          ),
+        ),
+      ),
     );
   }
 

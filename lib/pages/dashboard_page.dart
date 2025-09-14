@@ -51,8 +51,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Widget build(BuildContext context) {
     final asyncPerformance = ref.watch(globalPerformanceProvider);
     final asyncAllocation = ref.watch(assetAllocationProvider);
-
-    final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
+    final asyncHistory = ref.watch(globalHistoryProvider);
+    
     final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
 
     return Scaffold(
@@ -64,6 +64,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             tooltip: '刷新数据',
             onPressed: () {
               ref.invalidate(globalPerformanceProvider);
+              // 依赖 globalPerformanceProvider 的 provider 会自动刷新
             },
           )
         ],
@@ -89,11 +90,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('总资产', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                        const Text('总资产 (CNY)', style: TextStyle(fontSize: 18, color: Colors.grey)),
                         const SizedBox(height: 8),
-                        Text(currencyFormat.format(totalValue), style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+                        Text(formatCurrency(totalValue, 'CNY'), style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
                         const Divider(height: 24),
-                        _buildMetricRow(context, '累计收益:', '${currencyFormat.format(totalProfit)} (${percentFormat.format(totalProfitRate)})', profitColor),
+                        _buildMetricRow(context, '累计收益:', '${formatCurrency(totalProfit, 'CNY')} (${percentFormat.format(totalProfitRate)})', profitColor),
                         const SizedBox(height: 8),
                         _buildMetricRow(context, '总年化收益率:', percentFormat.format(globalAnnualizedReturn), profitColor),
                       ],
@@ -105,44 +106,41 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               error: (err, stack) => Card(child: SizedBox(height: 170, child: Center(child: Text('加载失败: $err')))),
             ),
             const SizedBox(height: 24),
-
-            // --- 移除总资产趋势图表 ---
-            // Card(
-            //   child: Padding(
-            //     padding: const EdgeInsets.all(16.0),
-            //     child: Column(
-            //       crossAxisAlignment: CrossAxisAlignment.start,
-            //       children: [
-            //         const Text('总资产趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            //         const SizedBox(height: 24),
-            //         ref.watch(globalHistoryProvider).when(
-            //               data: (spots) {
-            //                 if (spots.length < 2) return const SizedBox(height: 200, child: Center(child: Text('历史数据不足，无法生成图表')));
-            //                 return _buildHistoryChart(context, spots);
-            //               },
-            //               loading: () => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
-            //               error: (err, stack) => SizedBox(height: 200, child: Center(child: Text('图表加载失败: $err'))),
-            //             ),
-            //       ],
-            //     ),
-            //   ),
-            // ),
-            // const SizedBox(height: 24),
-
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('资产配置', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text('总资产趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 24),
+                    asyncHistory.when(
+                          data: (spots) {
+                            if (spots.length < 2) return const SizedBox(height: 200, child: Center(child: Text('历史数据不足，无法生成图表')));
+                            return _buildHistoryChart(context, spots);
+                          },
+                          loading: () => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
+                          error: (err, stack) => SizedBox(height: 200, child: Center(child: Text('图表加载失败: $err'))),
+                        ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('资产配置 (CNY)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 24),
                     asyncAllocation.when(
                       data: (allocation) {
                         if (allocation.isEmpty) {
                           return const SizedBox(height: 200, child: Center(child: Text('暂无持仓资产数据')));
                         }
-
+                        
                         final totalAssetValue = allocation.values.fold(0.0, (sum, item) => sum + item);
                         int colorIndex = 0;
 
@@ -170,7 +168,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                                     final radius = isTouched ? 90.0 : 80.0;
                                     final entry = allocation.entries.elementAt(index);
                                     final percentage = (entry.value / totalAssetValue) * 100;
-
+                                    
                                     return PieChartSectionData(
                                       value: entry.value,
                                       title: '${percentage.toStringAsFixed(1)}%',
@@ -197,7 +195,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                                     const SizedBox(width: 8),
                                     Text('${_getSubTypeLabel(entry.key)} (${percentFormat.format(entry.value/totalAssetValue)})'),
                                     const Spacer(),
-                                    Text(currencyFormat.format(entry.value))
+                                    Text(formatCurrency(entry.value, 'CNY'))
                                   ],
                                 ),
                               );
