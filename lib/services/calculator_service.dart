@@ -9,6 +9,7 @@ import 'package:one_five_one_ten/utils/xirr.dart';
 import 'package:one_five_one_ten/services/database_service.dart'; // <--- 修正：添加这一行
 import 'package:intl/intl.dart';
 
+
 // ----- 辅助类：用于处理价值法计算和图表的数据点 -----
 class _ValueHistoryPoint {
   final DateTime date;

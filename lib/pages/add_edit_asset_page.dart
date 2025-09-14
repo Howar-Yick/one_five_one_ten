@@ -6,7 +6,8 @@ import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
-import 'package:one_five_one_ten/pages/account_detail_page.dart';
+// 确保引入这些页面，以便 invalidating Providers
+import 'package:one_five_one_ten/pages/account_detail_page.dart'; 
 import 'package:one_five_one_ten/pages/share_asset_detail_page.dart';
 import 'package:one_five_one_ten/pages/value_asset_detail_page.dart';
 
@@ -33,31 +34,50 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   final _latestPriceController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
   
+  String _selectedCurrency = 'CNY'; // 必须提供一个在列表中的有效默认值
+  Account? _parentAccount; 
   Asset? _editingAsset;
-  bool _isLoading = true;
+  bool _isLoading = true; // 默认设置为 true
 
   bool get _isEditing => widget.assetId != null;
 
   @override
   void initState() {
     super.initState();
-    if (_isEditing) {
-      _loadAssetData();
-    } else {
-      _isLoading = false;
-    }
+    // 调用一个统一的异步函数来加载所有数据
+    _loadInitialData();
   }
 
-  Future<void> _loadAssetData() async {
+  // --- 修正：新的、安全的加载逻辑 ---
+  Future<void> _loadInitialData() async {
     final isar = DatabaseService().isar;
-    final asset = await isar.assets.get(widget.assetId!);
-    if (asset != null) {
+    // 1. 无论如何，首先加载父账户
+    _parentAccount = await isar.accounts.get(widget.accountId);
+
+    if (_isEditing) {
+      // 2. 如果是编辑模式，再去加载要编辑的资产
+      _editingAsset = await isar.assets.get(widget.assetId!);
+      if (_editingAsset != null) {
+        // 3. 用加载到的数据填充表单
+        _nameController.text = _editingAsset!.name;
+        _codeController.text = _editingAsset!.code;
+        _selectedMethod = _editingAsset!.trackingMethod;
+        _selectedSubType = _editingAsset!.subType;
+        _selectedCurrency = _editingAsset!.currency;
+      }
+    } else {
+      // 4. 如果是新建模式，继承父账户的币种作为默认值
+      _selectedCurrency = _parentAccount?.currency ?? 'CNY';
+    }
+
+    // 5. 确保 _selectedCurrency 始终是一个有效值
+    if (!['CNY', 'USD', 'HKD'].contains(_selectedCurrency)) {
+      _selectedCurrency = 'CNY';
+    }
+
+    // 6. 所有异步数据都准备好后，才更新UI，隐藏加载动画
+    if (mounted) {
       setState(() {
-        _editingAsset = asset;
-        _nameController.text = asset.name;
-        _codeController.text = asset.code;
-        _selectedMethod = asset.trackingMethod;
-        _selectedSubType = asset.subType;
         _isLoading = false;
       });
     }
@@ -77,7 +97,10 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   Future<void> _saveAsset() async {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
-
+    
+    // 由于 _loadInitialData 保证了 _parentAccount 必定在 build 之前被加载
+    // 所以这里的 _parentAccount! 调用现在是安全的
+    final parentAccount = _parentAccount!; 
     final isar = DatabaseService().isar;
 
     if (_isEditing) {
@@ -85,6 +108,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
       assetToUpdate.name = _nameController.text.trim();
       assetToUpdate.code = _codeController.text.trim();
       assetToUpdate.subType = _selectedSubType;
+      assetToUpdate.currency = _selectedCurrency;
       
       await isar.writeTxn(() async {
         await isar.assets.put(assetToUpdate);
@@ -97,13 +121,11 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         ref.invalidate(valueAssetDetailProvider(assetToUpdate.id));
       }
     } else {
-      final parentAccount = await isar.accounts.get(widget.accountId);
-      if (parentAccount == null) return;
-
       final newAsset = Asset()
         ..name = _nameController.text.trim()
         ..trackingMethod = _selectedMethod
         ..subType = _selectedSubType
+        ..currency = _selectedCurrency
         ..account.value = parentAccount;
 
       final priceText = _latestPriceController.text.trim();
@@ -164,65 +186,92 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           IconButton(
             icon: const Icon(Icons.save),
             tooltip: '保存',
-            onPressed: _saveAsset,
+            onPressed: _isLoading ? null : _saveAsset, // 在加载时禁用保存按钮
           ),
         ],
       ),
-      body: _isLoading ? const Center(child: CircularProgressIndicator()) : Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16.0),
-          children: [
-            if (!_isEditing)
-              SegmentedButton<AssetTrackingMethod>(
-                segments: const [
-                  ButtonSegment(value: AssetTrackingMethod.shareBased, label: Text('份额法'), icon: Icon(Icons.pie_chart)),
-                  ButtonSegment(value: AssetTrackingMethod.valueBased, label: Text('价值法'), icon: Icon(Icons.account_balance_wallet)),
-                ],
-                selected: {_selectedMethod},
-                onSelectionChanged: (newSelection) {
-                  setState(() { _selectedMethod = newSelection.first; });
-                },
-              ),
-            const SizedBox(height: 24),
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: '资产名称', border: OutlineInputBorder()),
-              validator: (value) => (value == null || value.isEmpty) ? '请输入资产名称' : null,
-            ),
-            const SizedBox(height: 16),
-            
-            if (_selectedMethod == AssetTrackingMethod.shareBased)
-              ..._buildShareBasedForm()
-            else
-              ..._buildValueBasedForm(),
-            
-            if (!_isEditing) ...[
-              const SizedBox(height: 16),
-              const Divider(),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.calendar_today),
-                title: const Text('初始记录日期'),
-                trailing: TextButton(
-                  child: Text(DateFormat('yyyy-MM-dd').format(_selectedDate)),
-                  onPressed: () async {
-                    final pickedDate = await showDatePicker(
-                      context: context,
-                      initialDate: _selectedDate,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime.now(),
-                    );
-                    if (pickedDate != null) {
-                      setState(() { _selectedDate = pickedDate; });
-                    }
-                  },
+      // --- 修正：用 _isLoading 来控制显示加载动画还是表单 ---
+      body: _isLoading 
+        ? const Center(child: CircularProgressIndicator()) 
+        : Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.all(16.0),
+              children: [
+                if (!_isEditing)
+                  SegmentedButton<AssetTrackingMethod>(
+                    segments: const [
+                      ButtonSegment(value: AssetTrackingMethod.shareBased, label: Text('份额法'), icon: Icon(Icons.pie_chart)),
+                      ButtonSegment(value: AssetTrackingMethod.valueBased, label: Text('价值法'), icon: Icon(Icons.account_balance_wallet)),
+                    ],
+                    selected: {_selectedMethod},
+                    onSelectionChanged: (newSelection) {
+                      setState(() { _selectedMethod = newSelection.first; });
+                    },
+                  ),
+                const SizedBox(height: 24),
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(labelText: '资产名称', border: OutlineInputBorder()),
+                  validator: (value) => (value == null || value.isEmpty) ? '请输入资产名称' : null,
                 ),
-              ),
-            ]
-          ],
-        ),
-      ),
+                const SizedBox(height: 16),
+                
+                if (_selectedMethod == AssetTrackingMethod.shareBased)
+                  ..._buildShareBasedForm()
+                else
+                  ..._buildValueBasedForm(),
+                
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('资产币种:', style: TextStyle(fontSize: 16)),
+                    DropdownButton<String>(
+                      value: _selectedCurrency,
+                      items: ['CNY', 'USD', 'HKD'].map((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
+                      onChanged: (newValue) {
+                        if (newValue != null) {
+                          setState(() {
+                            _selectedCurrency = newValue;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                
+                if (!_isEditing) ...[
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.calendar_today),
+                    title: const Text('初始记录日期'),
+                    trailing: TextButton(
+                      child: Text(DateFormat('yyyy-MM-dd').format(_selectedDate)),
+                      onPressed: () async {
+                        final pickedDate = await showDatePicker(
+                          context: context,
+                          initialDate: _selectedDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime.now(),
+                        );
+                        if (pickedDate != null) {
+                          setState(() { _selectedDate = pickedDate; });
+                        }
+                      },
+                    ),
+                  ),
+                ]
+              ],
+            ),
+          ),
     );
   }
 
@@ -236,7 +285,6 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           ChoiceChip(
             label: const Text('股票'),
             selected: _selectedSubType == AssetSubType.stock,
-            // --- 修正：移除了 !_isEditing 的限制 ---
             onSelected: (selected) {
               if (selected) setState(() => _selectedSubType = AssetSubType.stock);
             },
@@ -244,7 +292,6 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           ChoiceChip(
             label: const Text('场内基金(ETF)'),
             selected: _selectedSubType == AssetSubType.etf,
-            // --- 修正：移除了 !_isEditing 的限制 ---
             onSelected: (selected) {
               if (selected) setState(() => _selectedSubType = AssetSubType.etf);
             },
@@ -252,7 +299,6 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           ChoiceChip(
             label: const Text('场外基金'),
             selected: _selectedSubType == AssetSubType.mutualFund,
-            // --- 修正：移除了 !_isEditing 的限制 ---
             onSelected: (selected) {
               if (selected) setState(() => _selectedSubType = AssetSubType.mutualFund);
             },

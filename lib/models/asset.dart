@@ -10,12 +10,11 @@ enum AssetTrackingMethod {
   shareBased,
 }
 
-// --- 新增：资产子类型枚举 ---
 enum AssetSubType {
-  stock,      // 股票
-  etf,        // 场内基金
-  mutualFund, // 场外基金
-  other,      // 其他
+  stock,
+  etf,
+  mutualFund,
+  other,
 }
 
 @collection
@@ -24,15 +23,16 @@ class Asset {
 
   @Index(type: IndexType.value)
   late String name;
-
   String code = '';
   double latestPrice = 0;
   DateTime? priceUpdateDate;
 
+  // --- 新增：币种字段 ---
+  @Index()
+  String currency = 'CNY'; // 默认为人民币
+
   @Enumerated(EnumType.name)
   late AssetTrackingMethod trackingMethod;
-
-  // --- 新增：资产子类型字段 ---
   @Enumerated(EnumType.name)
   late AssetSubType subType;
 

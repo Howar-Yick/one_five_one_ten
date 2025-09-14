@@ -65,42 +65,83 @@ class AccountsPage extends ConsumerWidget {
   }
 
   void _showAddAccountDialog(BuildContext context, WidgetRef ref) {
-    final nameController = TextEditingController();
+    final TextEditingController nameController = TextEditingController();
+    String selectedCurrency = 'CNY'; // 默认币种
+
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('添加新账户'),
-        content: TextField(
-          controller: nameController,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: '账户名称',
-            hintText: '例如：国金证券',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              if (name.isEmpty) return;
-              final isar = DatabaseService().isar;
-              final account = Account()
-                ..name = name
-                ..createdAt = DateTime.now();
-              await isar.writeTxn(() async {
-                await isar.accounts.put(account);
-              });
-              ref.invalidate(accountsProvider);
-              if (dialogContext.mounted) Navigator.of(dialogContext).pop();
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
+      builder: (BuildContext dialogContext) {
+        // 使用 StatefulBuilder 来管理对话框内部的币种选择状态
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('添加新账户'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: '账户名称',
+                      hintText: '例如：国金证券',
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('币种:', style: TextStyle(fontSize: 16)),
+                      DropdownButton<String>(
+                        value: selectedCurrency,
+                        items: ['CNY', 'USD', 'HKD'].map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value),
+                          );
+                        }).toList(),
+                        onChanged: (newValue) {
+                          if (newValue != null) {
+                            setState(() {
+                              selectedCurrency = newValue;
+                            });
+                          }
+                        },
+                      ),
+                    ],
+                  )
+                ],
+              ),
+              actions: <Widget>[
+                TextButton(
+                  child: const Text('取消'),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                ),
+                TextButton(
+                  child: const Text('保存'),
+                  onPressed: () async {
+                    final String name = nameController.text.trim();
+                    if (name.isNotEmpty) {
+                      final newAccount = Account()
+                        ..name = name
+                        ..createdAt = DateTime.now()
+                        ..currency = selectedCurrency; // 保存选择的币种
+                      
+                      final isar = DatabaseService().isar;
+                      await isar.writeTxn(() async {
+                        await isar.accounts.put(newAccount);
+                      });
+                      
+                      ref.invalidate(accountsProvider);
+                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

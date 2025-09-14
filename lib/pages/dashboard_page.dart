@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
+import 'package:one_five_one_ten/utils/currency_formatter.dart';
 
 final globalPerformanceProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   return CalculatorService().calculateGlobalPerformance();

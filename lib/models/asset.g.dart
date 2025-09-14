@@ -22,29 +22,34 @@ const AssetSchema = CollectionSchema(
       name: r'code',
       type: IsarType.string,
     ),
-    r'latestPrice': PropertySchema(
+    r'currency': PropertySchema(
       id: 1,
+      name: r'currency',
+      type: IsarType.string,
+    ),
+    r'latestPrice': PropertySchema(
+      id: 2,
       name: r'latestPrice',
       type: IsarType.double,
     ),
     r'name': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'name',
       type: IsarType.string,
     ),
     r'priceUpdateDate': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'priceUpdateDate',
       type: IsarType.dateTime,
     ),
     r'subType': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'subType',
       type: IsarType.string,
       enumMap: _AssetsubTypeEnumValueMap,
     ),
     r'trackingMethod': PropertySchema(
-      id: 5,
+      id: 6,
       name: r'trackingMethod',
       type: IsarType.string,
       enumMap: _AssettrackingMethodEnumValueMap,
@@ -65,6 +70,19 @@ const AssetSchema = CollectionSchema(
         IndexPropertySchema(
           name: r'name',
           type: IndexType.value,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'currency': IndexSchema(
+      id: 152811329157106879,
+      name: r'currency',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'currency',
+          type: IndexType.hash,
           caseSensitive: true,
         )
       ],
@@ -106,6 +124,7 @@ int _assetEstimateSize(
 ) {
   var bytesCount = offsets.last;
   bytesCount += 3 + object.code.length * 3;
+  bytesCount += 3 + object.currency.length * 3;
   bytesCount += 3 + object.name.length * 3;
   bytesCount += 3 + object.subType.name.length * 3;
   bytesCount += 3 + object.trackingMethod.name.length * 3;
@@ -119,11 +138,12 @@ void _assetSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeString(offsets[0], object.code);
-  writer.writeDouble(offsets[1], object.latestPrice);
-  writer.writeString(offsets[2], object.name);
-  writer.writeDateTime(offsets[3], object.priceUpdateDate);
-  writer.writeString(offsets[4], object.subType.name);
-  writer.writeString(offsets[5], object.trackingMethod.name);
+  writer.writeString(offsets[1], object.currency);
+  writer.writeDouble(offsets[2], object.latestPrice);
+  writer.writeString(offsets[3], object.name);
+  writer.writeDateTime(offsets[4], object.priceUpdateDate);
+  writer.writeString(offsets[5], object.subType.name);
+  writer.writeString(offsets[6], object.trackingMethod.name);
 }
 
 Asset _assetDeserialize(
@@ -134,15 +154,16 @@ Asset _assetDeserialize(
 ) {
   final object = Asset();
   object.code = reader.readString(offsets[0]);
+  object.currency = reader.readString(offsets[1]);
   object.id = id;
-  object.latestPrice = reader.readDouble(offsets[1]);
-  object.name = reader.readString(offsets[2]);
-  object.priceUpdateDate = reader.readDateTimeOrNull(offsets[3]);
+  object.latestPrice = reader.readDouble(offsets[2]);
+  object.name = reader.readString(offsets[3]);
+  object.priceUpdateDate = reader.readDateTimeOrNull(offsets[4]);
   object.subType =
-      _AssetsubTypeValueEnumMap[reader.readStringOrNull(offsets[4])] ??
+      _AssetsubTypeValueEnumMap[reader.readStringOrNull(offsets[5])] ??
           AssetSubType.stock;
   object.trackingMethod =
-      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[5])] ??
+      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[6])] ??
           AssetTrackingMethod.valueBased;
   return object;
 }
@@ -157,15 +178,17 @@ P _assetDeserializeProp<P>(
     case 0:
       return (reader.readString(offset)) as P;
     case 1:
-      return (reader.readDouble(offset)) as P;
-    case 2:
       return (reader.readString(offset)) as P;
+    case 2:
+      return (reader.readDouble(offset)) as P;
     case 3:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 4:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 5:
       return (_AssetsubTypeValueEnumMap[reader.readStringOrNull(offset)] ??
           AssetSubType.stock) as P;
-    case 5:
+    case 6:
       return (_AssettrackingMethodValueEnumMap[
               reader.readStringOrNull(offset)] ??
           AssetTrackingMethod.valueBased) as P;
@@ -427,6 +450,51 @@ extension AssetQueryWhere on QueryBuilder<Asset, Asset, QWhereClause> {
       }
     });
   }
+
+  QueryBuilder<Asset, Asset, QAfterWhereClause> currencyEqualTo(
+      String currency) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'currency',
+        value: [currency],
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterWhereClause> currencyNotEqualTo(
+      String currency) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'currency',
+              lower: [],
+              upper: [currency],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'currency',
+              lower: [currency],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'currency',
+              lower: [currency],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'currency',
+              lower: [],
+              upper: [currency],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
 }
 
 extension AssetQueryFilter on QueryBuilder<Asset, Asset, QFilterCondition> {
@@ -553,6 +621,136 @@ extension AssetQueryFilter on QueryBuilder<Asset, Asset, QFilterCondition> {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.greaterThan(
         property: r'code',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> currencyEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'currency',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> currencyGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'currency',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> currencyLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'currency',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> currencyBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'currency',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> currencyStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'currency',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> currencyEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'currency',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> currencyContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'currency',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> currencyMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'currency',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> currencyIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'currency',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> currencyIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'currency',
         value: '',
       ));
     });
@@ -1273,6 +1471,18 @@ extension AssetQuerySortBy on QueryBuilder<Asset, Asset, QSortBy> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortByCurrency() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'currency', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortByCurrencyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'currency', Sort.desc);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterSortBy> sortByLatestPrice() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'latestPrice', Sort.asc);
@@ -1344,6 +1554,18 @@ extension AssetQuerySortThenBy on QueryBuilder<Asset, Asset, QSortThenBy> {
   QueryBuilder<Asset, Asset, QAfterSortBy> thenByCodeDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'code', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenByCurrency() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'currency', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenByCurrencyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'currency', Sort.desc);
     });
   }
 
@@ -1428,6 +1650,13 @@ extension AssetQueryWhereDistinct on QueryBuilder<Asset, Asset, QDistinct> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QDistinct> distinctByCurrency(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'currency', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QDistinct> distinctByLatestPrice() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'latestPrice');
@@ -1473,6 +1702,12 @@ extension AssetQueryProperty on QueryBuilder<Asset, Asset, QQueryProperty> {
   QueryBuilder<Asset, String, QQueryOperations> codeProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'code');
+    });
+  }
+
+  QueryBuilder<Asset, String, QQueryOperations> currencyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'currency');
     });
   }
 
