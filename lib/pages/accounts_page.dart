@@ -8,6 +8,7 @@ import 'package:one_five_one_ten/models/position_snapshot.dart'; // <--- 修正�
 import 'package:one_five_one_ten/models/transaction.dart';       // <--- 修正：添加此行
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/widgets/account_card.dart';
+import 'package:one_five_one_ten/pages/account_detail_page.dart';
 
 /// 用 FutureProvider 拉取账户列表
 final accountsProvider = FutureProvider<List<Account>>((ref) async {
@@ -51,11 +52,13 @@ class AccountsPage extends ConsumerWidget {
               itemCount: accounts.length,
               itemBuilder: (context, index) {
                 final account = accounts[index];
-                // 使用 GestureDetector 来包裹 AccountCard 以添加长按事件
+                // --- 寻找并替换这里的 GestureDetector ---
                 return GestureDetector(
-                  onLongPress: () => _confirmDeleteAccount(context, ref, account),
+                  // 修正：长按时显示操作菜单，而不是直接删除
+                  onLongPress: () => _showAccountActions(context, ref, account), 
                   child: AccountCard(account: account),
                 );
+                // --- 替换结束 ---
               },
             ),
           );
@@ -144,6 +147,146 @@ class AccountsPage extends ConsumerWidget {
       },
     );
   }
+
+  /// --- 新增方法 1：显示账户操作菜单 (编辑/删除) ---
+  void _showAccountActions(BuildContext context, WidgetRef ref, Account account) {
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return Wrap(
+          children: <Widget>[
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('编辑账户'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _showEditAccountDialog(context, ref, account); // 调用编辑对话框
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('删除账户', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _confirmDeleteAccount(context, ref, account); // 调用现有的删除确认
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// --- 新增方法 2：显示编辑账户对话框 ---
+  void _showEditAccountDialog(BuildContext context, WidgetRef ref, Account account) async {
+    final TextEditingController nameController = TextEditingController(text: account.name);
+    String selectedCurrency = account.currency;
+    final isar = DatabaseService().isar;
+
+    // 关键检查：在显示对话框前，检查该账户是否已有数据
+    // 我们需要同时检查 AccountTransactions 和 Assets (因为资产也链接到账户)
+    await account.transactions.load();
+    await account.trackedAssets.load();
+    
+    final bool hasTransactions = account.transactions.isNotEmpty;
+    final bool hasAssets = account.trackedAssets.isNotEmpty;
+    final bool allowCurrencyChange = !hasTransactions && !hasAssets;
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('编辑账户'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: '账户名称',
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('币种:', style: TextStyle(fontSize: 16)),
+                      DropdownButton<String>(
+                        value: selectedCurrency,
+                        items: ['CNY', 'USD', 'HKD'].map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            // 如果不允许更改，则禁用 CNY 之外的选项
+                            enabled: allowCurrencyChange || value == account.currency, 
+                            child: Text(
+                              value,
+                              style: TextStyle(
+                                color: (allowCurrencyChange || value == account.currency) 
+                                        ? Theme.of(context).textTheme.bodyLarge?.color 
+                                        : Colors.grey,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                        // 如果不允许更改，则 onChanged 设置为 null 来禁用整个按钮
+                        onChanged: allowCurrencyChange ? (newValue) {
+                          if (newValue != null) {
+                            setState(() {
+                              selectedCurrency = newValue;
+                            });
+                          }
+                        } : null, // <--- 关键逻辑
+                      ),
+                    ],
+                  ),
+                  if (!allowCurrencyChange) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      '注意：账户已包含资产或交易记录，无法修改币种。',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    ),
+                  ]
+                ],
+              ),
+              actions: <Widget>[
+                TextButton(
+                  child: const Text('取消'),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                ),
+                TextButton(
+                  child: const Text('保存'),
+                  onPressed: () async {
+                    final String name = nameController.text.trim();
+                    if (name.isNotEmpty) {
+                      // 更新现有账户对象
+                      account.name = name;
+                      if (allowCurrencyChange) {
+                        account.currency = selectedCurrency;
+                      }
+                      
+                      await isar.writeTxn(() async {
+                        await isar.accounts.put(account);
+                      });
+                      
+                      // 刷新账户列表和详情页（如果已打开）
+                      ref.invalidate(accountsProvider);
+                      ref.invalidate(accountDetailProvider(account.id));
+                      ref.invalidate(accountPerformanceProvider(account.id));
+
+                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }  
 
   /// 删除账户（会级联清理该账户关联的交易与资产）
   Future<void> _confirmDeleteAccount(
