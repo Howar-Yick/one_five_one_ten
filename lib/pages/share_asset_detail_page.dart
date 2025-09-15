@@ -403,6 +403,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
   Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots, Asset asset) {
     final colorScheme = Theme.of(context).colorScheme;
     
+    // 时间轴间隔计算 (保持不变)
     double? bottomInterval;
     if (spots.length > 1) {
       final firstMs = spots.first.x;
@@ -414,26 +415,44 @@ class ShareAssetDetailPage extends ConsumerWidget {
       }
     }
 
+    // -----------------------------------------------------------------
+    // 改进点 1：判断数据密度
+    // -----------------------------------------------------------------
+    // 当数据点过多时 (例如超过150个)，圆点会完全覆盖线条。
+    // 我们设置一个阈值，如果数据过于密集，则自动隐藏圆点并使用更细的线条。
+    const int densityThreshold = 150; 
+    final bool isDense = spots.length > densityThreshold;
+
     return SizedBox(
       height: 200,
       child: LineChart(
         LineChartData(
+          // X轴使用真实时间戳 (保持不变，这对于历史价格是正确的)
           minX: spots.first.x,
           maxX: spots.last.x,
+          
           lineBarsData: [
             LineChartBarData(
               spots: spots,
               isCurved: false,
-              barWidth: 3,
+              // -----------------------------------------------------------------
+              // 改进点 2：根据密度调整线条宽度
+              // -----------------------------------------------------------------
+              barWidth: isDense ? 2 : 3, // 密集数据使用 2px 线条，稀疏数据使用 3px
               color: colorScheme.primary, 
-              dotData: const FlDotData(show: true),
+              // -----------------------------------------------------------------
+              // 改进点 3：根据密度决定是否显示圆点
+              // -----------------------------------------------------------------
+              dotData: FlDotData(show: !isDense), // 仅在数据不密集时 (小于150点) 显示圆点
               belowBarData: BarAreaData(show: false),
             ),
           ],
           titlesData: FlTitlesData(
+            // 左侧Y轴标签 (保持不变)
             leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 50, getTitlesWidget: (value, meta) => Text(formatPrice(value, asset.currency, asset.subType.name), style: const TextStyle(fontSize: 10)))),
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            // 底部X轴标签 (保持不变)
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true, 
@@ -450,6 +469,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
           ),
           gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1)),
           borderData: FlBorderData(show: false),
+          // 提示框逻辑 (保持不变)
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
               getTooltipItems: (touchedSpots) {
