@@ -1,6 +1,6 @@
 name: one_five_one_ten
 description: A new Flutter project for personal investment tracking.
-publish_to: 'none' 
+publish_to: 'none'
 version: 1.0.0+1
 
 environment:
@@ -9,11 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
+
   # 锁定 Isar 版本
   isar: 3.1.0+1
   isar_flutter_libs: 3.1.0+1
-  
+
   path_provider: ^2.0.11
   flutter_riverpod: ^2.4.9
   cupertino_icons: ^1.0.2
@@ -25,12 +25,11 @@ dependencies:
   http: ^1.2.2
   shared_preferences: ^2.3.2
   url_launcher: ^6.3.0
-  xxh3: ^1.2.0 
+  xxh3: ^1.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  
   flutter_lints: ^2.0.0
 
   # 锁定 Isar Generator 和 Build Runner 的版本，与 Isar 库匹配
@@ -39,3 +38,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+dependency_overrides:
+  isar_flutter_libs:
+    path: third_party/plugins/isar_flutter_libs
+  msal_flutter:
+    path: third_party/plugins/msal_flutter

@@ -387,10 +387,9 @@ packages:
   isar_flutter_libs:
     dependency: "direct main"
     description:
-      name: isar_flutter_libs
-      sha256: bc6768cc4b9c61aabff77152e7f33b4b17d2fc93134f7af1c3dd51500fe8d5e8
-      url: "https://pub.flutter-io.cn"
-    source: hosted
+      path: "third_party/plugins/isar_flutter_libs"
+      relative: true
+    source: path
     version: "3.1.0+1"
   isar_generator:
     dependency: "direct dev"
@@ -491,10 +490,9 @@ packages:
   msal_flutter:
     dependency: "direct main"
     description:
-      name: msal_flutter
-      sha256: "5123bda74d513f44dd6489fe30835a138c40299bdf1e33a00df7007607c09258"
-      url: "https://pub.flutter-io.cn"
-    source: hosted
+      path: "third_party/plugins/msal_flutter"
+      relative: true
+    source: path
     version: "2.0.1"
   package_config:
     dependency: transitive

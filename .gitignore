@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# 默认整包忽略 third_party（推荐用远程依赖时）
+third_party/

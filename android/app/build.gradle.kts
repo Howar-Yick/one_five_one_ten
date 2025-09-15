@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // Flutter 插件必须在 Android/Kotlin 之后
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -28,17 +27,14 @@ android {
 
     buildTypes {
         release {
-            // 先关闭混淆与资源收缩，直接出 APK
+            // 暂时关闭混淆和资源收缩 —— 已证明可以稳定出包
             isMinifyEnabled = false
             isShrinkResources = false
 
-            // 仍然声明 proguard 配置，之后若开启混淆就会使用
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-
-            // 先用 debug 签名，能跑起来
             signingConfig = signingConfigs.getByName("debug")
         }
         debug {
