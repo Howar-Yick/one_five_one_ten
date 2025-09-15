@@ -237,26 +237,47 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: '¥');
     final colorScheme = Theme.of(context).colorScheme;
     
-    double? bottomInterval;
-    if (spots.length > 1) {
-      final firstMs = spots.first.x;
-      final lastMs = spots.last.x;
-      final durationMillis = (lastMs - firstMs).abs();
-      const desiredLabelCount = 4.0;
-      if (durationMillis > 0) {
-        bottomInterval = durationMillis / desiredLabelCount;
-      }
+    // -----------------------------------------------------------------
+    // 改进点 1：将基于时间戳的 spots 转换为 基于索引的 indexedSpots
+    // -----------------------------------------------------------------
+    // 我们保留原始的 spots 列表（包含真实时间戳）用于查找标签和提示。
+    // 我们创建一个新的 indexedSpots 列表，其中 X 值是索引号 (0, 1, 2...)
+    final List<FlSpot> indexedSpots = [];
+    for (int i = 0; i < spots.length; i++) {
+      // X: 使用索引 i, Y: 保持原始Y值 (金额)
+      indexedSpots.add(FlSpot(i.toDouble(), spots[i].y));
     }
+    
+    // 动态计算底部标签的间隔，确保最多只显示 4-5 个标签
+    double bottomInterval;
+    const desiredLabelCount = 4.0;
+    if (spots.length <= desiredLabelCount) {
+      bottomInterval = 1; // 如果数据点很少，每个都显示
+    } else {
+      // 计算间隔，确保总标签数接近 desiredLabelCount
+      // 使用 (spots.length - 1) 是因为索引是从 0 到 length-1
+      bottomInterval = (spots.length - 1) / desiredLabelCount;
+      // 确保间隔至少为1，并且最好是整数，以避免小数索引
+      if (bottomInterval < 1) bottomInterval = 1;
+    }
+
 
     return SizedBox(
       height: 200,
       child: LineChart(
         LineChartData(
-          minX: spots.first.x,
-          maxX: spots.last.x,
+          // -----------------------------------------------------------------
+          // 改进点 2：minX 和 maxX 现在基于索引
+          // -----------------------------------------------------------------
+          minX: 0, // X轴从索引 0 开始
+          maxX: (spots.length - 1).toDouble(), // X轴到最后一个索引结束
+          
           lineBarsData: [
             LineChartBarData(
-              spots: spots,
+              // -----------------------------------------------------------------
+              // 改进点 3：图表使用基于索引的数据点
+              // -----------------------------------------------------------------
+              spots: indexedSpots, 
               isCurved: false,
               barWidth: 3,
               color: colorScheme.primary, 
@@ -272,12 +293,26 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               sideTitles: SideTitles(
                 showTitles: true, 
                 reservedSize: 30, 
+                // -----------------------------------------------------------------
+                // 改进点 4：间隔现在也基于索引
+                // -----------------------------------------------------------------
                 interval: bottomInterval, 
                 getTitlesWidget: (value, meta) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(DateFormat('yy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(value.toInt())), style: const TextStyle(fontSize: 10), textAlign: TextAlign.center,),
-                  );
+                  // value 现在是索引 (例如 0.0, 1.0, 2.0...)
+                  final int index = value.toInt();
+                  // 确保索引在原始 spots 列表的安全范围内
+                  if (index >= 0 && index < spots.length) {
+                    // -----------------------------------------------------------------
+                    // 改进点 5：使用索引从原始 spots 列表中查找真实日期
+                    // -----------------------------------------------------------------
+                    final originalSpot = spots[index];
+                    final date = DateTime.fromMillisecondsSinceEpoch(originalSpot.x.toInt());
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text(DateFormat('yy-MM-dd').format(date), style: const TextStyle(fontSize: 10), textAlign: TextAlign.center,),
+                    );
+                  }
+                  return const Text(''); // 超出范围则不显示
                 }
               )
             ),
@@ -286,15 +321,31 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           borderData: FlBorderData(show: false),
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
-              getTooltipItems: (touchedSpots) {
-                return touchedSpots.map((spot) {
-                  final date = DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(spot.x.toInt()));
-                  final value = NumberFormat.currency(locale: 'zh_CN', symbol: '¥').format(spot.y);
+              getTooltipItems: (touchedSpotsList) {
+                // touchedSpotsList 包含的是 LineChart 内部的 FlSpot（X值为索引）
+                return touchedSpotsList.map((touchedSpot) {
+                  // -----------------------------------------------------------------
+                  // 改进点 6：转换提示框的逻辑
+                  // -----------------------------------------------------------------
+                  
+                  // 1. 获取被触摸点的索引（四舍五入以防万一）
+                  final int index = touchedSpot.x.round();
+                  
+                  // 2. 检查索引安全性
+                  if (index < 0 || index >= spots.length) {
+                     return null; // 不安全的索引，不显示提示
+                  }
+
+                  // 3. 从原始 spots 列表（包含真实时间戳）中获取数据
+                  final FlSpot originalSpot = spots[index];
+                  final date = DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(originalSpot.x.toInt()));
+                  final value = NumberFormat.currency(locale: 'zh_CN', symbol: '¥').format(originalSpot.y); // Y值 (金额) 是相同的
+                  
                   return LineTooltipItem(
                     '$date\n$value',
                     const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                   );
-                }).toList();
+                }).where((item) => item != null).cast<LineTooltipItem>().toList(); // 过滤掉 null
               },
             ),
           ),
