@@ -23,50 +23,70 @@ class CalculatorService {
   // --- 修正：还原为纯粹的价值法计算（有知有行模式），不关心子资产 ---
   Future<Map<String, dynamic>> calculateAccountPerformance(Account account) async {
     await account.transactions.load();
-    final transactions = account.transactions.toList()
-      ..sort((a, b) => a.date.compareTo(b.date));
+    
+    // 使用与 "价值法资产" 相同的运行总值计算逻辑 (此辅助函数已存在于文件中)
+    // 它可以正确处理 AccountTransaction 列表
+    final historyPoints = _processValueTransactions(account.transactions.toList());
+
+    if (historyPoints.isEmpty) {
+      return {'currentValue': 0.0, 'netInvestment': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0};
+    }
 
     double totalInvested = 0;
-    double totalWithdrawn = 0;
-    AccountTransaction? lastUpdate;
-
-    for (var txn in transactions) {
-      if (txn.type == TransactionType.invest) {
-        totalInvested += txn.amount;
-      } else if (txn.type == TransactionType.withdraw) {
-        totalWithdrawn += txn.amount;
-      } else if (txn.type == TransactionType.updateValue) {
-        if (lastUpdate == null || !txn.date.isBefore(lastUpdate.date)) {
-           lastUpdate = txn;
-        }
-      }
-    }
-
-    final double netInvestment = totalInvested - totalWithdrawn;
-    final double currentValue = lastUpdate?.amount ?? 0.0;
-    final double totalProfit = currentValue - netInvestment;
-    final double profitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested;
-
-    double annualizedReturn = 0.0;
-    final cashflows = <double>[];
+    double netInvestment = 0;
+    final cashflows = <double>[]; // 用于XIRR计算的聚合现金流
     final dates = <DateTime>[];
 
-    for (var txn in transactions) {
-      if (txn.type == TransactionType.invest) {
-        cashflows.add(-txn.amount);
-        dates.add(txn.date);
-      } else if (txn.type == TransactionType.withdraw) {
-        cashflows.add(txn.amount);
-        dates.add(txn.date);
+    // 遍历按天聚合后的历史点
+    for (final point in historyPoints) {
+      // 在辅助函数中，投入(invest)的 cashFlow 被记为负数
+      if (point.cashFlow < 0) {
+         totalInvested += -point.cashFlow;
+      }
+      netInvestment += -point.cashFlow; // 净投入是所有现金流（反转符号后）的总和
+      
+      if (point.cashFlow != 0) {
+        cashflows.add(point.cashFlow);
+        dates.add(point.date);
       }
     }
 
-    if (lastUpdate != null && cashflows.isNotEmpty) {
-      cashflows.add(currentValue);
-      dates.add(lastUpdate.date);
-      if (cashflows.any((cf) => cf > 0) && cashflows.any((cf) => cf < 0)) {
+    // 正确的当前值是 historyPoints 的最后一个值
+    final double currentValue = historyPoints.last.value;
+    final double totalProfit = currentValue - netInvestment;
+    final double profitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested;
+    
+    double annualizedReturn = 0.0;
+    
+    // XIRR 计算 (使用聚合后的每日现金流)
+    // 注意：为了更精确的 XIRR，我们应该使用原始交易列表，而不是聚合后的 historyPoints。
+    // 我们将保留原始方法中对 XIRR 的计算方式，因为它遍历的是原始 transactions 列表，是正确的。
+    
+    final xirrCashflows = <double>[];
+    final xirrDates = <DateTime>[];
+    
+    // 重新加载原始交易列表（注意：historyPoints 仅用于获取正确的 currentValue 和 totalInvested）
+    final originalTransactions = account.transactions.toList()..sort((a, b) => a.date.compareTo(b.date));
+
+    for (var txn in originalTransactions) {
+      if (txn.type == TransactionType.invest) {
+        xirrCashflows.add(-txn.amount);
+        xirrDates.add(txn.date);
+      } else if (txn.type == TransactionType.withdraw) {
+        xirrCashflows.add(txn.amount);
+        xirrDates.add(txn.date);
+      }
+    }
+
+    if (xirrCashflows.isNotEmpty && currentValue != 0) {
+      xirrCashflows.add(currentValue);
+      // XIRR的最后一点必须是 currentValue 对应的日期。
+      // 我们使用 historyPoints 的最后日期，因为它代表最后一次活动（投入/转出 或 更新价值）的日期。
+      xirrDates.add(historyPoints.last.date); 
+      
+      if (xirrCashflows.any((cf) => cf > 0) && xirrCashflows.any((cf) => cf < 0)) {
         try {
-          annualizedReturn = xirr(dates, cashflows);
+          annualizedReturn = xirr(xirrDates, xirrCashflows);
         } catch (e) {
           annualizedReturn = 0.0;
         }
@@ -74,11 +94,11 @@ class CalculatorService {
     }
     
     return {
-      'currentValue': currentValue,
-      'netInvestment': netInvestment,
-      'totalProfit': totalProfit,
-      'profitRate': profitRate,
-      'annualizedReturn': annualizedReturn,
+      'currentValue': currentValue,       // 已修正
+      'netInvestment': netInvestment,     // 已修正
+      'totalProfit': totalProfit,         // 已修正
+      'profitRate': profitRate,           // 已修正
+      'annualizedReturn': annualizedReturn, // 使用原始XIRR逻辑保持不变
     };
   }
 
