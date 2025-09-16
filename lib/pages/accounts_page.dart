@@ -4,24 +4,21 @@ import 'package:isar/isar.dart';
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
 import 'package:one_five_one_ten/models/asset.dart';
-import 'package:one_five_one_ten/models/position_snapshot.dart'; // <--- 修正：添加此行
-import 'package:one_five_one_ten/models/transaction.dart';       // <--- 修正：添加此行
+import 'package:one_five_one_ten/models/position_snapshot.dart'; 
+import 'package:one_five_one_ten/models/transaction.dart'; 
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/widgets/account_card.dart';
 import 'package:one_five_one_ten/pages/account_detail_page.dart';
+import 'package:one_five_one_ten/providers/global_providers.dart'; // 修正：导入全局 Provider
 
-/// 用 FutureProvider 拉取账户列表
-final accountsProvider = FutureProvider<List<Account>>((ref) async {
-  final isar = DatabaseService().isar;
-  // ❗️关键：where() 之后先 anyId()，再 findAll()
-  return isar.accounts.where().anyId().findAll();
-});
+// 修正：本地 accountsProvider 已被移除，移至 global_providers.dart
 
 class AccountsPage extends ConsumerWidget {
   const AccountsPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 修正：监听来自 global_providers 的 accountsProvider
     final accountsAsync = ref.watch(accountsProvider);
 
     return Scaffold(
@@ -52,29 +49,26 @@ class AccountsPage extends ConsumerWidget {
               itemCount: accounts.length,
               itemBuilder: (context, index) {
                 final account = accounts[index];
-                // --- 寻找并替换这里的 GestureDetector ---
-                return GestureDetector(
-                  // 修正：长按时显示操作菜单，而不是直接删除
-                  onLongPress: () => _showAccountActions(context, ref, account), 
-                  child: AccountCard(account: account),
+                // 修正：使用新的 AccountCard 并传递回调
+                return AccountCard(
+                  account: account, 
+                  onLongPress: () => _showAccountActions(context, ref, account),
                 );
-                // --- 替换结束 ---
-              },
-            ),
-          );
-        },
-      ),
-    );
-  }
+              }, 
+            ), 
+          ); 
+        }, 
+      ), 
+    ); 
+  } 
 
   void _showAddAccountDialog(BuildContext context, WidgetRef ref) {
     final TextEditingController nameController = TextEditingController();
-    String selectedCurrency = 'CNY'; // 默认币种
+    String selectedCurrency = 'CNY'; 
 
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
-        // 使用 StatefulBuilder 来管理对话框内部的币种选择状态
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
@@ -128,7 +122,7 @@ class AccountsPage extends ConsumerWidget {
                       final newAccount = Account()
                         ..name = name
                         ..createdAt = DateTime.now()
-                        ..currency = selectedCurrency; // 保存选择的币种
+                        ..currency = selectedCurrency; 
                       
                       final isar = DatabaseService().isar;
                       await isar.writeTxn(() async {
@@ -136,6 +130,7 @@ class AccountsPage extends ConsumerWidget {
                       });
                       
                       ref.invalidate(accountsProvider);
+                      ref.invalidate(dashboardDataProvider); // 刷新 Dashboard
                       if (dialogContext.mounted) Navigator.of(dialogContext).pop();
                     }
                   },
@@ -148,7 +143,6 @@ class AccountsPage extends ConsumerWidget {
     );
   }
 
-  /// --- 新增方法 1：显示账户操作菜单 (编辑/删除) ---
   void _showAccountActions(BuildContext context, WidgetRef ref, Account account) {
     showModalBottomSheet(
       context: context,
@@ -160,7 +154,7 @@ class AccountsPage extends ConsumerWidget {
               title: const Text('编辑账户'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _showEditAccountDialog(context, ref, account); // 调用编辑对话框
+                _showEditAccountDialog(context, ref, account); 
               },
             ),
             ListTile(
@@ -168,7 +162,7 @@ class AccountsPage extends ConsumerWidget {
               title: const Text('删除账户', style: TextStyle(color: Colors.red)),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _confirmDeleteAccount(context, ref, account); // 调用现有的删除确认
+                _confirmDeleteAccount(context, ref, account); 
               },
             ),
           ],
@@ -177,14 +171,11 @@ class AccountsPage extends ConsumerWidget {
     );
   }
 
-  /// --- 新增方法 2：显示编辑账户对话框 ---
   void _showEditAccountDialog(BuildContext context, WidgetRef ref, Account account) async {
     final TextEditingController nameController = TextEditingController(text: account.name);
     String selectedCurrency = account.currency;
     final isar = DatabaseService().isar;
 
-    // 关键检查：在显示对话框前，检查该账户是否已有数据
-    // 我们需要同时检查 AccountTransactions 和 Assets (因为资产也链接到账户)
     await account.transactions.load();
     await account.trackedAssets.load();
     
@@ -219,7 +210,6 @@ class AccountsPage extends ConsumerWidget {
                         items: ['CNY', 'USD', 'HKD'].map((String value) {
                           return DropdownMenuItem<String>(
                             value: value,
-                            // 如果不允许更改，则禁用 CNY 之外的选项
                             enabled: allowCurrencyChange || value == account.currency, 
                             child: Text(
                               value,
@@ -231,14 +221,13 @@ class AccountsPage extends ConsumerWidget {
                             ),
                           );
                         }).toList(),
-                        // 如果不允许更改，则 onChanged 设置为 null 来禁用整个按钮
                         onChanged: allowCurrencyChange ? (newValue) {
                           if (newValue != null) {
                             setState(() {
                               selectedCurrency = newValue;
                             });
                           }
-                        } : null, // <--- 关键逻辑
+                        } : null, 
                       ),
                     ],
                   ),
@@ -261,7 +250,6 @@ class AccountsPage extends ConsumerWidget {
                   onPressed: () async {
                     final String name = nameController.text.trim();
                     if (name.isNotEmpty) {
-                      // 更新现有账户对象
                       account.name = name;
                       if (allowCurrencyChange) {
                         account.currency = selectedCurrency;
@@ -271,10 +259,10 @@ class AccountsPage extends ConsumerWidget {
                         await isar.accounts.put(account);
                       });
                       
-                      // 刷新账户列表和详情页（如果已打开）
                       ref.invalidate(accountsProvider);
                       ref.invalidate(accountDetailProvider(account.id));
                       ref.invalidate(accountPerformanceProvider(account.id));
+                      ref.invalidate(dashboardDataProvider); // 刷新 Dashboard
 
                       if (dialogContext.mounted) Navigator.of(dialogContext).pop();
                     }
@@ -286,13 +274,11 @@ class AccountsPage extends ConsumerWidget {
         );
       },
     );
-  }  
+  } 
 
-  /// 删除账户（会级联清理该账户关联的交易与资产）
   Future<void> _confirmDeleteAccount(
       BuildContext context, WidgetRef ref, Account account) async {
     
-    // 使用 StatefulBuilder 来管理对话框内的状态（输入框内容和按钮是否可用）
     showDialog<bool>(
       context: context,
       builder: (dialogContext) {
@@ -317,7 +303,6 @@ class AccountsPage extends ConsumerWidget {
                       border: const OutlineInputBorder(),
                     ),
                     onChanged: (value) {
-                      // 监听输入，当输入与账户名完全一致时，激活按钮
                       setState(() {
                         isButtonEnabled = (value == account.name);
                       });
@@ -330,7 +315,6 @@ class AccountsPage extends ConsumerWidget {
                   onPressed: () => Navigator.of(dialogContext).pop(false),
                   child: const Text('取消'),
                 ),
-                // 根据 isButtonEnabled 状态决定按钮是否可点击
                 TextButton(
                   onPressed: isButtonEnabled ? () => Navigator.of(dialogContext).pop(true) : null,
                   child: Text(
@@ -345,12 +329,11 @@ class AccountsPage extends ConsumerWidget {
           },
         );
       },
-    ).then((ok) async { // 使用 .then() 来处理对话框关闭后的逻辑
+    ).then((ok) async { 
       if (ok != true) return;
 
       final isar = DatabaseService().isar;
       await isar.writeTxn(() async {
-        // --- 级联删除逻辑保持不变 ---
         await account.trackedAssets.load();
         final assets = account.trackedAssets.toList();
         for (final asset in assets) {
@@ -380,6 +363,7 @@ class AccountsPage extends ConsumerWidget {
       });
 
       ref.invalidate(accountsProvider);
+      ref.invalidate(dashboardDataProvider); // 刷新 Dashboard
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已删除账户：${account.name}')),

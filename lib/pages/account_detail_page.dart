@@ -15,6 +15,11 @@ import 'package:one_five_one_ten/pages/value_asset_detail_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
+import 'package:one_five_one_ten/providers/global_providers.dart'; // 修正：导入全局 Provider
+
+// 修正：所有 Provider 定义（accountDetailProvider, accountPerformanceProvider 等）都将移到 global 或 account providers 文件中
+// 为了最小化修改，我们暂时将此页特定的 providers 移到这里，但从 global 导入
+// 更好的方案是创建 lib/providers/account_providers.dart，但现在我们先把它们放在这里，确保它们被导入
 
 final accountDetailProvider =
     FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
@@ -37,7 +42,6 @@ final trackedAssetsWithPerformanceProvider =
   final isar = DatabaseService().isar;
   final calculator = CalculatorService();
 
-  // 监听账户对象的变化，以便在子资产列表变化时刷新
   return isar.accounts
       .watchObject(accountId, fireImmediately: true)
       .asyncMap((account) async {
@@ -46,7 +50,6 @@ final trackedAssetsWithPerformanceProvider =
     await account.trackedAssets.load();
     final assets = account.trackedAssets.toList();
     
-    // 异步计算所有子资产的业绩
     final List<Map<String, dynamic>> results = [];
     for (final asset in assets) {
       Map<String, dynamic> performanceData;
@@ -65,7 +68,6 @@ final trackedAssetsWithPerformanceProvider =
 });
 
 final accountHistoryProvider = FutureProvider.autoDispose.family<List<FlSpot>, Account>((ref, account) {
-  // 依赖业绩provider，当业绩刷新时（例如添加了新交易），图表也自动刷新
   ref.watch(accountPerformanceProvider(account.id));
   return CalculatorService().getAccountValueHistory(account);
 });
@@ -92,6 +94,7 @@ class AccountDetailPage extends ConsumerWidget {
           return RefreshIndicator(
              onRefresh: () async {
                 ref.invalidate(accountPerformanceProvider(accountId));
+                ref.invalidate(trackedAssetsWithPerformanceProvider(accountId));
              },
             child: ListView(
               padding: const EdgeInsets.all(16.0),
@@ -284,15 +287,17 @@ class AccountDetailPage extends ConsumerWidget {
                         await newTxn.account.save();
                       });
                       
+                      // 刷新当前页和所有上级页面
                       ref.invalidate(accountPerformanceProvider(account.id)); 
-                      
+                      ref.invalidate(dashboardDataProvider);
+
                       if (dialogContext.mounted) {
                         Navigator.of(dialogContext).pop();
                          Navigator.of(context).push( 
-                          MaterialPageRoute(
-                            builder: (_) => TransactionHistoryPage(accountId: account.id),
-                          ),
-                        );
+                           MaterialPageRoute(
+                             builder: (_) => TransactionHistoryPage(accountId: account.id),
+                           ),
+                         );
                       }
                     }
                   },
@@ -370,14 +375,18 @@ class AccountDetailPage extends ConsumerWidget {
                         await isar.collection<AccountTransaction>().put(newTxn);
                         await newTxn.account.save();
                       });
+                      
+                      // 刷新当前页和所有上级页面
                       ref.invalidate(accountPerformanceProvider(account.id));
+                      ref.invalidate(dashboardDataProvider);
+
                       if (dialogContext.mounted) {
                         Navigator.of(dialogContext).pop();
                          Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => TransactionHistoryPage(accountId: account.id),
-                          ),
-                        );
+                           MaterialPageRoute(
+                             builder: (_) => TransactionHistoryPage(accountId: account.id),
+                           ),
+                         );
                       }
                     }
                   },
@@ -433,7 +442,12 @@ class AccountDetailPage extends ConsumerWidget {
                   MaterialPageRoute(
                     builder: (_) => AddEditAssetPage(accountId: accountId),
                   ),
-                );
+                ).then((_) {
+                  // 修正：从 AddEditAssetPage 返回时, 刷新所有相关 provider
+                  ref.invalidate(accountDetailProvider(accountId));
+                  ref.invalidate(accountPerformanceProvider(accountId));
+                  ref.invalidate(trackedAssetsWithPerformanceProvider(accountId)); 
+                });
               },
             ),
           ],
@@ -445,7 +459,7 @@ class AccountDetailPage extends ConsumerWidget {
               return const Card(child: ListTile(title: Text('暂无持仓资产')));
             }
             return Column(
-              children: assetsData.map((assetData) => _buildAssetCard(context, ref, assetData)).toList(),
+              children: assetsData.map((assetData) => _buildAssetCard(context, ref, assetData, accountId)).toList(),
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -455,7 +469,7 @@ class AccountDetailPage extends ConsumerWidget {
     );
   }
   
-  Widget _buildAssetCard(BuildContext context, WidgetRef ref, Map<String, dynamic> assetData) {
+  Widget _buildAssetCard(BuildContext context, WidgetRef ref, Map<String, dynamic> assetData, int accountId) {
     final Asset asset = assetData['asset'];
     final Map<String, dynamic> performance = assetData['performance'];
     
@@ -502,47 +516,44 @@ class AccountDetailPage extends ConsumerWidget {
           ],
         ),
         trailing: const Icon(Icons.arrow_forward_ios),
+        
         onTap: () {
-          if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ShareAssetDetailPage(assetId: asset.id),
-              ),
-            );
-          } else {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ValueAssetDetailPage(assetId: asset.id),
-              ),
-            );
-          }
+          final pageRoute = MaterialPageRoute(builder: (context) {
+            return asset.trackingMethod == AssetTrackingMethod.shareBased
+                ? ShareAssetDetailPage(assetId: asset.id)
+                : ValueAssetDetailPage(assetId: asset.id);
+          });
+
+          Navigator.of(context).push(pageRoute).then((_) {
+            // 修正：使用我们从父级传入的 accountId
+            ref.invalidate(accountDetailProvider(accountId));
+            ref.invalidate(accountPerformanceProvider(accountId));
+            ref.invalidate(trackedAssetsWithPerformanceProvider(accountId)); 
+          });
         },
-        onLongPress: () => _showDeleteAssetConfirmationDialog(context, ref, asset),
+        
+        onLongPress: () => _showDeleteAssetConfirmationDialog(context, ref, asset, accountId), 
       ),
     );
   }
 
-  void _showDeleteAssetConfirmationDialog(BuildContext context, WidgetRef ref, Asset asset) {
+  void _showDeleteAssetConfirmationDialog(BuildContext context, WidgetRef ref, Asset asset, int accountId) {
     showDialog<bool>(
       context: context,
       builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: Text('删除资产 "${asset.name}"'),
-              content: const Text('此操作不可撤销，将删除此资产下的所有记录。'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('取消'),
-                ),
-                TextButton(
-                  onPressed:() => Navigator.of(dialogContext).pop(true),
-                  child: const Text('删除', style: TextStyle(color: Colors.red)),
-                ),
-              ],
-            );
-          },
+        return AlertDialog(
+          title: Text('删除资产 "${asset.name}"'),
+          content: const Text('此操作不可撤销，将删除此资产下的所有记录。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed:() => Navigator.of(dialogContext).pop(true),
+              child: const Text('删除', style: TextStyle(color: Colors.red)),
+            ),
+          ],
         );
       },
     ).then((ok) async {
@@ -561,7 +572,12 @@ class AccountDetailPage extends ConsumerWidget {
         await isar.assets.delete(asset.id);
       });
 
+      // 刷新当前页面
       ref.invalidate(trackedAssetsWithPerformanceProvider(accountId));
+      ref.invalidate(accountPerformanceProvider(accountId));
+      // 修正：刷新全局 Provider
+      ref.invalidate(dashboardDataProvider);
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已删除资产：${asset.name}')),
@@ -571,26 +587,18 @@ class AccountDetailPage extends ConsumerWidget {
   }
 
   Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots, Account account) {
-    // 货币格式化和颜色方案 (这部分保留不变)
     final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: getCurrencySymbol(account.currency));
     final colorScheme = Theme.of(context).colorScheme;
     
-    // -----------------------------------------------------------------
-    // 改进点 1：将基于时间戳的 spots 转换为 基于索引的 indexedSpots
-    // -----------------------------------------------------------------
     final List<FlSpot> indexedSpots = [];
     for (int i = 0; i < spots.length; i++) {
-      // X: 使用索引 i, Y: 保持原始Y值 (金额)
       indexedSpots.add(FlSpot(i.toDouble(), spots[i].y));
     }
     
-    // -----------------------------------------------------------------
-    // 改进点 2：基于数据点总数（索引）计算底部标签间隔
-    // -----------------------------------------------------------------
     double bottomInterval;
     const desiredLabelCount = 4.0;
     if (spots.length <= desiredLabelCount) {
-      bottomInterval = 1; // 数据点少，每个都显示
+      bottomInterval = 1; 
     } else {
       bottomInterval = (spots.length - 1) / desiredLabelCount;
       if (bottomInterval < 1) bottomInterval = 1;
@@ -600,17 +608,11 @@ class AccountDetailPage extends ConsumerWidget {
       height: 200,
       child: LineChart(
         LineChartData(
-          // -----------------------------------------------------------------
-          // 改进点 3：minX 和 maxX 现在基于索引
-          // -----------------------------------------------------------------
-          minX: 0, // X轴从索引 0 开始
-          maxX: (spots.length - 1).toDouble(), // X轴到最后一个索引结束
+          minX: 0, 
+          maxX: (spots.length - 1).toDouble(), 
 
           lineBarsData: [
             LineChartBarData(
-              // -----------------------------------------------------------------
-              // 改进点 4：图表使用基于索引的数据点
-              // -----------------------------------------------------------------
               spots: indexedSpots,
               isCurved: false,
               barWidth: 3,
@@ -627,18 +629,10 @@ class AccountDetailPage extends ConsumerWidget {
               sideTitles: SideTitles(
                 showTitles: true, 
                 reservedSize: 30, 
-                // -----------------------------------------------------------------
-                // 改进点 5：间隔现在也基于索引
-                // -----------------------------------------------------------------
                 interval: bottomInterval, 
                 getTitlesWidget: (value, meta) {
-                  // value 现在是索引 (例如 0.0, 1.0, 2.0...)
                   final int index = value.toInt();
-                  // 确保索引在原始 spots 列表的安全范围内
                   if (index >= 0 && index < spots.length) {
-                    // -----------------------------------------------------------------
-                    // 改进点 6：使用索引从原始 spots 列表中查找真实日期
-                    // -----------------------------------------------------------------
                     final originalSpot = spots[index];
                     final date = DateTime.fromMillisecondsSinceEpoch(originalSpot.x.toInt());
                     return Padding(
@@ -646,7 +640,7 @@ class AccountDetailPage extends ConsumerWidget {
                       child: Text(DateFormat('yy-MM-dd').format(date), style: const TextStyle(fontSize: 10), textAlign: TextAlign.center,),
                     );
                   }
-                  return const Text(''); // 超出范围则不显示
+                  return const Text('');
                 }
               )
             ),
@@ -656,28 +650,22 @@ class AccountDetailPage extends ConsumerWidget {
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
               getTooltipItems: (touchedSpotsList) {
-                // -----------------------------------------------------------------
-                // 改进点 7：转换提示框的逻辑
-                // -----------------------------------------------------------------
                 return touchedSpotsList.map((touchedSpot) {
-                  // 1. 获取被触摸点的索引
                   final int index = touchedSpot.x.round();
                   
-                  // 2. 检查索引安全性
                   if (index < 0 || index >= spots.length) {
                      return null;
                   }
 
-                  // 3. 从原始 spots 列表（包含真实时间戳）中获取数据
                   final FlSpot originalSpot = spots[index];
                   final date = DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(originalSpot.x.toInt()));
-                  final value = formatCurrency(originalSpot.y, account.currency); // Y值 (金额) 是相同的
+                  final value = formatCurrency(originalSpot.y, account.currency); 
                   
                   return LineTooltipItem(
                     '$date\n$value',
                     const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                   );
-                }).where((item) => item != null).cast<LineTooltipItem>().toList(); // 过滤掉 null
+                }).where((item) => item != null).cast<LineTooltipItem>().toList(); 
               },
             ),
           ),
