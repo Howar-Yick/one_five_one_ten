@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:one_five_one_ten/models/cloud_manifest.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:one_five_one_ten/services/local_settings_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class OneDriveAuthState {
@@ -111,11 +111,20 @@ class OneDriveService {
           }
         } catch (_) {}
 
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_kAccessToken, accessToken);
-        if (refreshToken != null) await prefs.setString(_kRefreshToken, refreshToken);
-        await prefs.setInt(_kExpiresAt, DateTime.now().add(Duration(seconds: expiresIn - 30)).millisecondsSinceEpoch);
-        if (username != null) await prefs.setString(_kUsername, username);
+        final settings = LocalSettingsService.instance;
+        await settings.setString(_kAccessToken, accessToken);
+        if (refreshToken != null) {
+          await settings.setString(_kRefreshToken, refreshToken);
+        } else {
+          await settings.remove(_kRefreshToken);
+        }
+        await settings
+            .setInt(_kExpiresAt, DateTime.now().add(Duration(seconds: expiresIn - 30)).millisecondsSinceEpoch);
+        if (username != null) {
+          await settings.setString(_kUsername, username);
+        } else {
+          await settings.remove(_kUsername);
+        }
 
         _toast(context, '登录成功');
         return true;
@@ -134,36 +143,36 @@ class OneDriveService {
   }
 
   Future<Uint8List?> downloadBackupByName(String fileName) async {
-  final token = await _validAccessToken();
-  if (token == null) return null;
-  final uri = Uri.parse('$_graph/me/drive/special/approot:/one_five_one_ten/$fileName:/content');
-  final res = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
-  if (res.statusCode == 200) return Uint8List.fromList(res.bodyBytes);
-  return null;
-}  
+    final token = await _validAccessToken();
+    if (token == null) return null;
+    final uri = Uri.parse('$_graph/me/drive/special/approot:/one_five_one_ten/$fileName:/content');
+    final res = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+    if (res.statusCode == 200) return Uint8List.fromList(res.bodyBytes);
+    return null;
+  }
 
   Future<void> signOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_kAccessToken);
-    await prefs.remove(_kRefreshToken);
-    await prefs.remove(_kExpiresAt);
-    await prefs.remove(_kUsername);
+    final settings = LocalSettingsService.instance;
+    await settings.remove(_kAccessToken);
+    await settings.remove(_kRefreshToken);
+    await settings.remove(_kExpiresAt);
+    await settings.remove(_kUsername);
   }
 
   Future<OneDriveAuthState> getAuthState() async {
-    final prefs = await SharedPreferences.getInstance();
-    final access = prefs.getString(_kAccessToken);
-    final refresh = prefs.getString(_kRefreshToken);
-    final name = prefs.getString(_kUsername);
+    final settings = LocalSettingsService.instance;
+    final access = await settings.getString(_kAccessToken);
+    final refresh = await settings.getString(_kRefreshToken);
+    final name = await settings.getString(_kUsername);
     if (access == null && refresh == null) return const OneDriveAuthState(false, null);
     return OneDriveAuthState(true, name);
   }
 
   Future<String?> _validAccessToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    var access = prefs.getString(_kAccessToken);
-    final refresh = prefs.getString(_kRefreshToken);
-    final expiresAtMs = prefs.getInt(_kExpiresAt) ?? 0;
+    final settings = LocalSettingsService.instance;
+    var access = await settings.getString(_kAccessToken);
+    final refresh = await settings.getString(_kRefreshToken);
+    final expiresAtMs = await settings.getInt(_kExpiresAt) ?? 0;
     final now = DateTime.now().millisecondsSinceEpoch;
 
     if (access != null && now < expiresAtMs) return access;
@@ -187,9 +196,10 @@ class OneDriveService {
     final expiresIn = (body['expires_in'] as num?)?.toInt() ?? 3600;
 
     if (access == null) return null;
-    await prefs.setString(_kAccessToken, access);
-    if (newRefresh != null) await prefs.setString(_kRefreshToken, newRefresh);
-    await prefs.setInt(_kExpiresAt, DateTime.now().add(Duration(seconds: expiresIn - 30)).millisecondsSinceEpoch);
+    await settings.setString(_kAccessToken, access);
+    if (newRefresh != null) await settings.setString(_kRefreshToken, newRefresh);
+    await settings
+        .setInt(_kExpiresAt, DateTime.now().add(Duration(seconds: expiresIn - 30)).millisecondsSinceEpoch);
     return access;
   }
 
