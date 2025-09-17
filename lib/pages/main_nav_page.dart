@@ -1,17 +1,25 @@
+// 文件: lib/pages/main_nav_page.dart
 import 'package:flutter/material.dart';
+// 1. 导入 Riverpod
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:one_five_one_ten/pages/accounts_page.dart';
 import 'package:one_five_one_ten/pages/dashboard_page.dart';
 import 'package:one_five_one_ten/pages/settings_page.dart';
-import 'package:one_five_one_ten/services/sync_service.dart'; // 引入同步服务
+// 2. 导入我们的 providers
+import 'package:one_five_one_ten/providers/global_providers.dart'; 
+// 3. (移除) 不再需要旧的 sync_service
+// import 'package:one_five_one_ten/services/sync_service.dart'; 
 
-class MainNavPage extends StatefulWidget {
+// 4. 将 StatefulWidget 更改为 ConsumerStatefulWidget
+class MainNavPage extends ConsumerStatefulWidget {
   const MainNavPage({super.key});
 
   @override
-  State<MainNavPage> createState() => _MainNavPageState();
+  ConsumerState<MainNavPage> createState() => _MainNavPageState(); // 5. 更改 State 类型
 }
 
-class _MainNavPageState extends State<MainNavPage> {
+// 6. 将 State 更改为 ConsumerState
+class _MainNavPageState extends ConsumerState<MainNavPage> {
   int _selectedIndex = 0;
 
   static const List<Widget> _pages = <Widget>[
@@ -29,14 +37,20 @@ class _MainNavPageState extends State<MainNavPage> {
   @override
   void initState() {
     super.initState();
-    // 启动App时，开始同步服务
-    SyncService.instance.start();
+    // 7. (修改) 使用新的 SupabaseSyncService 检查登录状态
+    // 我们使用 WidgetsBinding.instance.addPostFrameCallback 确保 ref 在此阶段可用
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 8. 读取我们新的 provider 并调用检查
+      ref.read(syncServiceProvider).checkLoginAndStartSync();
+    });
+    // 9. (移除) 旧的启动器
+    // SyncService.instance.start();
   }
   
   @override
   void dispose() {
-    // 停止服务（虽然单例通常不需要停止，但这取决于生命周期管理）
-    // SyncService.instance.stop(); // 我们可以让它常驻
+    // 10. (移除) 旧的 dispose 逻辑
+    // SyncService.instance.stop(); 
     super.dispose();
   }
 

@@ -25,7 +25,9 @@ dependencies:
   http: ^1.2.2
   shared_preferences: ^2.3.2
   url_launcher: ^6.3.0
-  xxh3: ^1.2.0
+  
+
+  supabase_flutter: ^2.5.3 # (或最新版本，这个版本是 Dart 3 兼容的)
 
 dev_dependencies:
   flutter_test:

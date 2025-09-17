@@ -17,20 +17,40 @@ const PositionSnapshotSchema = CollectionSchema(
   name: r'PositionSnapshot',
   id: 4249771063589786325,
   properties: {
-    r'averageCost': PropertySchema(
+    r'assetSupabaseId': PropertySchema(
       id: 0,
+      name: r'assetSupabaseId',
+      type: IsarType.string,
+    ),
+    r'averageCost': PropertySchema(
+      id: 1,
       name: r'averageCost',
       type: IsarType.double,
     ),
+    r'createdAt': PropertySchema(
+      id: 2,
+      name: r'createdAt',
+      type: IsarType.dateTime,
+    ),
     r'date': PropertySchema(
-      id: 1,
+      id: 3,
       name: r'date',
       type: IsarType.dateTime,
     ),
+    r'supabaseId': PropertySchema(
+      id: 4,
+      name: r'supabaseId',
+      type: IsarType.string,
+    ),
     r'totalShares': PropertySchema(
-      id: 2,
+      id: 5,
       name: r'totalShares',
       type: IsarType.double,
+    ),
+    r'updatedAt': PropertySchema(
+      id: 6,
+      name: r'updatedAt',
+      type: IsarType.dateTime,
     )
   },
   estimateSize: _positionSnapshotEstimateSize,
@@ -38,15 +58,35 @@ const PositionSnapshotSchema = CollectionSchema(
   deserialize: _positionSnapshotDeserialize,
   deserializeProp: _positionSnapshotDeserializeProp,
   idName: r'id',
-  indexes: {},
-  links: {
-    r'asset': LinkSchema(
-      id: -7541019565681147517,
-      name: r'asset',
-      target: r'Asset',
-      single: true,
+  indexes: {
+    r'assetSupabaseId': IndexSchema(
+      id: -577256045387587212,
+      name: r'assetSupabaseId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'assetSupabaseId',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'supabaseId': IndexSchema(
+      id: 2753382765909358918,
+      name: r'supabaseId',
+      unique: true,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'supabaseId',
+          type: IndexType.value,
+          caseSensitive: false,
+        )
+      ],
     )
   },
+  links: {},
   embeddedSchemas: {},
   getId: _positionSnapshotGetId,
   getLinks: _positionSnapshotGetLinks,
@@ -60,6 +100,18 @@ int _positionSnapshotEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  {
+    final value = object.assetSupabaseId;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.supabaseId;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   return bytesCount;
 }
 
@@ -69,9 +121,13 @@ void _positionSnapshotSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeDouble(offsets[0], object.averageCost);
-  writer.writeDateTime(offsets[1], object.date);
-  writer.writeDouble(offsets[2], object.totalShares);
+  writer.writeString(offsets[0], object.assetSupabaseId);
+  writer.writeDouble(offsets[1], object.averageCost);
+  writer.writeDateTime(offsets[2], object.createdAt);
+  writer.writeDateTime(offsets[3], object.date);
+  writer.writeString(offsets[4], object.supabaseId);
+  writer.writeDouble(offsets[5], object.totalShares);
+  writer.writeDateTime(offsets[6], object.updatedAt);
 }
 
 PositionSnapshot _positionSnapshotDeserialize(
@@ -81,10 +137,14 @@ PositionSnapshot _positionSnapshotDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = PositionSnapshot();
-  object.averageCost = reader.readDouble(offsets[0]);
-  object.date = reader.readDateTime(offsets[1]);
+  object.assetSupabaseId = reader.readStringOrNull(offsets[0]);
+  object.averageCost = reader.readDouble(offsets[1]);
+  object.createdAt = reader.readDateTime(offsets[2]);
+  object.date = reader.readDateTime(offsets[3]);
   object.id = id;
-  object.totalShares = reader.readDouble(offsets[2]);
+  object.supabaseId = reader.readStringOrNull(offsets[4]);
+  object.totalShares = reader.readDouble(offsets[5]);
+  object.updatedAt = reader.readDateTimeOrNull(offsets[6]);
   return object;
 }
 
@@ -96,11 +156,19 @@ P _positionSnapshotDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 1:
-      return (reader.readDateTime(offset)) as P;
-    case 2:
       return (reader.readDouble(offset)) as P;
+    case 2:
+      return (reader.readDateTime(offset)) as P;
+    case 3:
+      return (reader.readDateTime(offset)) as P;
+    case 4:
+      return (reader.readStringOrNull(offset)) as P;
+    case 5:
+      return (reader.readDouble(offset)) as P;
+    case 6:
+      return (reader.readDateTimeOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -111,13 +179,69 @@ Id _positionSnapshotGetId(PositionSnapshot object) {
 }
 
 List<IsarLinkBase<dynamic>> _positionSnapshotGetLinks(PositionSnapshot object) {
-  return [object.asset];
+  return [];
 }
 
 void _positionSnapshotAttach(
     IsarCollection<dynamic> col, Id id, PositionSnapshot object) {
   object.id = id;
-  object.asset.attach(col, col.isar.collection<Asset>(), r'asset', id);
+}
+
+extension PositionSnapshotByIndex on IsarCollection<PositionSnapshot> {
+  Future<PositionSnapshot?> getBySupabaseId(String? supabaseId) {
+    return getByIndex(r'supabaseId', [supabaseId]);
+  }
+
+  PositionSnapshot? getBySupabaseIdSync(String? supabaseId) {
+    return getByIndexSync(r'supabaseId', [supabaseId]);
+  }
+
+  Future<bool> deleteBySupabaseId(String? supabaseId) {
+    return deleteByIndex(r'supabaseId', [supabaseId]);
+  }
+
+  bool deleteBySupabaseIdSync(String? supabaseId) {
+    return deleteByIndexSync(r'supabaseId', [supabaseId]);
+  }
+
+  Future<List<PositionSnapshot?>> getAllBySupabaseId(
+      List<String?> supabaseIdValues) {
+    final values = supabaseIdValues.map((e) => [e]).toList();
+    return getAllByIndex(r'supabaseId', values);
+  }
+
+  List<PositionSnapshot?> getAllBySupabaseIdSync(
+      List<String?> supabaseIdValues) {
+    final values = supabaseIdValues.map((e) => [e]).toList();
+    return getAllByIndexSync(r'supabaseId', values);
+  }
+
+  Future<int> deleteAllBySupabaseId(List<String?> supabaseIdValues) {
+    final values = supabaseIdValues.map((e) => [e]).toList();
+    return deleteAllByIndex(r'supabaseId', values);
+  }
+
+  int deleteAllBySupabaseIdSync(List<String?> supabaseIdValues) {
+    final values = supabaseIdValues.map((e) => [e]).toList();
+    return deleteAllByIndexSync(r'supabaseId', values);
+  }
+
+  Future<Id> putBySupabaseId(PositionSnapshot object) {
+    return putByIndex(r'supabaseId', object);
+  }
+
+  Id putBySupabaseIdSync(PositionSnapshot object, {bool saveLinks = true}) {
+    return putByIndexSync(r'supabaseId', object, saveLinks: saveLinks);
+  }
+
+  Future<List<Id>> putAllBySupabaseId(List<PositionSnapshot> objects) {
+    return putAllByIndex(r'supabaseId', objects);
+  }
+
+  List<Id> putAllBySupabaseIdSync(List<PositionSnapshot> objects,
+      {bool saveLinks = true}) {
+    return putAllByIndexSync(r'supabaseId', objects, saveLinks: saveLinks);
+  }
 }
 
 extension PositionSnapshotQueryWhereSort
@@ -125,6 +249,15 @@ extension PositionSnapshotQueryWhereSort
   QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhere> anyId() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(const IdWhereClause.any());
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhere>
+      anySupabaseId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'supabaseId'),
+      );
     });
   }
 }
@@ -197,10 +330,394 @@ extension PositionSnapshotQueryWhere
       ));
     });
   }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      assetSupabaseIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'assetSupabaseId',
+        value: [null],
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      assetSupabaseIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'assetSupabaseId',
+        lower: [null],
+        includeLower: false,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      assetSupabaseIdEqualTo(String? assetSupabaseId) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'assetSupabaseId',
+        value: [assetSupabaseId],
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      assetSupabaseIdNotEqualTo(String? assetSupabaseId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'assetSupabaseId',
+              lower: [],
+              upper: [assetSupabaseId],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'assetSupabaseId',
+              lower: [assetSupabaseId],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'assetSupabaseId',
+              lower: [assetSupabaseId],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'assetSupabaseId',
+              lower: [],
+              upper: [assetSupabaseId],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      supabaseIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'supabaseId',
+        value: [null],
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      supabaseIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'supabaseId',
+        lower: [null],
+        includeLower: false,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      supabaseIdEqualTo(String? supabaseId) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'supabaseId',
+        value: [supabaseId],
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      supabaseIdNotEqualTo(String? supabaseId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'supabaseId',
+              lower: [],
+              upper: [supabaseId],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'supabaseId',
+              lower: [supabaseId],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'supabaseId',
+              lower: [supabaseId],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'supabaseId',
+              lower: [],
+              upper: [supabaseId],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      supabaseIdGreaterThan(
+    String? supabaseId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'supabaseId',
+        lower: [supabaseId],
+        includeLower: include,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      supabaseIdLessThan(
+    String? supabaseId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'supabaseId',
+        lower: [],
+        upper: [supabaseId],
+        includeUpper: include,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      supabaseIdBetween(
+    String? lowerSupabaseId,
+    String? upperSupabaseId, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'supabaseId',
+        lower: [lowerSupabaseId],
+        includeLower: includeLower,
+        upper: [upperSupabaseId],
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      supabaseIdStartsWith(String SupabaseIdPrefix) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'supabaseId',
+        lower: [SupabaseIdPrefix],
+        upper: ['$SupabaseIdPrefix\u{FFFFF}'],
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      supabaseIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'supabaseId',
+        value: [''],
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterWhereClause>
+      supabaseIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.lessThan(
+              indexName: r'supabaseId',
+              upper: [''],
+            ))
+            .addWhereClause(IndexWhereClause.greaterThan(
+              indexName: r'supabaseId',
+              lower: [''],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.greaterThan(
+              indexName: r'supabaseId',
+              lower: [''],
+            ))
+            .addWhereClause(IndexWhereClause.lessThan(
+              indexName: r'supabaseId',
+              upper: [''],
+            ));
+      }
+    });
+  }
 }
 
 extension PositionSnapshotQueryFilter
     on QueryBuilder<PositionSnapshot, PositionSnapshot, QFilterCondition> {
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      assetSupabaseIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'assetSupabaseId',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      assetSupabaseIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'assetSupabaseId',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      assetSupabaseIdEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'assetSupabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      assetSupabaseIdGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'assetSupabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      assetSupabaseIdLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'assetSupabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      assetSupabaseIdBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'assetSupabaseId',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      assetSupabaseIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'assetSupabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      assetSupabaseIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'assetSupabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      assetSupabaseIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'assetSupabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      assetSupabaseIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'assetSupabaseId',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      assetSupabaseIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'assetSupabaseId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      assetSupabaseIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'assetSupabaseId',
+        value: '',
+      ));
+    });
+  }
+
   QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
       averageCostEqualTo(
     double value, {
@@ -263,6 +780,62 @@ extension PositionSnapshotQueryFilter
         upper: upper,
         includeUpper: includeUpper,
         epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      createdAtEqualTo(DateTime value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'createdAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      createdAtGreaterThan(
+    DateTime value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'createdAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      createdAtLessThan(
+    DateTime value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'createdAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      createdAtBetween(
+    DateTime lower,
+    DateTime upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'createdAt',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
       ));
     });
   }
@@ -380,6 +953,160 @@ extension PositionSnapshotQueryFilter
   }
 
   QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      supabaseIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'supabaseId',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      supabaseIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'supabaseId',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      supabaseIdEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'supabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      supabaseIdGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'supabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      supabaseIdLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'supabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      supabaseIdBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'supabaseId',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      supabaseIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'supabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      supabaseIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'supabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      supabaseIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'supabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      supabaseIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'supabaseId',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      supabaseIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'supabaseId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      supabaseIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'supabaseId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
       totalSharesEqualTo(
     double value, {
     double epsilon = Query.epsilon,
@@ -444,30 +1171,104 @@ extension PositionSnapshotQueryFilter
       ));
     });
   }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      updatedAtIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'updatedAt',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      updatedAtIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'updatedAt',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      updatedAtEqualTo(DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'updatedAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      updatedAtGreaterThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'updatedAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      updatedAtLessThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'updatedAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      updatedAtBetween(
+    DateTime? lower,
+    DateTime? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'updatedAt',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
 }
 
 extension PositionSnapshotQueryObject
     on QueryBuilder<PositionSnapshot, PositionSnapshot, QFilterCondition> {}
 
 extension PositionSnapshotQueryLinks
-    on QueryBuilder<PositionSnapshot, PositionSnapshot, QFilterCondition> {
-  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition> asset(
-      FilterQuery<Asset> q) {
-    return QueryBuilder.apply(this, (query) {
-      return query.link(q, r'asset');
-    });
-  }
-
-  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
-      assetIsNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.linkLength(r'asset', 0, true, 0, true);
-    });
-  }
-}
+    on QueryBuilder<PositionSnapshot, PositionSnapshot, QFilterCondition> {}
 
 extension PositionSnapshotQuerySortBy
     on QueryBuilder<PositionSnapshot, PositionSnapshot, QSortBy> {
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      sortByAssetSupabaseId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'assetSupabaseId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      sortByAssetSupabaseIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'assetSupabaseId', Sort.desc);
+    });
+  }
+
   QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
       sortByAverageCost() {
     return QueryBuilder.apply(this, (query) {
@@ -479,6 +1280,20 @@ extension PositionSnapshotQuerySortBy
       sortByAverageCostDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'averageCost', Sort.desc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      sortByCreatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'createdAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      sortByCreatedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'createdAt', Sort.desc);
     });
   }
 
@@ -496,6 +1311,20 @@ extension PositionSnapshotQuerySortBy
   }
 
   QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      sortBySupabaseId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'supabaseId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      sortBySupabaseIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'supabaseId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
       sortByTotalShares() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'totalShares', Sort.asc);
@@ -508,10 +1337,38 @@ extension PositionSnapshotQuerySortBy
       return query.addSortBy(r'totalShares', Sort.desc);
     });
   }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      sortByUpdatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'updatedAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      sortByUpdatedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'updatedAt', Sort.desc);
+    });
+  }
 }
 
 extension PositionSnapshotQuerySortThenBy
     on QueryBuilder<PositionSnapshot, PositionSnapshot, QSortThenBy> {
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      thenByAssetSupabaseId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'assetSupabaseId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      thenByAssetSupabaseIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'assetSupabaseId', Sort.desc);
+    });
+  }
+
   QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
       thenByAverageCost() {
     return QueryBuilder.apply(this, (query) {
@@ -523,6 +1380,20 @@ extension PositionSnapshotQuerySortThenBy
       thenByAverageCostDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'averageCost', Sort.desc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      thenByCreatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'createdAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      thenByCreatedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'createdAt', Sort.desc);
     });
   }
 
@@ -553,6 +1424,20 @@ extension PositionSnapshotQuerySortThenBy
   }
 
   QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      thenBySupabaseId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'supabaseId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      thenBySupabaseIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'supabaseId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
       thenByTotalShares() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'totalShares', Sort.asc);
@@ -565,14 +1450,43 @@ extension PositionSnapshotQuerySortThenBy
       return query.addSortBy(r'totalShares', Sort.desc);
     });
   }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      thenByUpdatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'updatedAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      thenByUpdatedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'updatedAt', Sort.desc);
+    });
+  }
 }
 
 extension PositionSnapshotQueryWhereDistinct
     on QueryBuilder<PositionSnapshot, PositionSnapshot, QDistinct> {
   QueryBuilder<PositionSnapshot, PositionSnapshot, QDistinct>
+      distinctByAssetSupabaseId({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'assetSupabaseId',
+          caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QDistinct>
       distinctByAverageCost() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'averageCost');
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QDistinct>
+      distinctByCreatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'createdAt');
     });
   }
 
@@ -583,9 +1497,23 @@ extension PositionSnapshotQueryWhereDistinct
   }
 
   QueryBuilder<PositionSnapshot, PositionSnapshot, QDistinct>
+      distinctBySupabaseId({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'supabaseId', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QDistinct>
       distinctByTotalShares() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'totalShares');
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QDistinct>
+      distinctByUpdatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'updatedAt');
     });
   }
 }
@@ -598,10 +1526,24 @@ extension PositionSnapshotQueryProperty
     });
   }
 
+  QueryBuilder<PositionSnapshot, String?, QQueryOperations>
+      assetSupabaseIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'assetSupabaseId');
+    });
+  }
+
   QueryBuilder<PositionSnapshot, double, QQueryOperations>
       averageCostProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'averageCost');
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, DateTime, QQueryOperations>
+      createdAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'createdAt');
     });
   }
 
@@ -611,10 +1553,24 @@ extension PositionSnapshotQueryProperty
     });
   }
 
+  QueryBuilder<PositionSnapshot, String?, QQueryOperations>
+      supabaseIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'supabaseId');
+    });
+  }
+
   QueryBuilder<PositionSnapshot, double, QQueryOperations>
       totalSharesProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'totalShares');
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, DateTime?, QQueryOperations>
+      updatedAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'updatedAt');
     });
   }
 }

@@ -1,3 +1,4 @@
+// 文件: lib/pages/add_edit_asset_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -10,6 +11,11 @@ import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/pages/account_detail_page.dart'; 
 import 'package:one_five_one_ten/pages/share_asset_detail_page.dart';
 import 'package:one_five_one_ten/pages/value_asset_detail_page.dart';
+
+// 1. (*** 新增：导入 Providers 和新服务 ***)
+import 'package:one_five_one_ten/providers/global_providers.dart';
+import 'package:one_five_one_ten/services/supabase_sync_service.dart';
+
 
 class AddEditAssetPage extends ConsumerStatefulWidget {
   final int accountId;
@@ -34,7 +40,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   final _latestPriceController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
   
-  String _selectedCurrency = 'CNY'; // 必须提供一个在列表中的有效默认值
+  String _selectedCurrency = 'CNY'; 
   Account? _parentAccount; 
   Asset? _editingAsset;
   bool _isLoading = true; // 默认设置为 true
@@ -44,21 +50,18 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   @override
   void initState() {
     super.initState();
-    // 调用一个统一的异步函数来加载所有数据
+    // 2. (修改) 在 initState 中我们不能使用 ref，所以保持原样
     _loadInitialData();
   }
 
-  // --- 修正：新的、安全的加载逻辑 ---
   Future<void> _loadInitialData() async {
-    final isar = DatabaseService().isar;
-    // 1. 无论如何，首先加载父账户
+    // 3. (修正) 坚持使用您项目中的 DatabaseService().isar 模式，修复 isarProvider 错误
+    final isar = DatabaseService().isar; 
     _parentAccount = await isar.accounts.get(widget.accountId);
 
     if (_isEditing) {
-      // 2. 如果是编辑模式，再去加载要编辑的资产
       _editingAsset = await isar.assets.get(widget.assetId!);
       if (_editingAsset != null) {
-        // 3. 用加载到的数据填充表单
         _nameController.text = _editingAsset!.name;
         _codeController.text = _editingAsset!.code;
         _selectedMethod = _editingAsset!.trackingMethod;
@@ -66,16 +69,13 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         _selectedCurrency = _editingAsset!.currency;
       }
     } else {
-      // 4. 如果是新建模式，继承父账户的币种作为默认值
       _selectedCurrency = _parentAccount?.currency ?? 'CNY';
     }
 
-    // 5. 确保 _selectedCurrency 始终是一个有效值
     if (!['CNY', 'USD', 'HKD'].contains(_selectedCurrency)) {
       _selectedCurrency = 'CNY';
     }
 
-    // 6. 所有异步数据都准备好后，才更新UI，隐藏加载动画
     if (mounted) {
       setState(() {
         _isLoading = false;
@@ -94,26 +94,36 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     super.dispose();
   }
 
+  // 4. (*** 关键修复：完全重写 _saveAsset 方法 ***)
   Future<void> _saveAsset() async {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
     
-    // 由于 _loadInitialData 保证了 _parentAccount 必定在 build 之前被加载
-    // 所以这里的 _parentAccount! 调用现在是安全的
     final parentAccount = _parentAccount!; 
-    final isar = DatabaseService().isar;
+    final syncService = ref.read(syncServiceProvider); // 5. 获取 SyncService
+
+    // 6. 检查父账户是否已同步 (它必须有一个 supabaseId 才能创建子项)
+    if (parentAccount.supabaseId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('错误：父账户尚未同步，请稍后重试。'))
+        );
+      }
+      return;
+    }
 
     if (_isEditing) {
+      // --- 更新逻辑 ---
       final assetToUpdate = _editingAsset!;
       assetToUpdate.name = _nameController.text.trim();
       assetToUpdate.code = _codeController.text.trim();
       assetToUpdate.subType = _selectedSubType;
       assetToUpdate.currency = _selectedCurrency;
       
-      await isar.writeTxn(() async {
-        await isar.assets.put(assetToUpdate);
-      });
+      // 7. 调用 SyncService 保存 (替换 isar.writeTxn)
+      await syncService.saveAsset(assetToUpdate);
       
+      // 8. 刷新相关 Provider
       ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
       if(assetToUpdate.trackingMethod == AssetTrackingMethod.shareBased) {
         ref.invalidate(shareAssetDetailProvider(assetToUpdate.id));
@@ -121,12 +131,15 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         ref.invalidate(valueAssetDetailProvider(assetToUpdate.id));
       }
     } else {
+      // --- 新建逻辑 (已重写) ---
       final newAsset = Asset()
         ..name = _nameController.text.trim()
         ..trackingMethod = _selectedMethod
         ..subType = _selectedSubType
         ..currency = _selectedCurrency
-        ..account.value = parentAccount;
+        ..createdAt = DateTime.now() // (设置 createdAt)
+        // 9. (关键) 设置 SUPABASE ID 关系，替换 IsarLink
+        ..accountSupabaseId = parentAccount.supabaseId; 
 
       final priceText = _latestPriceController.text.trim();
       if (priceText.isNotEmpty) {
@@ -134,48 +147,61 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         newAsset.priceUpdateDate = DateTime.now();
       }
 
+      // 10. (关键) 我们必须先保存 Asset，以获取它新生成的 supabaseId
+      await syncService.saveAsset(newAsset);
+      // 'newAsset' 对象现在已从 syncService 回写，并包含了新的 supabaseId
+
+      if (newAsset.supabaseId == null) {
+         // 如果保存失败 (例如离线)，supabaseId 会是 null。
+         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('创建资产失败，请检查网络连接。')));
+         return; // 终止操作，不允许创建孤立的子记录
+      }
+
+
       if (_selectedMethod == AssetTrackingMethod.shareBased) {
-        newAsset.code = _codeController.text.trim();
+        // --- 保存份额法子记录 ---
         final snapshot = PositionSnapshot()
           ..totalShares = double.parse(_sharesController.text)
           ..averageCost = double.parse(_costController.text)
           ..date = _selectedDate
-          ..asset.value = newAsset;
+          ..createdAt = DateTime.now()
+          // 11. (关键) 使用返回的 newAsset.supabaseId 设置关系
+          ..assetSupabaseId = newAsset.supabaseId; 
 
-        await isar.writeTxn(() async {
-          await isar.assets.put(newAsset);
-          await isar.positionSnapshots.put(snapshot);
-          await newAsset.account.save();
-          await snapshot.asset.save();
-        });
+        await syncService.savePositionSnapshot(snapshot); // 12. 调用 SyncService 保存子记录
+
       } else {
+        // --- 保存价值法子记录 ---
         final initialInvestment = double.parse(_initialInvestmentController.text);
         final transaction = Transaction()
           ..type = TransactionType.invest
           ..amount = initialInvestment
           ..date = _selectedDate
-          ..asset.value = newAsset;
+          ..createdAt = DateTime.now()
+          // 13. (关键) 设置关系
+          ..assetSupabaseId = newAsset.supabaseId;
         
         final updateValueTxn = Transaction()
           ..type = TransactionType.updateValue
           ..amount = initialInvestment
           ..date = _selectedDate
-          ..asset.value = newAsset;
+          ..createdAt = DateTime.now()
+          // 14. (关键) 设置关系
+          ..assetSupabaseId = newAsset.supabaseId;
 
-        await isar.writeTxn(() async {
-          await isar.assets.put(newAsset);
-          await isar.transactions.putAll([transaction, updateValueTxn]);
-          await newAsset.account.save();
-          await transaction.asset.save();
-          await updateValueTxn.asset.save();
-        });
+        // 15. 分别调用 SyncService 保存
+        await syncService.saveTransaction(transaction);
+        await syncService.saveTransaction(updateValueTxn);
       }
       
-      ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
+      // 16. (移除) ref.invalidate(trackedAssetsWithPerformanceProvider) 不再需要，因为它是 Stream 会自动更新
     }
     
+    // 17. (保留) 刷新 Dashboard
+    ref.invalidate(dashboardDataProvider); 
     if (mounted) Navigator.of(context).pop();
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -186,17 +212,17 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           IconButton(
             icon: const Icon(Icons.save),
             tooltip: '保存',
-            onPressed: _isLoading ? null : _saveAsset, // 在加载时禁用保存按钮
+            onPressed: _isLoading ? null : _saveAsset, 
           ),
         ],
       ),
-      // --- 修正：用 _isLoading 来控制显示加载动画还是表单 ---
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator()) 
         : Form(
             key: _formKey,
             child: ListView(
               padding: const EdgeInsets.all(16.0),
+              // (*** 您的表单 UI 布局保持不变 ***)
               children: [
                 if (!_isEditing)
                   SegmentedButton<AssetTrackingMethod>(
@@ -275,6 +301,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     );
   }
 
+  // (*** 您的 _buildShareBasedForm 和 _buildValueBasedForm 辅助函数保持不变 ***)
   List<Widget> _buildShareBasedForm() {
     return [
       const Text('资产类型', style: TextStyle(fontSize: 16, color: Colors.grey)),

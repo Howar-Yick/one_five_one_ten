@@ -1,3 +1,4 @@
+// 文件: lib/pages/transaction_history_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -6,18 +7,39 @@ import 'package:one_five_one_ten/models/account_transaction.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/pages/account_detail_page.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
+import 'package:isar/isar.dart'; // 1. (*** 新增：导入 Isar ***)
 
+// 2. (*** 新增：导入 Providers 和新服务 ***)
+import 'package:one_five_one_ten/providers/global_providers.dart';
+import 'package:one_five_one_ten/services/supabase_sync_service.dart';
+
+// 3. (*** 新增：导入 Currency Formatter ***)
+import 'package:one_five_one_ten/utils/currency_formatter.dart';
+
+// 4. (*** 关键修复：重写 Provider 逻辑 ***)
+// 旧代码依赖已删除的 IsarLink
+// 新代码改为监听 AccountTransaction 集合，并使用 "accountSupabaseId" 过滤，同时变为 StreamProvider
 final transactionHistoryProvider =
-    FutureProvider.autoDispose.family<List<AccountTransaction>, int>((ref, accountId) async {
+    StreamProvider.autoDispose.family<List<AccountTransaction>, int>((ref, accountId) async* { // 5. 改为 StreamProvider
+  
   final isar = DatabaseService().isar;
+  // 6. 必须先获取 Account 才能知道它的 Supabase ID
   final account = await isar.accounts.get(accountId);
-  if (account != null) {
-    await account.transactions.load();
-    final transactions = account.transactions.toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
-    return transactions;
+  if (account == null || account.supabaseId == null) {
+    yield [];
+    return;
   }
-  return [];
+
+  final accountSupabaseId = account.supabaseId!;
+
+  // 7. (新逻辑) 监听 AccountTransaction 集合中所有匹配此 accountSupabaseId 的记录
+  final transactionStream = isar.accountTransactions
+      .filter() // (*** 修正：使用 .filter() ***)
+      .accountSupabaseIdEqualTo(accountSupabaseId)
+      .sortByDateDesc() // 按日期降序排序
+      .watch(fireImmediately: true);
+
+  yield* transactionStream; // 8. 直接返回流
 });
 
 class TransactionHistoryPage extends ConsumerWidget {
@@ -26,7 +48,10 @@ class TransactionHistoryPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 9. (*** 已修复 ***) historyAsync 现在是一个 StreamProvider
     final historyAsync = ref.watch(transactionHistoryProvider(accountId));
+    // 10. (新增) 我们需要父 Account 来获取币种
+    final asyncAccount = ref.watch(accountDetailProvider(accountId));
 
     return Scaffold(
       appBar: AppBar(
@@ -41,44 +66,36 @@ class TransactionHistoryPage extends ConsumerWidget {
             itemCount: transactions.length,
             itemBuilder: (context, index) {
               final txn = transactions[index];
-              return _buildTransactionTile(context, ref, txn);
+              // 11. (修正) 将 Account 币种传递给 Tile Builder
+              final currencyCode = asyncAccount.asData?.value?.currency ?? 'CNY';
+              return _buildTransactionTile(context, ref, txn, currencyCode);
             },
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) => Center(child: Text('加载失败: $err')),
       ),
+      // (这个页面没有悬浮操作按钮，这是正确的)
     );
   }
 
   Widget _buildTransactionTile(
-      BuildContext context, WidgetRef ref, AccountTransaction txn) {
+      BuildContext context, WidgetRef ref, AccountTransaction txn, String currencyCode) { // 12. (修改) 接收 currencyCode
     String title;
     IconData icon;
     Color color;
-    final currencyFormat =
-        NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
+    // 13. (修改) 不再硬编码 '¥'，而是使用 formatCurrency 辅助函数
+    final formattedAmount = formatCurrency(txn.amount, currencyCode);
 
     switch (txn.type) {
       case TransactionType.invest:
-        title = '投入';
-        icon = Icons.add;
-        color = Colors.red.shade400;
-        break;
+        title = '投入'; icon = Icons.add; color = Colors.red.shade400; break;
       case TransactionType.withdraw:
-        title = '转出';
-        icon = Icons.remove;
-        color = Colors.green.shade400;
-        break;
-      case TransactionType.updateValue: // <-- 已修正
-        title = '当天资产金额';
-        icon = Icons.assessment;
-        color = Theme.of(context).colorScheme.secondary;
-        break;
+        title = '转出'; icon = Icons.remove; color = Colors.green.shade400; break;
+      case TransactionType.updateValue:
+        title = '当天资产金额'; icon = Icons.assessment; color = Theme.of(context).colorScheme.secondary; break;
       default:
-        title = '未知';
-        icon = Icons.question_mark;
-        color = Colors.grey;
+        title = txn.type.name; icon = Icons.help_outline; color = Colors.grey;
     }
 
     return Card(
@@ -87,19 +104,16 @@ class TransactionHistoryPage extends ConsumerWidget {
         leading: Icon(icon, color: color),
         title: Text(title),
         subtitle: Text(DateFormat('yyyy-MM-dd').format(txn.date)),
-        trailing: Text(
-          currencyFormat.format(txn.amount),
-          style: TextStyle(
-              color: color, fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        onTap: () => _showEditTransactionDialog(context, ref, txn),
+        trailing: Text(formattedAmount, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)), // 使用 formattedAmount
+        onTap: () => _showEditTransactionDialog(context, ref, txn, currencyCode), // 14. (修改) 传递 currencyCode
         onLongPress: () => _showDeleteConfirmation(context, ref, txn),
       ),
     );
   }
   
+  // 15. (*** 关键修复：更新逻辑 (Edit) ***)
   void _showEditTransactionDialog(
-      BuildContext context, WidgetRef ref, AccountTransaction txn) {
+      BuildContext context, WidgetRef ref, AccountTransaction txn, String currencyCode) { // 16. (修改) 接收 currencyCode
     final amountController = TextEditingController(text: txn.amount.toString());
     DateTime selectedDate = txn.date;
     final List<bool> isSelected = [
@@ -115,9 +129,10 @@ class TransactionHistoryPage extends ConsumerWidget {
             return AlertDialog(
               title: const Text('编辑记录'),
               content: Column(
+                // (UI 保持不变)
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (txn.type != TransactionType.updateValue) // <-- 已修正
+                  if (txn.type != TransactionType.updateValue) 
                     ToggleButtons(
                       isSelected: isSelected,
                       onPressed: (index) {
@@ -137,8 +152,8 @@ class TransactionHistoryPage extends ConsumerWidget {
                     controller: amountController,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: InputDecoration(
-                      labelText: txn.type == TransactionType.updateValue ? '总资产金额' : '金额', // <-- 已修正
-                      prefixText: '¥ ',
+                      labelText: txn.type == TransactionType.updateValue ? '总资产金额' : '金额',
+                      prefixText: getCurrencySymbol(currencyCode), // 17. (修改) 使用 currencyCode
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -173,17 +188,21 @@ class TransactionHistoryPage extends ConsumerWidget {
                   onPressed: () async {
                     final amount = double.tryParse(amountController.text);
                     if (amount != null && amount >= 0) {
-                      final isar = DatabaseService().isar;
+                      
+                      // 18. (关键) 更新本地对象
                       txn.amount = amount;
                       txn.date = selectedDate;
-                      if (txn.type != TransactionType.updateValue) { // <-- 已修正
+                      if (txn.type != TransactionType.updateValue) { 
                         txn.type = isSelected[0] ? TransactionType.invest : TransactionType.withdraw;
                       }
-                      await isar.writeTxn(() async {
-                        await isar.accountTransactions.put(txn);
-                      });
-                      ref.invalidate(transactionHistoryProvider(txn.account.value!.id));
-                      ref.invalidate(accountPerformanceProvider(txn.account.value!.id));
+
+                      // 19. (关键) 使用 SyncService 保存
+                      await ref.read(syncServiceProvider).saveAccountTransaction(txn);
+
+                      // 20. (关键修复) 刷新计算。我们必须使用 accountId (int)
+                      // 我们不能再使用 txn.account.value!.id
+                      ref.invalidate(accountPerformanceProvider(accountId));
+                      // (transactionHistoryProvider 是 Stream, 会自动刷新)
                       if (dialogContext.mounted) Navigator.of(dialogContext).pop();
                     }
                   },
@@ -197,6 +216,7 @@ class TransactionHistoryPage extends ConsumerWidget {
     );
   }
 
+  // 21. (*** 关键修复：删除逻辑 ***)
   void _showDeleteConfirmation(
       BuildContext context, WidgetRef ref, AccountTransaction txn) {
     showDialog(
@@ -211,12 +231,14 @@ class TransactionHistoryPage extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () async {
-              final isar = DatabaseService().isar;
-              await isar.writeTxn(() async {
-                await isar.accountTransactions.delete(txn.id);
-              });
-              ref.invalidate(transactionHistoryProvider(accountId));
+              // 22. (关键) 使用 SyncService 删除
+              await ref.read(syncServiceProvider).deleteAccountTransaction(txn);
+              
+              // (旧的 isar.writeTxn 已删除)
+              
+              // 23. 刷新计算
               ref.invalidate(accountPerformanceProvider(accountId));
+              // (transactionHistoryProvider 是 Stream, 会自动刷新)
               if (dialogContext.mounted) Navigator.of(dialogContext).pop();
             },
             child: const Text('删除', style: TextStyle(color: Colors.red)),

@@ -18,21 +18,41 @@ const AccountTransactionSchema = CollectionSchema(
   name: r'AccountTransaction',
   id: -56746924885624110,
   properties: {
-    r'amount': PropertySchema(
+    r'accountSupabaseId': PropertySchema(
       id: 0,
+      name: r'accountSupabaseId',
+      type: IsarType.string,
+    ),
+    r'amount': PropertySchema(
+      id: 1,
       name: r'amount',
       type: IsarType.double,
     ),
+    r'createdAt': PropertySchema(
+      id: 2,
+      name: r'createdAt',
+      type: IsarType.dateTime,
+    ),
     r'date': PropertySchema(
-      id: 1,
+      id: 3,
       name: r'date',
       type: IsarType.dateTime,
     ),
+    r'supabaseId': PropertySchema(
+      id: 4,
+      name: r'supabaseId',
+      type: IsarType.string,
+    ),
     r'type': PropertySchema(
-      id: 2,
+      id: 5,
       name: r'type',
       type: IsarType.string,
       enumMap: _AccountTransactiontypeEnumValueMap,
+    ),
+    r'updatedAt': PropertySchema(
+      id: 6,
+      name: r'updatedAt',
+      type: IsarType.dateTime,
     )
   },
   estimateSize: _accountTransactionEstimateSize,
@@ -40,15 +60,35 @@ const AccountTransactionSchema = CollectionSchema(
   deserialize: _accountTransactionDeserialize,
   deserializeProp: _accountTransactionDeserializeProp,
   idName: r'id',
-  indexes: {},
-  links: {
-    r'account': LinkSchema(
-      id: -8455383782118565340,
-      name: r'account',
-      target: r'Account',
-      single: true,
+  indexes: {
+    r'accountSupabaseId': IndexSchema(
+      id: -3140077554341022865,
+      name: r'accountSupabaseId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'accountSupabaseId',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'supabaseId': IndexSchema(
+      id: 2753382765909358918,
+      name: r'supabaseId',
+      unique: true,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'supabaseId',
+          type: IndexType.value,
+          caseSensitive: false,
+        )
+      ],
     )
   },
+  links: {},
   embeddedSchemas: {},
   getId: _accountTransactionGetId,
   getLinks: _accountTransactionGetLinks,
@@ -62,6 +102,18 @@ int _accountTransactionEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  {
+    final value = object.accountSupabaseId;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.supabaseId;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.type.name.length * 3;
   return bytesCount;
 }
@@ -72,9 +124,13 @@ void _accountTransactionSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeDouble(offsets[0], object.amount);
-  writer.writeDateTime(offsets[1], object.date);
-  writer.writeString(offsets[2], object.type.name);
+  writer.writeString(offsets[0], object.accountSupabaseId);
+  writer.writeDouble(offsets[1], object.amount);
+  writer.writeDateTime(offsets[2], object.createdAt);
+  writer.writeDateTime(offsets[3], object.date);
+  writer.writeString(offsets[4], object.supabaseId);
+  writer.writeString(offsets[5], object.type.name);
+  writer.writeDateTime(offsets[6], object.updatedAt);
 }
 
 AccountTransaction _accountTransactionDeserialize(
@@ -84,12 +140,16 @@ AccountTransaction _accountTransactionDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = AccountTransaction();
-  object.amount = reader.readDouble(offsets[0]);
-  object.date = reader.readDateTime(offsets[1]);
+  object.accountSupabaseId = reader.readStringOrNull(offsets[0]);
+  object.amount = reader.readDouble(offsets[1]);
+  object.createdAt = reader.readDateTime(offsets[2]);
+  object.date = reader.readDateTime(offsets[3]);
   object.id = id;
+  object.supabaseId = reader.readStringOrNull(offsets[4]);
   object.type = _AccountTransactiontypeValueEnumMap[
-          reader.readStringOrNull(offsets[2])] ??
+          reader.readStringOrNull(offsets[5])] ??
       TransactionType.invest;
+  object.updatedAt = reader.readDateTimeOrNull(offsets[6]);
   return object;
 }
 
@@ -101,13 +161,21 @@ P _accountTransactionDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 1:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readDouble(offset)) as P;
     case 2:
+      return (reader.readDateTime(offset)) as P;
+    case 3:
+      return (reader.readDateTime(offset)) as P;
+    case 4:
+      return (reader.readStringOrNull(offset)) as P;
+    case 5:
       return (_AccountTransactiontypeValueEnumMap[
               reader.readStringOrNull(offset)] ??
           TransactionType.invest) as P;
+    case 6:
+      return (reader.readDateTimeOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -136,13 +204,69 @@ Id _accountTransactionGetId(AccountTransaction object) {
 
 List<IsarLinkBase<dynamic>> _accountTransactionGetLinks(
     AccountTransaction object) {
-  return [object.account];
+  return [];
 }
 
 void _accountTransactionAttach(
     IsarCollection<dynamic> col, Id id, AccountTransaction object) {
   object.id = id;
-  object.account.attach(col, col.isar.collection<Account>(), r'account', id);
+}
+
+extension AccountTransactionByIndex on IsarCollection<AccountTransaction> {
+  Future<AccountTransaction?> getBySupabaseId(String? supabaseId) {
+    return getByIndex(r'supabaseId', [supabaseId]);
+  }
+
+  AccountTransaction? getBySupabaseIdSync(String? supabaseId) {
+    return getByIndexSync(r'supabaseId', [supabaseId]);
+  }
+
+  Future<bool> deleteBySupabaseId(String? supabaseId) {
+    return deleteByIndex(r'supabaseId', [supabaseId]);
+  }
+
+  bool deleteBySupabaseIdSync(String? supabaseId) {
+    return deleteByIndexSync(r'supabaseId', [supabaseId]);
+  }
+
+  Future<List<AccountTransaction?>> getAllBySupabaseId(
+      List<String?> supabaseIdValues) {
+    final values = supabaseIdValues.map((e) => [e]).toList();
+    return getAllByIndex(r'supabaseId', values);
+  }
+
+  List<AccountTransaction?> getAllBySupabaseIdSync(
+      List<String?> supabaseIdValues) {
+    final values = supabaseIdValues.map((e) => [e]).toList();
+    return getAllByIndexSync(r'supabaseId', values);
+  }
+
+  Future<int> deleteAllBySupabaseId(List<String?> supabaseIdValues) {
+    final values = supabaseIdValues.map((e) => [e]).toList();
+    return deleteAllByIndex(r'supabaseId', values);
+  }
+
+  int deleteAllBySupabaseIdSync(List<String?> supabaseIdValues) {
+    final values = supabaseIdValues.map((e) => [e]).toList();
+    return deleteAllByIndexSync(r'supabaseId', values);
+  }
+
+  Future<Id> putBySupabaseId(AccountTransaction object) {
+    return putByIndex(r'supabaseId', object);
+  }
+
+  Id putBySupabaseIdSync(AccountTransaction object, {bool saveLinks = true}) {
+    return putByIndexSync(r'supabaseId', object, saveLinks: saveLinks);
+  }
+
+  Future<List<Id>> putAllBySupabaseId(List<AccountTransaction> objects) {
+    return putAllByIndex(r'supabaseId', objects);
+  }
+
+  List<Id> putAllBySupabaseIdSync(List<AccountTransaction> objects,
+      {bool saveLinks = true}) {
+    return putAllByIndexSync(r'supabaseId', objects, saveLinks: saveLinks);
+  }
 }
 
 extension AccountTransactionQueryWhereSort
@@ -150,6 +274,15 @@ extension AccountTransactionQueryWhereSort
   QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhere> anyId() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(const IdWhereClause.any());
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhere>
+      anySupabaseId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'supabaseId'),
+      );
     });
   }
 }
@@ -223,10 +356,394 @@ extension AccountTransactionQueryWhere
       ));
     });
   }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      accountSupabaseIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'accountSupabaseId',
+        value: [null],
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      accountSupabaseIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'accountSupabaseId',
+        lower: [null],
+        includeLower: false,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      accountSupabaseIdEqualTo(String? accountSupabaseId) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'accountSupabaseId',
+        value: [accountSupabaseId],
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      accountSupabaseIdNotEqualTo(String? accountSupabaseId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountSupabaseId',
+              lower: [],
+              upper: [accountSupabaseId],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountSupabaseId',
+              lower: [accountSupabaseId],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountSupabaseId',
+              lower: [accountSupabaseId],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'accountSupabaseId',
+              lower: [],
+              upper: [accountSupabaseId],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      supabaseIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'supabaseId',
+        value: [null],
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      supabaseIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'supabaseId',
+        lower: [null],
+        includeLower: false,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      supabaseIdEqualTo(String? supabaseId) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'supabaseId',
+        value: [supabaseId],
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      supabaseIdNotEqualTo(String? supabaseId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'supabaseId',
+              lower: [],
+              upper: [supabaseId],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'supabaseId',
+              lower: [supabaseId],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'supabaseId',
+              lower: [supabaseId],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'supabaseId',
+              lower: [],
+              upper: [supabaseId],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      supabaseIdGreaterThan(
+    String? supabaseId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'supabaseId',
+        lower: [supabaseId],
+        includeLower: include,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      supabaseIdLessThan(
+    String? supabaseId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'supabaseId',
+        lower: [],
+        upper: [supabaseId],
+        includeUpper: include,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      supabaseIdBetween(
+    String? lowerSupabaseId,
+    String? upperSupabaseId, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'supabaseId',
+        lower: [lowerSupabaseId],
+        includeLower: includeLower,
+        upper: [upperSupabaseId],
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      supabaseIdStartsWith(String SupabaseIdPrefix) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'supabaseId',
+        lower: [SupabaseIdPrefix],
+        upper: ['$SupabaseIdPrefix\u{FFFFF}'],
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      supabaseIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'supabaseId',
+        value: [''],
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterWhereClause>
+      supabaseIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.lessThan(
+              indexName: r'supabaseId',
+              upper: [''],
+            ))
+            .addWhereClause(IndexWhereClause.greaterThan(
+              indexName: r'supabaseId',
+              lower: [''],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.greaterThan(
+              indexName: r'supabaseId',
+              lower: [''],
+            ))
+            .addWhereClause(IndexWhereClause.lessThan(
+              indexName: r'supabaseId',
+              upper: [''],
+            ));
+      }
+    });
+  }
 }
 
 extension AccountTransactionQueryFilter
     on QueryBuilder<AccountTransaction, AccountTransaction, QFilterCondition> {
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      accountSupabaseIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'accountSupabaseId',
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      accountSupabaseIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'accountSupabaseId',
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      accountSupabaseIdEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'accountSupabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      accountSupabaseIdGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'accountSupabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      accountSupabaseIdLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'accountSupabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      accountSupabaseIdBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'accountSupabaseId',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      accountSupabaseIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'accountSupabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      accountSupabaseIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'accountSupabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      accountSupabaseIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'accountSupabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      accountSupabaseIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'accountSupabaseId',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      accountSupabaseIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'accountSupabaseId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      accountSupabaseIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'accountSupabaseId',
+        value: '',
+      ));
+    });
+  }
+
   QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
       amountEqualTo(
     double value, {
@@ -289,6 +806,62 @@ extension AccountTransactionQueryFilter
         upper: upper,
         includeUpper: includeUpper,
         epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      createdAtEqualTo(DateTime value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'createdAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      createdAtGreaterThan(
+    DateTime value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'createdAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      createdAtLessThan(
+    DateTime value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'createdAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      createdAtBetween(
+    DateTime lower,
+    DateTime upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'createdAt',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
       ));
     });
   }
@@ -401,6 +974,160 @@ extension AccountTransactionQueryFilter
         includeLower: includeLower,
         upper: upper,
         includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      supabaseIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'supabaseId',
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      supabaseIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'supabaseId',
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      supabaseIdEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'supabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      supabaseIdGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'supabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      supabaseIdLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'supabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      supabaseIdBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'supabaseId',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      supabaseIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'supabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      supabaseIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'supabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      supabaseIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'supabaseId',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      supabaseIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'supabaseId',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      supabaseIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'supabaseId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      supabaseIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'supabaseId',
+        value: '',
       ));
     });
   }
@@ -540,30 +1267,104 @@ extension AccountTransactionQueryFilter
       ));
     });
   }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      updatedAtIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'updatedAt',
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      updatedAtIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'updatedAt',
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      updatedAtEqualTo(DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'updatedAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      updatedAtGreaterThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'updatedAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      updatedAtLessThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'updatedAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
+      updatedAtBetween(
+    DateTime? lower,
+    DateTime? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'updatedAt',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
 }
 
 extension AccountTransactionQueryObject
     on QueryBuilder<AccountTransaction, AccountTransaction, QFilterCondition> {}
 
 extension AccountTransactionQueryLinks
-    on QueryBuilder<AccountTransaction, AccountTransaction, QFilterCondition> {
-  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
-      account(FilterQuery<Account> q) {
-    return QueryBuilder.apply(this, (query) {
-      return query.link(q, r'account');
-    });
-  }
-
-  QueryBuilder<AccountTransaction, AccountTransaction, QAfterFilterCondition>
-      accountIsNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.linkLength(r'account', 0, true, 0, true);
-    });
-  }
-}
+    on QueryBuilder<AccountTransaction, AccountTransaction, QFilterCondition> {}
 
 extension AccountTransactionQuerySortBy
     on QueryBuilder<AccountTransaction, AccountTransaction, QSortBy> {
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      sortByAccountSupabaseId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'accountSupabaseId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      sortByAccountSupabaseIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'accountSupabaseId', Sort.desc);
+    });
+  }
+
   QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
       sortByAmount() {
     return QueryBuilder.apply(this, (query) {
@@ -575,6 +1376,20 @@ extension AccountTransactionQuerySortBy
       sortByAmountDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'amount', Sort.desc);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      sortByCreatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'createdAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      sortByCreatedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'createdAt', Sort.desc);
     });
   }
 
@@ -593,6 +1408,20 @@ extension AccountTransactionQuerySortBy
   }
 
   QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      sortBySupabaseId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'supabaseId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      sortBySupabaseIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'supabaseId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
       sortByType() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'type', Sort.asc);
@@ -605,10 +1434,38 @@ extension AccountTransactionQuerySortBy
       return query.addSortBy(r'type', Sort.desc);
     });
   }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      sortByUpdatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'updatedAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      sortByUpdatedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'updatedAt', Sort.desc);
+    });
+  }
 }
 
 extension AccountTransactionQuerySortThenBy
     on QueryBuilder<AccountTransaction, AccountTransaction, QSortThenBy> {
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      thenByAccountSupabaseId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'accountSupabaseId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      thenByAccountSupabaseIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'accountSupabaseId', Sort.desc);
+    });
+  }
+
   QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
       thenByAmount() {
     return QueryBuilder.apply(this, (query) {
@@ -620,6 +1477,20 @@ extension AccountTransactionQuerySortThenBy
       thenByAmountDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'amount', Sort.desc);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      thenByCreatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'createdAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      thenByCreatedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'createdAt', Sort.desc);
     });
   }
 
@@ -652,6 +1523,20 @@ extension AccountTransactionQuerySortThenBy
   }
 
   QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      thenBySupabaseId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'supabaseId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      thenBySupabaseIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'supabaseId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
       thenByType() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'type', Sort.asc);
@@ -664,14 +1549,43 @@ extension AccountTransactionQuerySortThenBy
       return query.addSortBy(r'type', Sort.desc);
     });
   }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      thenByUpdatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'updatedAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QAfterSortBy>
+      thenByUpdatedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'updatedAt', Sort.desc);
+    });
+  }
 }
 
 extension AccountTransactionQueryWhereDistinct
     on QueryBuilder<AccountTransaction, AccountTransaction, QDistinct> {
   QueryBuilder<AccountTransaction, AccountTransaction, QDistinct>
+      distinctByAccountSupabaseId({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'accountSupabaseId',
+          caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QDistinct>
       distinctByAmount() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'amount');
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QDistinct>
+      distinctByCreatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'createdAt');
     });
   }
 
@@ -683,9 +1597,23 @@ extension AccountTransactionQueryWhereDistinct
   }
 
   QueryBuilder<AccountTransaction, AccountTransaction, QDistinct>
+      distinctBySupabaseId({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'supabaseId', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QDistinct>
       distinctByType({bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'type', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<AccountTransaction, AccountTransaction, QDistinct>
+      distinctByUpdatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'updatedAt');
     });
   }
 }
@@ -698,9 +1626,23 @@ extension AccountTransactionQueryProperty
     });
   }
 
+  QueryBuilder<AccountTransaction, String?, QQueryOperations>
+      accountSupabaseIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'accountSupabaseId');
+    });
+  }
+
   QueryBuilder<AccountTransaction, double, QQueryOperations> amountProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'amount');
+    });
+  }
+
+  QueryBuilder<AccountTransaction, DateTime, QQueryOperations>
+      createdAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'createdAt');
     });
   }
 
@@ -710,10 +1652,24 @@ extension AccountTransactionQueryProperty
     });
   }
 
+  QueryBuilder<AccountTransaction, String?, QQueryOperations>
+      supabaseIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'supabaseId');
+    });
+  }
+
   QueryBuilder<AccountTransaction, TransactionType, QQueryOperations>
       typeProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'type');
+    });
+  }
+
+  QueryBuilder<AccountTransaction, DateTime?, QQueryOperations>
+      updatedAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'updatedAt');
     });
   }
 }

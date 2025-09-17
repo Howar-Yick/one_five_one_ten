@@ -1,109 +1,136 @@
+// 文件: lib/pages/settings_page.dart
 import 'dart:io';
-import 'dart:typed_data';
+// import 'dart:typed_data'; // (如果 _backupData 不需要，可以移除)
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
-import 'package:one_five_one_ten/services/onedrive_service.dart';
-import 'package:one_five_one_ten/services/sync_service.dart';
 
-// 认证状态 Provider
-final onedriveAuthStateProvider = FutureProvider<OneDriveAuthState>((ref) async {
-  return OneDriveService().getAuthState();
-});
+// --- (已移除) 旧的 OneDrive 和 SyncService 导入 ---
+// import 'package:one_five_one_ten/services/onedrive_service.dart';
+// import 'package:one_five_one_ten/services/sync_service.dart';
 
-// 自动同步开关 Provider
-final autoSyncProvider = FutureProvider<bool>((ref) async {
-  return SyncService.instance.isEnabled();
-});
+// --- (新增) 导入我们新的 Provider ---
+import 'package:one_five_one_ten/providers/global_providers.dart';
+import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 
-class SettingsPage extends ConsumerWidget {
+
+// --- (已移除) 旧的 OneDrive Providers ---
+// final onedriveAuthStateProvider = ...
+// final autoSyncProvider = ...
+
+// 1. 更改为 ConsumerStatefulWidget 以便处理文本控制器和按钮状态
+class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final authAsync = ref.watch(onedriveAuthStateProvider);
-    final autoSyncEnabled = ref.watch(autoSyncProvider).value ?? true;
+  ConsumerState<SettingsPage> createState() => _SettingsPageState();
+}
 
+class _SettingsPageState extends ConsumerState<SettingsPage> {
+  // 用于登录/注册表单
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+  String? _errorMsg;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  // --- (新增) 登录/注册/登出逻辑 ---
+
+  Future<void> _handleLogin() async {
+    setState(() { _isLoading = true; _errorMsg = null; });
+    try {
+      final syncService = ref.read(syncServiceProvider);
+      await syncService.login(
+        _emailController.text.trim(), 
+        _passwordController.text.trim()
+      );
+      // 登录成功，Consumer widget 会自动重建并显示已登录界面
+    } catch (e) {
+      _errorMsg = "登录失败: ${e.toString()}";
+    } finally {
+      if(mounted) setState(() { _isLoading = false; });
+    }
+  }
+  
+  Future<void> _handleRegister() async {
+    setState(() { _isLoading = true; _errorMsg = null; });
+    try {
+      final syncService = ref.read(syncServiceProvider);
+      await syncService.signUp(
+        _emailController.text.trim(), 
+        _passwordController.text.trim()
+      );
+      // 注册成功，widget 会自动重建
+    } catch (e) {
+      _errorMsg = "注册失败: ${e.toString()}";
+    } finally {
+      if(mounted) setState(() { _isLoading = false; });
+    }
+  }
+
+  Future<void> _handleLogout() async {
+     setState(() { _isLoading = true; });
+     try {
+       await ref.read(syncServiceProvider).logout();
+     } catch (e) {
+        _errorMsg = "登出失败: ${e.toString()}";
+     }
+     if(mounted) setState(() { _isLoading = false; });
+  }
+
+  // --- build 方法已重构 ---
+  @override
+  Widget build(BuildContext context) {
+    // 2. 使用 ref.watch 监听 syncService。当登录/登出时，authState 改变，UI 将自动刷新
+    final syncService = ref.watch(syncServiceProvider);
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('我的设置'),
       ),
       body: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
         children: [
-          // ========== 云同步 ==========
+          // ========== 云同步 (已替换为 Supabase) ==========
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: authAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text('加载登录状态出错：$e'),
-              data: (auth) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('云同步 (OneDrive)', style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 8),
-                    if (!auth.signedIn) ...[
-                      const Text('使用设备码登录你的 Microsoft 账户以启用云端同步。'),
-                      const SizedBox(height: 8),
-                      ElevatedButton(
-                        onPressed: () async {
-                          final ok = await OneDriveService().signInWithDeviceCode(context);
-                          if (ok) {
-                            ref.invalidate(onedriveAuthStateProvider);
-                            // 登录成功后，立即启用并触发一次同步
-                            await SyncService.instance.setEnabled(true, triggerSync: true);
-                            ref.invalidate(autoSyncProvider);
-                          }
-                        },
-                        child: const Text('登录 Microsoft 账户'),
-                      ),
-                    ] else ...[
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.cloud_done_outlined),
-                        title: const Text('已登录 OneDrive'),
-                        subtitle: Text(auth.username ?? '已连接'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.logout),
-                          tooltip: '登出',
-                          onPressed: () async {
-                            await OneDriveService().signOut();
-                            await SyncService.instance.setEnabled(false); // 登出时禁用自动同步
-                            ref.invalidate(onedriveAuthStateProvider);
-                            ref.invalidate(autoSyncProvider);
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      SwitchListTile(
-                        title: const Text('自动云端同步'),
-                        subtitle: const Text('数据变更后自动上传，应用启动时自动下载'),
-                        value: autoSyncEnabled,
-                        onChanged: (val) async {
-                           await SyncService.instance.setEnabled(val);
-                           ref.invalidate(autoSyncProvider);
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.sync),
-                        title: const Text('立即同步'),
-                        subtitle: const Text('手动触发一次拉取和推送'),
-                        onTap: () async {
-                          await SyncService.instance.start();
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('同步已触发')));
-                        },
-                      ),
-                    ],
-                  ],
-                );
-              },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('云同步 (Supabase)', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+
+                // 3. 根据登录状态显示不同 UI
+                if (_isLoading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (syncService.isLoggedIn)
+                  _buildLoggedInSection(syncService) // 显示已登录界面
+                else
+                  _buildLoggedOutSection(), // 显示登录/注册表单
+                
+                // 显示错误信息
+                if (_errorMsg != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(_errorMsg!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  ),
+              ],
             ),
           ),
 
           const Divider(height: 32),
 
-          // ========== 本地备份 ==========
+          // ========== 本地备份 (保留您现有的逻辑) ==========
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Text('本地备份', style: Theme.of(context).textTheme.titleLarge),
@@ -112,24 +139,95 @@ class SettingsPage extends ConsumerWidget {
             leading: const Icon(Icons.backup_outlined),
             title: const Text('备份到本地'),
             subtitle: const Text('将所有数据导出到一个本地文件中'),
-            onTap: () => _backupData(context),
+            onTap: () => _backupData(context), // 保留
           ),
           ListTile(
             leading: const Icon(Icons.restore_page_outlined),
             title: const Text('从本地恢复'),
             subtitle: const Text('从备份文件中导入数据（将覆盖当前数据）'),
-            onTap: () => _restoreData(context, ref),
+            onTap: () => _restoreData(context), // 4. 修改：不再需要传入 ref
           ),
         ],
       ),
     );
   }
 
-  // ======= 云端上传/下载（手动按钮，已被SyncService替代，但保留本地逻辑） =======
-  // Future<void> _uploadToCloud... (我们使用 SyncService._pushIfDirty 代替)
-  // Future<void> _downloadFromCloud... (我们使用 SyncService._pullIfRemoteNewer 代替)
+  // (*** 新增：登录后的 UI ***)
+  Widget _buildLoggedInSection(SupabaseSyncService syncService) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.cloud_done),
+          title: const Text('已登录'),
+          subtitle: Text(syncService.currentUser!.email ?? 'N/A'),
+        ),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.tonal(
+            onPressed: _isLoading ? null : _handleLogout,
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.errorContainer
+            ),
+            child: Text(
+              '退出登录', 
+              style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer)
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+  
+  // (*** 新增：登录前的 UI ***)
+  Widget _buildLoggedOutSection() {
+    return Column(
+      children: [
+        TextFormField(
+          controller: _emailController,
+          decoration: const InputDecoration(
+            labelText: '电子邮件',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.email),
+          ),
+          keyboardType: TextInputType.emailAddress,
+          enabled: !_isLoading,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _passwordController,
+          decoration: const InputDecoration(
+            labelText: '密码 (至少6位)',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.lock),
+          ),
+          obscureText: true,
+          enabled: !_isLoading,
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _isLoading ? null : _handleLogin,
+                child: const Text('登录'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton(
+                onPressed: _isLoading ? null : _handleRegister,
+                child: const Text('注册'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 
-  // ======= 本地：备份到文件 =======
+  // ======= 本地：备份到文件 (保留) =======
   Future<void> _backupData(BuildContext context) async {
     final isar = DatabaseService().isar;
     final messenger = ScaffoldMessenger.of(context);
@@ -139,6 +237,7 @@ class SettingsPage extends ConsumerWidget {
       fileName: 'one_five_one_ten_backup_${DateTime.now().toIso8601String().split('T').first}.isar',
     );
     if (savePath == null) {
+      if (!context.mounted) return;
       messenger.showSnackBar(const SnackBar(content: Text('已取消备份')));
       return;
     }
@@ -151,8 +250,8 @@ class SettingsPage extends ConsumerWidget {
     }
   }
 
-  // ======= 本地：从文件恢复 =======
-  Future<void> _restoreData(BuildContext context, WidgetRef ref) async {
+  // ======= 本地：从文件恢复 (修改：使用新服务) =======
+  Future<void> _restoreData(BuildContext context) async { // 5. (修改) 不再需要传入 ref
     final messenger = ScaffoldMessenger.of(context);
 
     final confirmed = await showDialog<bool>(
@@ -179,18 +278,19 @@ class SettingsPage extends ConsumerWidget {
     final dbPath = isar.path!;
 
     try {
-      // 在恢复前，停止所有同步服务
-      await SyncService.instance.stop();
+      // 6. (修改) 在恢复前，停止新的同步服务
+      ref.read(syncServiceProvider).stopSync();
       await isar.close();
       File(backupPath).copySync(dbPath);
       messenger.showSnackBar(const SnackBar(content: Text('恢复成功！请手动重启 App 以加载新数据。')));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('恢复失败：$e')));
     } finally {
-      // 重新启动数据库和服务
+      // 重新启动数据库
       await DatabaseService().init();
-      ref.invalidate(onedriveAuthStateProvider);
-      ref.invalidate(autoSyncProvider);
+      // 7. (修改) 重建 Provider，并让 main_nav_page 决定何时重启同步
+      ref.invalidate(syncServiceProvider);
+      // (旧的 provider 已删除)
     }
   }
 }

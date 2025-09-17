@@ -1,3 +1,4 @@
+// 文件: lib/pages/value_asset_detail_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +12,12 @@ import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
 
+// 1. (新增) 导入 Providers 和新服务
+import 'package:one_five_one_ten/providers/global_providers.dart';
+import 'package:one_five_one_ten/services/supabase_sync_service.dart';
+import 'package:one_five_one_ten/models/account.dart'; // 修复导航需要
+
+// --- Provider 1 & 2 (保持不变) ---
 final valueAssetDetailProvider = FutureProvider.autoDispose.family<Asset?, int>((ref, assetId) {
   final isar = DatabaseService().isar;
   return isar.assets.get(assetId);
@@ -22,6 +29,8 @@ final valueAssetPerformanceProvider = FutureProvider.autoDispose.family<Map<Stri
   return CalculatorService().calculateValueAssetPerformance(asset);
 });
 
+// --- Provider 3 (保持不变) ---
+// 这个 Provider 已经依赖 performance provider，逻辑是正确的
 final valueAssetHistoryProvider = FutureProvider.autoDispose.family<List<FlSpot>, Asset>((ref, asset) {
   ref.watch(valueAssetPerformanceProvider(asset.id));
   return CalculatorService().getValueAssetHistory(asset);
@@ -43,14 +52,27 @@ class ValueAssetDetailPage extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             tooltip: '编辑资产',
-            onPressed: () {
+            onPressed: () async { // 2. (修改) 改为 async
               final asset = asyncAsset.asData?.value;
               if (asset != null) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => AddEditAssetPage(accountId: asset.account.value!.id, assetId: asset.id),
-                  ),
-                );
+                
+                // 3. (*** 关键修复：修复导航逻辑 ***)
+                // 与 share_asset_detail_page 一样的修复
+                final isar = DatabaseService().isar; // (*** 修正：使用 DatabaseService().isar ***)
+                final parentAccount = await isar.accounts.where()
+                                          .filter() // (*** 修正：添加 filter() ***)
+                                          .supabaseIdEqualTo(asset.accountSupabaseId)
+                                          .findFirst();
+                
+                if (parentAccount != null && context.mounted) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => AddEditAssetPage(accountId: parentAccount.id, assetId: asset.id),
+                    ),
+                  );
+                } else if (context.mounted) {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('错误：找不到父账户')));
+                }
               }
             },
           )
@@ -71,7 +93,8 @@ class ValueAssetDetailPage extends ConsumerWidget {
               children: [
                 _buildPerformanceCard(context, ref, asset, performance),
                 const SizedBox(height: 24),
-                // --- 新增：调用图表 ---
+                
+                // --- 图表逻辑 (保持不变) ---
                 ref.watch(valueAssetHistoryProvider(asset)).when(
                   data: (spots) {
                     if (spots.length < 2) return const SizedBox.shrink();
@@ -103,6 +126,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
   }
 
   Widget _buildPerformanceCard(BuildContext context, WidgetRef ref, Asset asset, Map<String, dynamic> performance) {
+    // (*** 内部逻辑和布局保持不变 ***)
     final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
     final totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final profitRate = (performance['profitRate'] ?? 0.0) as double;
@@ -124,6 +148,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
                   icon: const Icon(Icons.history),
                   tooltip: '查看更新记录',
                   onPressed: () {
+                    // (导航保持不变，HistoryPage 稍后修复)
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => AssetTransactionHistoryPage(assetId: asset.id),
@@ -152,6 +177,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
     );
   }
 
+  // 4. (*** 关键修复：_showInvestWithdrawDialog 写入逻辑 ***)
   void _showInvestWithdrawDialog(BuildContext context, WidgetRef ref, Asset asset) {
     final amountController = TextEditingController();
     final List<bool> isSelected = [true, false];
@@ -165,6 +191,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
             return AlertDialog(
               title: const Text('资金操作'),
               content: Column(
+                // (UI 保持不变)
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ToggleButtons(
@@ -200,19 +227,19 @@ class ValueAssetDetailPage extends ConsumerWidget {
                   onPressed: () async {
                     final amount = double.tryParse(amountController.text);
                     if (amount != null && amount > 0) {
-                      final isar = DatabaseService().isar;
+                      final syncService = ref.read(syncServiceProvider); // 5. 获取服务
                       final isInvest = isSelected[0];
 
                       final newTxn = Transaction()
                         ..amount = amount
                         ..date = selectedDate
+                        ..createdAt = DateTime.now() // (设置 createdAt)
                         ..type = isInvest ? TransactionType.invest : TransactionType.withdraw
-                        ..asset.value = asset;
+                        // 6. (关键) 设置 SUPABASE ID 关系
+                        ..assetSupabaseId = asset.supabaseId; 
                         
-                      await isar.writeTxn(() async {
-                        await isar.collection<Transaction>().put(newTxn);
-                        await newTxn.asset.save();
-                      });
+                      // 7. 调用 SyncService 保存
+                      await syncService.saveTransaction(newTxn);
                       
                       ref.invalidate(valueAssetPerformanceProvider(asset.id));
                       if (dialogContext.mounted) {
@@ -235,6 +262,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
     );
   }
 
+  // 8. (*** 关键修复：_showUpdateValueDialog 写入逻辑 ***)
   void _showUpdateValueDialog(BuildContext context, WidgetRef ref, Asset asset) {
     final valueController = TextEditingController();
     DateTime selectedDate = DateTime.now();
@@ -246,6 +274,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
             return AlertDialog(
               title: const Text('更新资产总值'),
               content: Column(
+                // (UI 保持不变)
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(controller: valueController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: '当前资产总价值', prefixText: getCurrencySymbol(asset.currency))),
@@ -271,24 +300,26 @@ class ValueAssetDetailPage extends ConsumerWidget {
                   onPressed: () async {
                     final value = double.tryParse(valueController.text);
                     if (value != null) {
-                      final isar = DatabaseService().isar;
+                      final syncService = ref.read(syncServiceProvider); // 9. 获取服务
+
                       final newTxn = Transaction()
                         ..amount = value
                         ..date = selectedDate
+                        ..createdAt = DateTime.now() // (设置 createdAt)
                         ..type = TransactionType.updateValue
-                        ..asset.value = asset;
-                      await isar.writeTxn(() async {
-                        await isar.transactions.put(newTxn);
-                        await newTxn.asset.save();
-                      });
+                        // 10. (关键) 设置 SUPABASE ID 关系
+                        ..assetSupabaseId = asset.supabaseId; 
+                      
+                      await syncService.saveTransaction(newTxn); // 11. 调用 SyncService
+
                       ref.invalidate(valueAssetPerformanceProvider(asset.id));
                       if (dialogContext.mounted) {
-                         Navigator.of(dialogContext).pop();
-                         Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => AssetTransactionHistoryPage(assetId: asset.id),
-                          ),
-                        );
+                           Navigator.of(dialogContext).pop();
+                           Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => AssetTransactionHistoryPage(assetId: asset.id),
+                            ),
+                          );
                       }
                     }
                   },
@@ -302,30 +333,7 @@ class ValueAssetDetailPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildHistoryChart(BuildContext context, WidgetRef ref, Asset asset) {
-    final asyncHistory = ref.watch(valueAssetHistoryProvider(asset));
-    return asyncHistory.when(
-      data: (spots) {
-        if (spots.length < 2) return const SizedBox.shrink();
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('资产净值趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 24),
-                _buildLineChart(context, spots, asset), // 传入asset
-              ],
-            ),
-          ),
-        );
-      },
-      loading: () => const SizedBox.shrink(),
-      error: (err, stack) => const SizedBox.shrink(),
-    );
-  }
-  
+  // (*** 您的图表和 metric row 辅助函数保持不变 ***)
   Widget _buildLineChart(BuildContext context, List<FlSpot> spots, Asset asset) {
     final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: getCurrencySymbol(asset.currency));
     final colorScheme = Theme.of(context).colorScheme;

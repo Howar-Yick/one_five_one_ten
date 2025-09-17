@@ -1,3 +1,4 @@
+// 文件: lib/pages/share_asset_detail_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -11,11 +12,20 @@ import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/services/price_sync_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
 
+// 1. (新增) 导入 Providers 和新服务
+import 'package:one_five_one_ten/providers/global_providers.dart';
+import 'package:one_five_one_ten/services/supabase_sync_service.dart';
+import 'package:one_five_one_ten/models/account.dart'; // 修复导航需要
+import 'package:isar/isar.dart'; // Isar 修复需要
+
+
+// --- Provider 1: 获取资产详情 (保持不变) ---
 final shareAssetDetailProvider = FutureProvider.autoDispose.family<Asset?, int>((ref, assetId) {
   final isar = DatabaseService().isar;
   return isar.assets.get(assetId);
 });
 
+// --- Provider 2: 资产性能 (保持不变) ---
 final shareAssetPerformanceProvider = FutureProvider.autoDispose.family<Map<String, dynamic>, int>((ref, assetId) async {
   final asset = await ref.watch(shareAssetDetailProvider(assetId).future);
   if (asset == null) {
@@ -24,30 +34,44 @@ final shareAssetPerformanceProvider = FutureProvider.autoDispose.family<Map<Stri
   return CalculatorService().calculateShareAssetPerformance(asset);
 });
 
-final snapshotHistoryProvider = StreamProvider.autoDispose.family<List<PositionSnapshot>, int>((ref, assetId) {
-  final isar = DatabaseService().isar;
-  return isar.assets.watchObject(assetId, fireImmediately: true).asyncMap((asset) async {
-    if (asset != null) {
-      await asset.snapshots.load();
-      final snapshots = asset.snapshots.toList();
-      snapshots.sort((a, b) => b.date.compareTo(a.date)); // 按日期降序，显示最新
-      return snapshots;
-    }
-    return [];
-  });
+// --- Provider 3: 快照历史 (*** 关键修复 ***) ---
+// 旧代码依赖已删除的 Backlink (asset.snapshots.load())
+// 新代码改为监听 PositionSnapshot 集合，并使用 "assetSupabaseId" 过滤
+final snapshotHistoryProvider = StreamProvider.autoDispose.family<List<PositionSnapshot>, int>((ref, assetId) async* { // 2. 改为 async*
+  final isar = DatabaseService().isar; // (*** 修正：使用 DatabaseService().isar ***)
+  
+  // 3. 必须先获取 Asset 才能知道它的 Supabase ID
+  final asset = await ref.watch(shareAssetDetailProvider(assetId).future);
+  if (asset == null || asset.supabaseId == null) {
+    yield [];
+    return;
+  }
+  
+  final assetSupabaseId = asset.supabaseId!;
+
+  // 4. (新逻辑) 监听 Snapshot 集合中所有匹配此 assetSupabaseId 的快照
+  //    (*** 修正：修复 .filter() 语法错误 ***)
+  final snapshotStream = isar.positionSnapshots
+      .filter() // <-- 直接在集合上调用 filter()
+      .assetSupabaseIdEqualTo(assetSupabaseId)
+      .sortByDateDesc() // 按日期降序排序
+      .watch(fireImmediately: true);
+
+  // 5. 直接返回流的结果
+  yield* snapshotStream; 
 });
 
-// Provider 用于获取份额法资产的历史价格
+
+// Provider 4: 价格历史 (保持不变)
 final assetNavHistoryProvider = FutureProvider.autoDispose.family<List<FlSpot>, Asset>((ref, asset) {
-  // 价格同步成功后，自动刷新图表
   ref.watch(shareAssetPerformanceProvider(asset.id));
   final service = PriceSyncService();
   switch (asset.subType) {
     case AssetSubType.mutualFund:
-      return service.syncNavHistory(asset.code); // 场外基金调用净值历史
+      return service.syncNavHistory(asset.code); 
     case AssetSubType.stock:
     case AssetSubType.etf:
-      return service.syncKLineHistory(asset.code); // 股票和ETF调用K线历史
+      return service.syncKLineHistory(asset.code); 
     default:
       return Future.value([]);
   }
@@ -68,14 +92,29 @@ class ShareAssetDetailPage extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             tooltip: '编辑资产',
-            onPressed: () {
+            onPressed: () async { // 6. (修改) 改为 async
               final asset = asyncAsset.asData?.value;
               if (asset != null) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => AddEditAssetPage(accountId: asset.account.value!.id, assetId: asset.id),
-                  ),
-                );
+                
+                // 7. (*** 关键修复：修复导航逻辑 ***)
+                // 我们需要父账户的本地 ID (int) 才能导航到 AddEditAssetPage
+                // 但我们只有 asset.accountSupabaseId (String?)
+                final isar = DatabaseService().isar; // (*** 修正：使用 DatabaseService().isar ***)
+                final parentAccount = await isar.accounts.where()
+                                          .filter() // (*** 修正：添加 filter() ***)
+                                          .supabaseIdEqualTo(asset.accountSupabaseId)
+                                          .findFirst();
+                
+                if (parentAccount != null && context.mounted) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      // 8. 传入正确的 accountId 和 assetId
+                      builder: (_) => AddEditAssetPage(accountId: parentAccount.id, assetId: asset.id),
+                    ),
+                  );
+                } else if (context.mounted) {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('错误：找不到父账户')));
+                }
               }
             },
           ),
@@ -96,12 +135,15 @@ class ShareAssetDetailPage extends ConsumerWidget {
                 ScaffoldMessenger.of(context).removeCurrentSnackBar();
 
                 if (newPrice != null) {
-                  final isar = DatabaseService().isar;
                   asset.latestPrice = newPrice;
                   asset.priceUpdateDate = DateTime.now();
-                  await isar.writeTxn(() async => await isar.assets.put(asset));
+
+                  // 9. (*** 关键修复：使用 SyncService 保存 ***)
+                  await ref.read(syncServiceProvider).saveAsset(asset);
+                  
+                  // (刷新 Provider 保持不变)
                   ref.invalidate(shareAssetPerformanceProvider(assetId));
-                  ref.invalidate(assetNavHistoryProvider(asset)); // 刷新图表
+                  ref.invalidate(assetNavHistoryProvider(asset)); 
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('价格同步成功！')));
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('同步失败，请手动更新')));
@@ -127,7 +169,6 @@ class ShareAssetDetailPage extends ConsumerWidget {
                 _buildPerformanceCard(context, ref, asset),
                 const SizedBox(height: 24),
                 
-                // 为所有份额法资产（股票/ETF/场外）显示图表
                 ref.watch(assetNavHistoryProvider(asset)).when(
                   data: (spots) {
                     if (spots.length < 2) return const SizedBox.shrink(); 
@@ -161,6 +202,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
     );
   }
 
+  // (PerformanceCard 逻辑保持不变)
   Widget _buildPerformanceCard(BuildContext context, WidgetRef ref, Asset asset) {
     final asyncPerformance = ref.watch(shareAssetPerformanceProvider(assetId));
     final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
@@ -188,6 +230,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
                       icon: const Icon(Icons.history),
                       tooltip: '查看快照历史',
                       onPressed: () {
+                        // (导航保持不变，SnapshotHistoryPage 稍后修复)
                         Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (_) => SnapshotHistoryPage(assetId: asset.id),
@@ -224,7 +267,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    icon: const Icon(Icons.sync_alt), // 更改图标以示区分
+                    icon: const Icon(Icons.sync_alt), 
                     label: const Text('更新持仓快照'),
                     onPressed: () => _showUpdateSnapshotDialog(context, ref, asset),
                   ),
@@ -239,7 +282,9 @@ class ShareAssetDetailPage extends ConsumerWidget {
     );
   }
 
+  // 10. (*** 关键修复：_buildSnapshotHistory Provider 已在顶部修复 ***)
   Widget _buildSnapshotHistory(BuildContext context, WidgetRef ref, Asset asset) {
+     // (现在我们 watch 已经修复的 provider)
      final asyncSnapshots = ref.watch(snapshotHistoryProvider(assetId));
      return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,7 +310,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
         asyncSnapshots.when(
           data: (snapshots) {
             if (snapshots.isEmpty) return const Card(child: ListTile(title: Text('暂无快照记录')));
-            final latest = snapshots.first; 
+            final latest = snapshots.first; // (provider 已确保按日期降序)
             return ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.history_toggle_off_outlined),
@@ -280,10 +325,11 @@ class ShareAssetDetailPage extends ConsumerWidget {
     );
   }
 
+  // 11. (*** 关键修复：_showUpdateSnapshotDialog 写入逻辑 ***)
   void _showUpdateSnapshotDialog(BuildContext context, WidgetRef ref, Asset asset) {
     final sharesController = TextEditingController();
     final costController = TextEditingController();
-    final priceController = TextEditingController();
+    final priceController = TextEditingController(text: asset.latestPrice > 0 ? asset.latestPrice.toString() : ''); // (预填充价格)
     DateTime selectedDate = DateTime.now();
 
     showDialog(
@@ -322,35 +368,38 @@ class ShareAssetDetailPage extends ConsumerWidget {
                     final shares = double.tryParse(sharesController.text);
                     final cost = double.tryParse(costController.text);
                     final priceText = priceController.text.trim();
-
+                    
                     if (shares != null && cost != null) {
-                      final isar = DatabaseService().isar;
+                      final syncService = ref.read(syncServiceProvider); // 12. 获取服务
                       
+                      bool assetUpdated = false;
                       if (priceText.isNotEmpty) {
                         asset.latestPrice = double.tryParse(priceText) ?? asset.latestPrice;
                         asset.priceUpdateDate = DateTime.now();
+                        assetUpdated = true;
                       }
 
                       final newSnapshot = PositionSnapshot()
                         ..totalShares = shares
                         ..averageCost = cost
                         ..date = selectedDate
-                        ..asset.value = asset;
+                        ..createdAt = DateTime.now() // (设置 createdAt)
+                        // 13. (关键) 设置 SUPABASE ID 关系
+                        ..assetSupabaseId = asset.supabaseId; 
                       
-                      await isar.writeTxn(() async {
-                        await isar.assets.put(asset);
-                        await isar.collection<PositionSnapshot>().put(newSnapshot);
-                        await newSnapshot.asset.save();
-                      });
+                      // 14. (关键) 保存快照
+                      await syncService.savePositionSnapshot(newSnapshot);
+                      
+                      // 15. (关键) 如果价格也变了，同时保存资产
+                      if(assetUpdated) {
+                        await syncService.saveAsset(asset);
+                      }
 
+                      // 刷新 (Provider 将自动处理，因为 snapshotHistoryProvider 是一个 Stream)
                       ref.invalidate(shareAssetPerformanceProvider(assetId));
                       if (dialogContext.mounted) {
                         Navigator.of(dialogContext).pop();
-                         Navigator.of(context).pushReplacement( 
-                          MaterialPageRoute(
-                            builder: (_) => SnapshotHistoryPage(assetId: asset.id),
-                          ),
-                        );
+                        // 16. (修改) 不再用 pushReplacement，仅关闭对话框。Stream 会自动刷新列表。
                       }
                     }
                   },
@@ -364,6 +413,7 @@ class ShareAssetDetailPage extends ConsumerWidget {
     );
   }
   
+  // 17. (*** 关键修复：_showUpdatePriceDialog 写入逻辑 ***)
   void _showUpdatePriceDialog(BuildContext context, WidgetRef ref, Asset asset) {
     final priceController = TextEditingController();
     showDialog(
@@ -383,10 +433,11 @@ class ShareAssetDetailPage extends ConsumerWidget {
               onPressed: () async {
                 final price = double.tryParse(priceController.text);
                 if (price != null) {
-                  final isar = DatabaseService().isar;
+                  // 18. (关键) 使用 SyncService 保存
                   asset.latestPrice = price;
                   asset.priceUpdateDate = DateTime.now();
-                  await isar.writeTxn(() async => await isar.collection<Asset>().put(asset));
+                  await ref.read(syncServiceProvider).saveAsset(asset); // <-- 替换 isar.writeTxn
+                  
                   ref.invalidate(shareAssetPerformanceProvider(assetId));
 
                   if(dialogContext.mounted) Navigator.of(dialogContext).pop();
@@ -400,10 +451,10 @@ class ShareAssetDetailPage extends ConsumerWidget {
     );
   }
 
+  // (*** 您的 _buildHistoryChart 和 _buildMetricRow 函数保持不变 ***)
   Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots, Asset asset) {
     final colorScheme = Theme.of(context).colorScheme;
     
-    // 时间轴间隔计算 (保持不变)
     double? bottomInterval;
     if (spots.length > 1) {
       final firstMs = spots.first.x;
@@ -415,11 +466,6 @@ class ShareAssetDetailPage extends ConsumerWidget {
       }
     }
 
-    // -----------------------------------------------------------------
-    // 改进点 1：判断数据密度
-    // -----------------------------------------------------------------
-    // 当数据点过多时 (例如超过150个)，圆点会完全覆盖线条。
-    // 我们设置一个阈值，如果数据过于密集，则自动隐藏圆点并使用更细的线条。
     const int densityThreshold = 150; 
     final bool isDense = spots.length > densityThreshold;
 
@@ -427,7 +473,6 @@ class ShareAssetDetailPage extends ConsumerWidget {
       height: 200,
       child: LineChart(
         LineChartData(
-          // X轴使用真实时间戳 (保持不变，这对于历史价格是正确的)
           minX: spots.first.x,
           maxX: spots.last.x,
           
@@ -435,24 +480,16 @@ class ShareAssetDetailPage extends ConsumerWidget {
             LineChartBarData(
               spots: spots,
               isCurved: false,
-              // -----------------------------------------------------------------
-              // 改进点 2：根据密度调整线条宽度
-              // -----------------------------------------------------------------
-              barWidth: isDense ? 2 : 3, // 密集数据使用 2px 线条，稀疏数据使用 3px
+              barWidth: isDense ? 2 : 3, 
               color: colorScheme.primary, 
-              // -----------------------------------------------------------------
-              // 改进点 3：根据密度决定是否显示圆点
-              // -----------------------------------------------------------------
-              dotData: FlDotData(show: !isDense), // 仅在数据不密集时 (小于150点) 显示圆点
+              dotData: FlDotData(show: !isDense), 
               belowBarData: BarAreaData(show: false),
             ),
           ],
           titlesData: FlTitlesData(
-            // 左侧Y轴标签 (保持不变)
             leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 50, getTitlesWidget: (value, meta) => Text(formatPrice(value, asset.currency, asset.subType.name), style: const TextStyle(fontSize: 10)))),
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            // 底部X轴标签 (保持不变)
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true, 
@@ -469,7 +506,6 @@ class ShareAssetDetailPage extends ConsumerWidget {
           ),
           gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1)),
           borderData: FlBorderData(show: false),
-          // 提示框逻辑 (保持不变)
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
               getTooltipItems: (touchedSpots) {
@@ -495,13 +531,8 @@ class ShareAssetDetailPage extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title,
-              style: TextStyle(
-                  fontSize: 16,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          Text(value,
-              style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+          Text(title, style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
         ],
       ),
     );
