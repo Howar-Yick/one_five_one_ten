@@ -446,7 +446,7 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
                          return;
                       }
                       
-                      // 1. 更新本地对象
+                      // 1. 更新本地对象 (txn 是从 Isar 读出的，它已经有 ID)
                       txn.amount = amount;
                       txn.date = selectedDate;
                       if (txn.type != TransactionType.updateValue) {

@@ -626,30 +626,26 @@ class AccountDetailPage extends ConsumerWidget {
       },
     ).then((ok) async {
       if (ok != true) return;
-      if (asset.supabaseId == null) {
-        final isar = DatabaseService().isar;
-        await isar.writeTxn(() => isar.assets.delete(asset.id));
-        ref.invalidate(accountPerformanceProvider(accountId));
-        ref.invalidate(dashboardDataProvider);
-        return;
-      }
-
-      final isar = DatabaseService().isar;
+      
       final syncService = ref.read(syncServiceProvider);
+      final isar = DatabaseService().isar;
+
+      // 如果资产从未同步过（或者同步失败了），也强制删除所有本地关联项
+      if (asset.supabaseId != null) {
+          final txs = await isar.transactions.where()
+                              .filter()
+                              .assetSupabaseIdEqualTo(asset.supabaseId)
+                              .findAll();
+          final snaps = await isar.positionSnapshots.where()
+                                  .filter()
+                                  .assetSupabaseIdEqualTo(asset.supabaseId)
+                                  .findAll();
+          
+          for (final tx in txs) { await syncService.deleteTransaction(tx); }
+          for (final snap in snaps) { await syncService.deletePositionSnapshot(snap); }
+      }
       
-      final txs = await isar.transactions.where()
-                          .filter()
-                          .assetSupabaseIdEqualTo(asset.supabaseId)
-                          .findAll();
-      final snaps = await isar.positionSnapshots.where()
-                                .filter()
-                                .assetSupabaseIdEqualTo(asset.supabaseId)
-                                .findAll();
-      
-      for (final tx in txs) { await syncService.deleteTransaction(tx); }
-      for (final snap in snaps) { await syncService.deletePositionSnapshot(snap); }
-      
-      await syncService.deleteAsset(asset);
+      await syncService.deleteAsset(asset); // deleteAsset 会处理本地删除
 
       ref.invalidate(accountPerformanceProvider(accountId));
       ref.invalidate(dashboardDataProvider);
