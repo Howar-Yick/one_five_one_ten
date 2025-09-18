@@ -1,4 +1,5 @@
 // 文件: lib/services/supabase_sync_service.dart
+// (这是完整、已修复的文件代码)
 
 import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -75,7 +76,6 @@ class SupabaseSyncService {
     print('启动同步服务...');
 
     // --- 1. 同步首次拉取 (Fetch on Start) ---
-    // (*** 已修正：不再使用通用的 _fetchAllObjects，而是使用 5 个特定的拉取来避免 Isar 过滤器错误 ***)
     await _isar.writeTxn(() async {
       try {
         // --- 1.1 拉取 Accounts ---
@@ -120,23 +120,20 @@ class SupabaseSyncService {
 
       } catch (e) {
         print('首次全量拉取失败: $e');
-        // 如果 RLS 策略 (Row Level Security) 没设置对，这里会报错
       }
     });
 
     print('全量拉取完成。正在启动实时侦听器...');
     
     // --- 2. 订阅实时变化 (Realtime) ---
-    // (*** 这是针对 V2 语法的修正 ***)
-    _realtimeChannel = _client.channel('public_tables_channel'); // 频道名称可以是任意字符串
+    _realtimeChannel = _client.channel('public_tables_channel'); 
     _realtimeChannel!
       .onPostgresChanges(
-        event: PostgresChangeEvent.all, // 1. 这是新的 Enum
+        event: PostgresChangeEvent.all, 
         schema: 'public',
-        // 2. 我们将侦听所有表的变化，然后在回调中区分
-        callback: _onCloudChange      // 3. 这是新的回调方式
+        callback: _onCloudChange      
       )
-      .subscribe((status, [error]) { // 4. .on() 和 .subscribe() 是分开调用的
+      .subscribe((status, [error]) { 
          if (status == RealtimeSubscribeStatus.subscribed) {
             print('Supabase Realtime 已连接!');
          }
@@ -155,7 +152,7 @@ class SupabaseSyncService {
   }
 
   // --- 内部：拉取 (Pull) / 侦听回调 ---
-  Future<void> _onCloudChange(PostgresChangePayload payload) async { // 修正了 Payload 类型
+  Future<void> _onCloudChange(PostgresChangePayload payload) async { 
     final eventType = payload.eventType;
     final tableName = payload.table;
     
@@ -165,7 +162,6 @@ class SupabaseSyncService {
         await _handleUpsert(remoteData, tableName);
       } else if (eventType == PostgresChangeEvent.delete) {
         final oldData = payload.oldRecord;
-         // DELETE 事件只包含 old data（或只有主键，取决于您的 REPLICA IDENTITY）
         final supabaseId = oldData['id'] as String?;
         if (supabaseId != null) {
           await _handleDelete(supabaseId, tableName);
@@ -250,6 +246,7 @@ class SupabaseSyncService {
 
   // --- 外部：推送 (Push) / 写入 API ---
   
+  // (*** 这是修复后的 _saveObject 函数 ***)
   /// 通用的保存方法 (创建或更新)
   Future<void> _saveObject<T>(
     String tableName, 
@@ -260,8 +257,13 @@ class SupabaseSyncService {
   ) async {
     if (!isLoggedIn) throw Exception("未登录");
 
-    final isarId = (isarObject as dynamic).id;
+    final isarId = (isarObject as dynamic).id; // (*** 这必须是一个有效的 ID，不能是 null ***)
     final supabaseId = (isarObject as dynamic).supabaseId as String?;
+
+    // (*** 关键修复：UI 层必须确保 isarId 不是 null ***)
+    if (isarId == null) {
+       throw Exception("SaveObject 失败: 传入对象的 Isar ID 为 null。必须先在本地保存。");
+    }
 
     // 如果是更新，我们需要将 'id' (Supabase UUID) 添加到数据中，以便 .upsert() 知道要更新哪一行
     if (supabaseId != null) {
@@ -271,13 +273,36 @@ class SupabaseSyncService {
 
     try {
       // 1. (推送) 使用 .upsert() 将数据写入 Supabase。
-      // .select() 会将刚刚写入或更新的完整行数据返回给我们
       final response = await _client.from(tableName).upsert(jsonData).select();
+      
+      if (response.isEmpty) {
+         throw Exception('Upsert 成功，但 RLS 策略阻止了 SELECT 返回数据。');
+      }
       
       final savedData = response.first as Map<String, dynamic>;
 
-      // 2. (回写) 我们收到了来自 Supabase 的权威数据 (包含新的 'supabaseId' (如果之前没有) 和 'updated_at')
+      // 2. (回写) 我们收到了来自 Supabase 的权威数据
       final definitiveItem = fromSupabaseJson(savedData) as T;
+      final definitiveSupaId = (definitiveItem as dynamic).supabaseId as String?;
+      
+      // --- (*** 关键修复：处理竞态条件 + 修正拼写错误 ***) ---
+      if (definitiveSupaId != null) { 
+          dynamic duplicateFromListener;
+          
+          // 修正：.where() 后面必须跟 .filter() 才能使用 .not()
+          if (isarObject is Account) duplicateFromListener = await _isar.accounts.where().supabaseIdEqualTo(definitiveSupaId).filter().not().idEqualTo(isarId).findFirst();
+          else if (isarObject is Asset) duplicateFromListener = await _isar.assets.where().supabaseIdEqualTo(definitiveSupaId).filter().not().idEqualTo(isarId).findFirst();
+          else if (isarObject is Transaction) duplicateFromListener = await _isar.transactions.where().supabaseIdEqualTo(definitiveSupaId).filter().not().idEqualTo(isarId).findFirst();
+          else if (isarObject is AccountTransaction) duplicateFromListener = await _isar.accountTransactions.where().supabaseIdEqualTo(definitiveSupaId).filter().not().idEqualTo(isarId).findFirst();
+          else if (isarObject is PositionSnapshot) duplicateFromListener = await _isar.positionSnapshots.where().supabaseIdEqualTo(definitiveSupaId).filter().not().idEqualTo(isarId).findFirst();
+
+          if (duplicateFromListener != null) {
+              // 竞态条件发生！侦听器赢了 (创建了 duplicateFromListener)
+              // 我们必须删除这个重复项，因为我们将更新我们自己的占位符 (isarId)
+              await _isar.writeTxn(() => isarCollection.delete((duplicateFromListener as dynamic).id));
+          }
+      }
+      // --- (*** 修复结束 ***) ---
       
       // 3. 将这个权威版本写回本地 Isar，同时保留我们原始的本地 Isar ID
       (definitiveItem as dynamic).id = isarId; 
@@ -285,11 +310,19 @@ class SupabaseSyncService {
 
     } catch (e) {
       print('Supabase Save ($tableName) 失败: $e');
-      // 即使推送失败，数据仍然保存在本地 Isar 中（尽管没有最新的时间戳）
+      // 即使推送失败，数据仍然保存在本地 Isar 中
       (isarObject as dynamic).id = isarId; // 确保 Isar ID 还在
-      await _isar.writeTxn(() => isarCollection.put(isarObject)); // 至少保存本地更改
+      try {
+        // (*** 关键修复：包裹回退逻辑以防止崩溃 ***)
+        await _isar.writeTxn(() => isarCollection.put(isarObject)); // 至少保存本地更改
+      } catch (e2) {
+        print('Supabase Fallback Save 失败 (可能是重复的 null unique key): $e2');
+      }
+      // (*** 关键修复：重新抛出错误，让 UI 层知道失败了 ***)
+      throw e;
     }
   }
+
 
   /// 通用的删除方法
   Future<void> _deleteObject<T>(

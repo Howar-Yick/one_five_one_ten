@@ -1,4 +1,6 @@
 // 文件: lib/pages/add_edit_asset_page.dart
+// (这是完整、已修复的文件代码)
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -7,14 +9,12 @@ import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
-// 确保引入这些页面，以便 invalidating Providers
 import 'package:one_five_one_ten/pages/account_detail_page.dart'; 
 import 'package:one_five_one_ten/pages/share_asset_detail_page.dart';
 import 'package:one_five_one_ten/pages/value_asset_detail_page.dart';
-
-// 1. (*** 新增：导入 Providers 和新服务 ***)
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
+import 'package:isar/isar.dart'; // (*** 确保 Isar 已导入 ***)
 
 
 class AddEditAssetPage extends ConsumerStatefulWidget {
@@ -43,19 +43,17 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   String _selectedCurrency = 'CNY'; 
   Account? _parentAccount; 
   Asset? _editingAsset;
-  bool _isLoading = true; // 默认设置为 true
+  bool _isLoading = true; 
 
   bool get _isEditing => widget.assetId != null;
 
   @override
   void initState() {
     super.initState();
-    // 2. (修改) 在 initState 中我们不能使用 ref，所以保持原样
     _loadInitialData();
   }
 
   Future<void> _loadInitialData() async {
-    // 3. (修正) 坚持使用您项目中的 DatabaseService().isar 模式，修复 isarProvider 错误
     final isar = DatabaseService().isar; 
     _parentAccount = await isar.accounts.get(widget.accountId);
 
@@ -94,112 +92,141 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     super.dispose();
   }
 
-  // 4. (*** 关键修复：完全重写 _saveAsset 方法 ***)
+  // (*** 这是修复后的 _saveAsset 函数 ***)
   Future<void> _saveAsset() async {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
     
-    final parentAccount = _parentAccount!; 
-    final syncService = ref.read(syncServiceProvider); // 5. 获取 SyncService
+    // (*** 用 try-catch 包裹整个逻辑 ***)
+    try {
+      final parentAccount = _parentAccount!; 
+      final syncService = ref.read(syncServiceProvider); 
 
-    // 6. 检查父账户是否已同步 (它必须有一个 supabaseId 才能创建子项)
-    if (parentAccount.supabaseId == null) {
+      // 1. 检查父账户是否已同步
+      if (parentAccount.supabaseId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('错误：父账户尚未同步，请稍后重试。'))
+          );
+        }
+        return;
+      }
+
+      final isar = DatabaseService().isar; // (*** 获取 Isar 实例 ***)
+
+      if (_isEditing) {
+        // --- 更新逻辑 ---
+        final assetToUpdate = _editingAsset!;
+        assetToUpdate.name = _nameController.text.trim();
+        assetToUpdate.code = _codeController.text.trim();
+        assetToUpdate.subType = _selectedSubType;
+        assetToUpdate.currency = _selectedCurrency;
+        
+        // (更新逻辑直接调用 syncService 即可, 因为它已经有 Isar ID)
+        await syncService.saveAsset(assetToUpdate);
+        
+        // 刷新相关 Provider
+        ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
+        if(assetToUpdate.trackingMethod == AssetTrackingMethod.shareBased) {
+          ref.invalidate(shareAssetDetailProvider(assetToUpdate.id));
+        } else {
+          ref.invalidate(valueAssetDetailProvider(assetToUpdate.id));
+        }
+      } else {
+        // --- 新建逻辑 (已重写) ---
+        final newAsset = Asset()
+          ..name = _nameController.text.trim()
+          ..trackingMethod = _selectedMethod
+          ..subType = _selectedSubType
+          ..currency = _selectedCurrency
+          ..createdAt = DateTime.now() 
+          ..accountSupabaseId = parentAccount.supabaseId; 
+
+        final priceText = _latestPriceController.text.trim();
+        if (priceText.isNotEmpty) {
+          newAsset.latestPrice = double.tryParse(priceText) ?? 0.0;
+          newAsset.priceUpdateDate = DateTime.now();
+        }
+
+        // 10. (*** 关键修复：先在本地写入 Asset 以获取 Isar ID ***)
+        await isar.writeTxn(() async {
+            await isar.assets.put(newAsset);
+        });
+        // (newAsset.id 此时已有效)
+
+        // 11. (*** 然后再调用同步服务 ***)
+        await syncService.saveAsset(newAsset);
+        // (syncService 会通过 _saveObject 更新 ID=newAsset.id 的记录)
+        // (我们必须从 Isar 重新加载它以确保我们有 supabaseId)
+
+        final syncedAsset = await isar.assets.get(newAsset.id); // 重新获取以检查 supabaseId
+        
+        if (syncedAsset == null || syncedAsset.supabaseId == null) {
+          // 如果同步失败 (例如离线)，syncService 会打印错误，但本地占位符已创建。
+          // 我们不能继续创建子记录，因为它们依赖 supabaseId
+           if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('资产已在本地创建，但同步失败。子记录未创建。')));
+           // 错误已抛出并被外层 catch 捕获
+           throw Exception("Asset synced locally but failed to retrieve supabaseId.");
+        } else {
+          // (*** 只有在 Asset 同步成功 (获得了 supabaseId) 之后，才创建子记录 ***)
+
+          if (_selectedMethod == AssetTrackingMethod.shareBased) {
+            // --- 保存份额法子记录 ---
+            final snapshot = PositionSnapshot()
+              ..totalShares = double.parse(_sharesController.text)
+              ..averageCost = double.parse(_costController.text)
+              ..date = _selectedDate
+              ..createdAt = DateTime.now()
+              // 11. (关键) 使用返回的 newAsset.supabaseId 设置关系
+              ..assetSupabaseId = syncedAsset.supabaseId; // (使用已同步的 ID)
+
+            // (*** 关键修复：应用相同的逻辑：先本地写，再同步 ***)
+            await isar.writeTxn(() async {
+              await isar.positionSnapshots.put(snapshot);
+            });
+            await syncService.savePositionSnapshot(snapshot); 
+
+          } else {
+            // --- 保存价值法子记录 ---
+            final initialInvestment = double.parse(_initialInvestmentController.text);
+            final transaction = Transaction()
+              ..type = TransactionType.invest
+              ..amount = initialInvestment
+              ..date = _selectedDate
+              ..createdAt = DateTime.now()
+              ..assetSupabaseId = syncedAsset.supabaseId; // (使用已同步的 ID)
+            
+            final updateValueTxn = Transaction()
+              ..type = TransactionType.updateValue
+              ..amount = initialInvestment
+              ..date = _selectedDate
+              ..createdAt = DateTime.now()
+              ..assetSupabaseId = syncedAsset.supabaseId; // (使用已同步的 ID)
+
+            // (*** 关键修复：应用相同的逻辑：先本地写，再同步 ***)
+            await isar.writeTxn(() async {
+              await isar.transactions.put(transaction);
+              await isar.transactions.put(updateValueTxn);
+            });
+            await syncService.saveTransaction(transaction);
+            await syncService.saveTransaction(updateValueTxn);
+          }
+        }
+      }
+      
+      // 17. 刷新 Dashboard
+      ref.invalidate(dashboardDataProvider); 
+      if (mounted) Navigator.of(context).pop();
+
+    } catch (e) {
+      // (*** 捕获所有错误 ***)
+      print('保存资产失败: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('错误：父账户尚未同步，请稍后重试。'))
+          SnackBar(content: Text('保存失败: $e'))
         );
       }
-      return;
     }
-
-    if (_isEditing) {
-      // --- 更新逻辑 ---
-      final assetToUpdate = _editingAsset!;
-      assetToUpdate.name = _nameController.text.trim();
-      assetToUpdate.code = _codeController.text.trim();
-      assetToUpdate.subType = _selectedSubType;
-      assetToUpdate.currency = _selectedCurrency;
-      
-      // 7. 调用 SyncService 保存 (替换 isar.writeTxn)
-      await syncService.saveAsset(assetToUpdate);
-      
-      // 8. 刷新相关 Provider
-      ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
-      if(assetToUpdate.trackingMethod == AssetTrackingMethod.shareBased) {
-        ref.invalidate(shareAssetDetailProvider(assetToUpdate.id));
-      } else {
-        ref.invalidate(valueAssetDetailProvider(assetToUpdate.id));
-      }
-    } else {
-      // --- 新建逻辑 (已重写) ---
-      final newAsset = Asset()
-        ..name = _nameController.text.trim()
-        ..trackingMethod = _selectedMethod
-        ..subType = _selectedSubType
-        ..currency = _selectedCurrency
-        ..createdAt = DateTime.now() // (设置 createdAt)
-        // 9. (关键) 设置 SUPABASE ID 关系，替换 IsarLink
-        ..accountSupabaseId = parentAccount.supabaseId; 
-
-      final priceText = _latestPriceController.text.trim();
-      if (priceText.isNotEmpty) {
-        newAsset.latestPrice = double.tryParse(priceText) ?? 0.0;
-        newAsset.priceUpdateDate = DateTime.now();
-      }
-
-      // 10. (关键) 我们必须先保存 Asset，以获取它新生成的 supabaseId
-      await syncService.saveAsset(newAsset);
-      // 'newAsset' 对象现在已从 syncService 回写，并包含了新的 supabaseId
-
-      if (newAsset.supabaseId == null) {
-         // 如果保存失败 (例如离线)，supabaseId 会是 null。
-         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('创建资产失败，请检查网络连接。')));
-         return; // 终止操作，不允许创建孤立的子记录
-      }
-
-
-      if (_selectedMethod == AssetTrackingMethod.shareBased) {
-        // --- 保存份额法子记录 ---
-        final snapshot = PositionSnapshot()
-          ..totalShares = double.parse(_sharesController.text)
-          ..averageCost = double.parse(_costController.text)
-          ..date = _selectedDate
-          ..createdAt = DateTime.now()
-          // 11. (关键) 使用返回的 newAsset.supabaseId 设置关系
-          ..assetSupabaseId = newAsset.supabaseId; 
-
-        await syncService.savePositionSnapshot(snapshot); // 12. 调用 SyncService 保存子记录
-
-      } else {
-        // --- 保存价值法子记录 ---
-        final initialInvestment = double.parse(_initialInvestmentController.text);
-        final transaction = Transaction()
-          ..type = TransactionType.invest
-          ..amount = initialInvestment
-          ..date = _selectedDate
-          ..createdAt = DateTime.now()
-          // 13. (关键) 设置关系
-          ..assetSupabaseId = newAsset.supabaseId;
-        
-        final updateValueTxn = Transaction()
-          ..type = TransactionType.updateValue
-          ..amount = initialInvestment
-          ..date = _selectedDate
-          ..createdAt = DateTime.now()
-          // 14. (关键) 设置关系
-          ..assetSupabaseId = newAsset.supabaseId;
-
-        // 15. 分别调用 SyncService 保存
-        await syncService.saveTransaction(transaction);
-        await syncService.saveTransaction(updateValueTxn);
-      }
-      
-      // 16. (移除) ref.invalidate(trackedAssetsWithPerformanceProvider) 不再需要，因为它是 Stream 会自动更新
-    }
-    
-    // 17. (保留) 刷新 Dashboard
-    ref.invalidate(dashboardDataProvider); 
-    if (mounted) Navigator.of(context).pop();
   }
 
 
@@ -222,7 +249,6 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
             key: _formKey,
             child: ListView(
               padding: const EdgeInsets.all(16.0),
-              // (*** 您的表单 UI 布局保持不变 ***)
               children: [
                 if (!_isEditing)
                   SegmentedButton<AssetTrackingMethod>(
@@ -301,7 +327,6 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     );
   }
 
-  // (*** 您的 _buildShareBasedForm 和 _buildValueBasedForm 辅助函数保持不变 ***)
   List<Widget> _buildShareBasedForm() {
     return [
       const Text('资产类型', style: TextStyle(fontSize: 16, color: Colors.grey)),

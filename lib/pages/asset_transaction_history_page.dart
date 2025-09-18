@@ -1,4 +1,6 @@
 // 文件: lib/pages/asset_transaction_history_page.dart
+// (这是完整、已修复的文件代码)
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -6,24 +8,17 @@ import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/pages/value_asset_detail_page.dart'; // 引入Provider
 import 'package:one_five_one_ten/services/database_service.dart';
-import 'package:isar/isar.dart'; // 1. 导入 Isar
-
-// 2. (*** 新增：导入 Providers 和新服务 ***)
+import 'package:isar/isar.dart'; 
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
-
-// 3. (*** 新增：导入修复错误的 Currency Formatter ***)
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
 
 
-// 4. (*** 关键修复：重写 Provider 逻辑 ***)
-// 旧代码依赖已删除的 IsarLink
-// 新代码改为监听 Transaction 集合，并使用 "assetSupabaseId" 过滤，同时变为 StreamProvider
+// (Provider 逻辑已正确)
 final assetTransactionHistoryProvider =
-    StreamProvider.autoDispose.family<List<Transaction>, int>((ref, assetId) async* { // 5. 改为 StreamProvider
+    StreamProvider.autoDispose.family<List<Transaction>, int>((ref, assetId) async* { 
   
   final isar = DatabaseService().isar;
-  // 6. 必须先获取 Asset 才能知道它的 Supabase ID
   final asset = await isar.assets.get(assetId);
   if (asset == null || asset.supabaseId == null) {
     yield [];
@@ -32,14 +27,13 @@ final assetTransactionHistoryProvider =
 
   final assetSupabaseId = asset.supabaseId!;
 
-  // 7. (新逻辑) 监听 Transaction 集合中所有匹配此 assetSupabaseId 的记录
   final transactionStream = isar.transactions
-      .filter() // (*** 修正：使用 .filter() ***)
+      .filter() 
       .assetSupabaseIdEqualTo(assetSupabaseId)
       .sortByDateDesc() // 按日期降序排序
       .watch(fireImmediately: true);
 
-  yield* transactionStream; // 8. 直接返回流
+  yield* transactionStream; 
 });
 
 class AssetTransactionHistoryPage extends ConsumerWidget {
@@ -48,10 +42,7 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 9. (修正) 我们需要 Asset 对象本身（用于币种和浮动按钮）
-    final asyncAsset = ref.watch(valueAssetDetailProvider(assetId)); // 假设这个 provider 也适用于 ShareAsset
-    
-    // 10. (*** 已修复 ***) historyAsync 现在是一个 StreamProvider
+    final asyncAsset = ref.watch(valueAssetDetailProvider(assetId)); 
     final historyAsync = ref.watch(assetTransactionHistoryProvider(assetId));
 
     return Scaffold(
@@ -67,7 +58,6 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
             itemCount: transactions.length,
             itemBuilder: (context, index) {
               final txn = transactions[index];
-              // 11. (修正) 将 Asset 币种传递给 Tile Builder
               final currencyCode = asyncAsset.asData?.value?.currency ?? 'CNY';
               return _buildTransactionTile(context, ref, txn, currencyCode);
             },
@@ -110,11 +100,10 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
   }
 
   Widget _buildTransactionTile(
-      BuildContext context, WidgetRef ref, Transaction txn, String currencyCode) { // 12. (修改) 接收 currencyCode
+      BuildContext context, WidgetRef ref, Transaction txn, String currencyCode) { 
     String title;
     IconData icon;
     Color color;
-    // 13. (修改) 不再硬编码 '¥'，而是使用 formatCurrency 辅助函数
     final formattedAmount = formatCurrency(txn.amount, currencyCode);
 
     switch (txn.type) {
@@ -125,7 +114,6 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
       case TransactionType.updateValue:
         title = '当天资产金额'; icon = Icons.assessment; color = Theme.of(context).colorScheme.secondary; break;
       default:
-        // (处理您在 Transaction.dart 中定义的其他类型)
         title = txn.type.name; icon = Icons.help_outline; color = Colors.grey;
     }
 
@@ -136,13 +124,12 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
         title: Text(title),
         subtitle: Text(DateFormat('yyyy-MM-dd').format(txn.date)),
         trailing: Text(formattedAmount, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)), // 使用 formattedAmount
-        onTap: () => _showEditTransactionDialog(context, ref, txn, currencyCode), // 14. (修改) 传递 currencyCode
+        onTap: () => _showEditTransactionDialog(context, ref, txn, currencyCode), 
         onLongPress: () => _showDeleteConfirmation(context, ref, txn),
       ),
     );
   }
 
-  // 15. (*** 关键修复：删除逻辑 ***)
   void _showDeleteConfirmation(
       BuildContext context, WidgetRef ref, Transaction txn) {
     showDialog(
@@ -154,13 +141,20 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
           TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
           TextButton(
             onPressed: () async {
-              // 16. (关键) 使用 SyncService 删除
-              final syncService = ref.read(syncServiceProvider);
-              await syncService.deleteTransaction(txn);
-              
-              // 17. 刷新计算 Provider
-              ref.invalidate(valueAssetPerformanceProvider(assetId)); 
-              if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+              try {
+                final syncService = ref.read(syncServiceProvider);
+                await syncService.deleteTransaction(txn);
+                
+                ref.invalidate(valueAssetPerformanceProvider(assetId)); 
+                if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+              } catch (e) {
+                 print("删除失败: $e");
+                 if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                       SnackBar(content: Text('删除失败: $e')),
+                    );
+                 }
+              }
             },
             child: const Text('删除', style: TextStyle(color: Colors.red)),
           ),
@@ -169,7 +163,7 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
     );
   }
 
-  // 18. (*** 关键修复：创建逻辑 (Invest/Withdraw) ***)
+  // (*** 这是修复后的 _showInvestWithdrawDialog ***)
   void _showInvestWithdrawDialog(
       BuildContext context, WidgetRef ref, Asset asset) {
     final amountController = TextEditingController();
@@ -196,7 +190,6 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  // 19. (*** 错误修复：导入 getCurrencySymbol ***)
                   TextField(controller: amountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: '金额', prefixText: getCurrencySymbol(asset.currency))),
                   const SizedBox(height: 16),
                   Row(
@@ -217,22 +210,53 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
               actions: [
                 TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
                 TextButton(
+                  // (*** 这是修复后的 onPressed ***)
                   onPressed: () async {
-                    final amount = double.tryParse(amountController.text);
-                    if (amount != null && amount > 0) {
+                    try {
+                      final amount = double.tryParse(amountController.text);
+                      if (amount == null || amount <= 0) {
+                           if (dialogContext.mounted) {
+                             ScaffoldMessenger.of(dialogContext).showSnackBar(
+                               const SnackBar(content: Text('请输入有效金额')),
+                             );
+                           }
+                           return;
+                      }
+                      
                       final syncService = ref.read(syncServiceProvider); 
+                      
+                      // 1. 创建新对象
                       final newTxn = Transaction()
                         ..amount = amount
                         ..date = selectedDate
                         ..createdAt = DateTime.now() 
                         ..type = isSelected[0] ? TransactionType.invest : TransactionType.withdraw
-                        // 20. (关键) 设置 SUPABASE ID 关系
                         ..assetSupabaseId = asset.supabaseId;
                       
+                      // 2. (!!! 关键修复：先在本地写入以获取 Isar ID !!!)
+                      final isar = DatabaseService().isar;
+                      await isar.writeTxn(() async {
+                        await isar.transactions.put(newTxn);
+                      });
+                      // (newTxn.id 现在有效了)
+
+                      // 3. (!!! 然后再同步这个带有 ID 的对象 !!!)
                       await syncService.saveTransaction(newTxn); 
                       
+                      // 4. 刷新 (Invalidate 会强制 Provider 重新计算)
                       ref.invalidate(valueAssetPerformanceProvider(asset.id));
+                      // (assetTransactionHistoryProvider 是 Stream，会自动更新)
+
                       if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+
+                    } catch (e) {
+                      // (捕获所有错误)
+                      print("保存资金操作失败: $e");
+                       if (dialogContext.mounted) {
+                         ScaffoldMessenger.of(dialogContext).showSnackBar(
+                           SnackBar(content: Text('操作失败: $e')),
+                         );
+                       }
                     }
                   },
                   child: const Text('保存'),
@@ -245,7 +269,7 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
     );
   }
 
-  // 21. (*** 关键修复：创建逻辑 (Update Value) ***)
+  // (*** 这是修复后的 _showUpdateValueDialog ***)
   void _showUpdateValueDialog(
       BuildContext context, WidgetRef ref, Asset asset) {
     final valueController = TextEditingController();
@@ -260,7 +284,6 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
               content: /* ... 内容不变 ... */ Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 22. (*** 错误修复：导入 getCurrencySymbol ***)
                   TextField(controller: valueController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: '当前资产总价值', prefixText: getCurrencySymbol(asset.currency))),
                   const SizedBox(height: 16),
                   Row(
@@ -281,22 +304,50 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
               actions: [
                 TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
                 TextButton(
+                  // (*** 这是修复后的 onPressed ***)
                   onPressed: () async {
-                    final value = double.tryParse(valueController.text);
-                    if (value != null) {
+                    try {
+                      final value = double.tryParse(valueController.text);
+                      if (value == null) { // 允许 0
+                           if (dialogContext.mounted) {
+                             ScaffoldMessenger.of(dialogContext).showSnackBar(
+                               const SnackBar(content: Text('请输入有效价值')),
+                             );
+                           }
+                           return;
+                      }
+
                       final syncService = ref.read(syncServiceProvider); 
+                      
+                      // 1. 创建对象
                       final newTxn = Transaction()
                         ..amount = value
                         ..date = selectedDate
                         ..createdAt = DateTime.now()
                         ..type = TransactionType.updateValue
-                        // 23. (关键) 设置 SUPABASE ID 关系
                         ..assetSupabaseId = asset.supabaseId;
                       
+                      // 2. (!!! 关键修复：先本地写入 !!!)
+                      final isar = DatabaseService().isar;
+                      await isar.writeTxn(() async {
+                         await isar.transactions.put(newTxn);
+                      });
+
+                      // 3. (!!! 再同步 !!!)
                       await syncService.saveTransaction(newTxn); 
                       
+                      // 4. 刷新
                       ref.invalidate(valueAssetPerformanceProvider(asset.id));
                       if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+
+                    } catch (e) {
+                      // (捕获所有错误)
+                       print("更新总值失败: $e");
+                       if (dialogContext.mounted) {
+                         ScaffoldMessenger.of(dialogContext).showSnackBar(
+                           SnackBar(content: Text('操作失败: $e')),
+                         );
+                       }
                     }
                   },
                   child: const Text('保存'),
@@ -307,11 +358,11 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
         );
       },
     );
-  }   
+  } 
 
-  // 24. (*** 关键修复：更新逻辑 (Edit) ***)
+  // (*** 这是修复后的 _showEditTransactionDialog ***)
   void _showEditTransactionDialog(
-      BuildContext context, WidgetRef ref, Transaction txn, String currencyCode) { // 25. (修改) 接收 currencyCode
+      BuildContext context, WidgetRef ref, Transaction txn, String currencyCode) { 
     final amountController = TextEditingController(text: txn.amount.toString());
     DateTime selectedDate = txn.date;
     final List<bool> isSelected = [
@@ -327,7 +378,6 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
             return AlertDialog(
               title: const Text('编辑记录'),
               content: Column(
-                // (UI 保持不变)
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (txn.type != TransactionType.updateValue)
@@ -351,7 +401,7 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: InputDecoration(
                       labelText: txn.type == TransactionType.updateValue ? '总资产金额' : '金额',
-                      prefixText: getCurrencySymbol(currencyCode), // 26. (修改) 使用 currencyCode
+                      prefixText: getCurrencySymbol(currencyCode), 
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -384,23 +434,40 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
                 ),
                 TextButton(
                   onPressed: () async {
-                    final amount = double.tryParse(amountController.text);
-                    if (amount != null && amount >= 0) {
+                    // (*** 这是修复后的更新逻辑 ***)
+                    try {
+                      final amount = double.tryParse(amountController.text);
+                      if (amount == null || amount < 0) { // 允许 0
+                         if (dialogContext.mounted) {
+                           ScaffoldMessenger.of(dialogContext).showSnackBar(
+                             const SnackBar(content: Text('请输入有效金额')),
+                           );
+                         }
+                         return;
+                      }
                       
-                      // 27. (关键) 更新本地对象
+                      // 1. 更新本地对象
                       txn.amount = amount;
                       txn.date = selectedDate;
                       if (txn.type != TransactionType.updateValue) {
                         txn.type = isSelected[0] ? TransactionType.invest : TransactionType.withdraw;
                       }
                       
-                      // 28. (关键) 使用 SyncService 保存
+                      // 2. 使用 SyncService 保存 (它已经有 Isar ID, 所以不需要本地保存)
                       await ref.read(syncServiceProvider).saveTransaction(txn);
 
-                      // 29. 刷新计算
+                      // 3. 刷新计算
                       ref.invalidate(valueAssetPerformanceProvider(assetId));
-                      // (assetTransactionHistoryProvider 是 Stream, 会自动刷新)
                       if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                    
+                    } catch (e) {
+                      // (捕获所有错误)
+                       print("编辑保存失败: $e");
+                       if (dialogContext.mounted) {
+                         ScaffoldMessenger.of(dialogContext).showSnackBar(
+                           SnackBar(content: Text('操作失败: $e')),
+                         );
+                       }
                     }
                   },
                   child: const Text('保存修改'),
@@ -411,5 +478,5 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
         );
       },
     );
-  }  
+  } 
 }

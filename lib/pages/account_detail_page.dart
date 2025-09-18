@@ -1,4 +1,6 @@
 // 文件: lib/pages/account_detail_page.dart
+// (这是完整、已修复的文件代码)
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -17,13 +19,10 @@ import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart'; 
-
-// --- (新增) 导入我们新的同步服务 ---
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 
 
 // --- Provider 1: 获取账户详情 (保持不变) ---
-// 这个 Provider 接收本地 Isar ID，运行良好。
 final accountDetailProvider =
     FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
   final isar = DatabaseService().isar;
@@ -31,7 +30,6 @@ final accountDetailProvider =
 });
 
 // --- Provider 2: 计算账户性能 (保持不变) ---
-// 它依赖上面的 Provider，所以也运行良好。
 final accountPerformanceProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, int>(
         (ref, accountId) async {
@@ -42,35 +40,28 @@ final accountPerformanceProvider =
   return CalculatorService().calculateAccountPerformance(account);
 });
 
-// --- Provider 3: 获取带性能的资产 (*** 关键修复 ***) ---
-// 旧代码依赖已删除的 IsarLink (account.trackedAssets)。
-// 新代码改为直接监听 Isar 中 Asset 集合，并使用我们新的 "accountSupabaseId" 字段进行过滤。
+// --- Provider 3: 获取带性能的资产 (保持不变) ---
 final trackedAssetsWithPerformanceProvider =
-    StreamProvider.autoDispose.family<List<Map<String, dynamic>>, int>((ref, accountId) async* { // 1. 更改为 async* (Stream Generator)
+    StreamProvider.autoDispose.family<List<Map<String, dynamic>>, int>((ref, accountId) async* { 
   
   final isar = DatabaseService().isar;
   final calculator = CalculatorService();
 
-  // 2. 首先，我们必须获取一次 Account 对象，才能知道它的 supabaseId 是什么
   final account = await ref.watch(accountDetailProvider(accountId).future);
   if (account == null || account.supabaseId == null) {
-    yield []; // 如果账户不存在或尚未同步，则返回空列表
+    yield []; 
     return;
   }
   
   final accountSupabaseId = account.supabaseId!;
 
-  // 3. (新逻辑) 创建一个 Stream，用于监听 Asset 集合中所有 "accountSupabaseId" 匹配的资产
   final assetStream = isar.assets
       .where()
       .filter()
       .accountSupabaseIdEqualTo(accountSupabaseId)
       .watch(fireImmediately: true);
 
-  // 4. (新逻辑) 使用 await for 来处理流
   await for (var assets in assetStream) {
-    // 每次 assets 列表（来自本地 Isar）发生变化时（无论是本地修改还是云同步），都会执行此操作
-
     final List<Map<String, dynamic>> results = [];
     for (final asset in assets) {
       Map<String, dynamic> performanceData;
@@ -84,18 +75,18 @@ final trackedAssetsWithPerformanceProvider =
         'performance': performanceData,
       });
     }
-    yield results; // 5. 将计算结果发送到 Stream
+    yield results; 
   }
 });
 
 // --- Provider 4: 账户历史 (保持不变) ---
-// 它依赖 accountPerformanceProvider (已修复)，所以它也OK。
 final accountHistoryProvider = FutureProvider.autoDispose.family<List<FlSpot>, Account>((ref, account) {
-  // 监听 performance provider 的变化，以触发此 provider 重新计算
   ref.watch(accountPerformanceProvider(account.id));
   return CalculatorService().getAccountValueHistory(account);
 });
 
+
+// (*** 这是修复后的类。所有辅助函数都在类内部，但在 build() 之外 ***)
 class AccountDetailPage extends ConsumerWidget {
   final int accountId;
   const AccountDetailPage({super.key, required this.accountId});
@@ -117,7 +108,6 @@ class AccountDetailPage extends ConsumerWidget {
           final account = asyncAccount.asData!.value!;
           return RefreshIndicator(
              onRefresh: () async {
-                // 刷新保持不变
                 ref.invalidate(accountPerformanceProvider(accountId));
                 ref.invalidate(trackedAssetsWithPerformanceProvider(accountId));
               },
@@ -126,7 +116,7 @@ class AccountDetailPage extends ConsumerWidget {
               children: [
                 _buildMacroView(context, ref, account, performance),
                 const SizedBox(height: 24),
-                _buildMicroView(context, ref, accountId, account), // (*** 修正：传入 Account 对象 ***)
+                _buildMicroView(context, ref, accountId, account), 
               ],
             ),
           );
@@ -139,8 +129,6 @@ class AccountDetailPage extends ConsumerWidget {
 
   Widget _buildMacroView(BuildContext context, WidgetRef ref, Account account,
       Map<String, dynamic> performance) {
-    
-    // (*** 内部逻辑和布局保持不变 ***)
     
     final percentFormat =
         NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
@@ -170,11 +158,10 @@ class AccountDetailPage extends ConsumerWidget {
                   icon: const Icon(Icons.history),
                   tooltip: '查看更新记录',
                   onPressed: () {
-                    // (导航保持不变，TransactionHistoryPage 稍后修复)
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) =>
-                            TransactionHistoryPage(accountId: account.id), // 传递本地 ID
+                            TransactionHistoryPage(accountId: account.id),
                       ),
                     );
                   },
@@ -228,6 +215,7 @@ class AccountDetailPage extends ConsumerWidget {
     );
   }
 
+  // (*** 这是修复后的 _showInvestWithdrawDialog ***)
   void _showInvestWithdrawDialog(
       BuildContext context, WidgetRef ref, Account account) {
     final amountController = TextEditingController();
@@ -242,7 +230,6 @@ class AccountDetailPage extends ConsumerWidget {
             return AlertDialog(
               title: const Text('资金操作'),
               content: Column(
-                // (UI 保持不变)
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ToggleButtons(
@@ -300,39 +287,60 @@ class AccountDetailPage extends ConsumerWidget {
                     onPressed: () => Navigator.of(dialogContext).pop(),
                     child: const Text('取消')),
                 TextButton(
+                  // --- (*** 这是修复后的 onPressed ***) ---
                   onPressed: () async {
-                    final amount = double.tryParse(amountController.text);
-                    if (amount != null && amount > 0) {
-                      
-                      // 6. (*** 关键修改：使用 SyncService 写入 ***)
+                    try {
+                      final amount = double.tryParse(amountController.text);
+                      if (amount == null || amount <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请输入有效的金额')),
+                        );
+                        return;
+                      }
+
                       final syncService = ref.read(syncServiceProvider);
                       
+                      // 1. 创建新对象
                       final newTxn = AccountTransaction()
                         ..amount = amount
                         ..date = selectedDate
-                        ..createdAt = DateTime.now() // (设置 createdAt)
+                        ..createdAt = DateTime.now() 
                         ..type = isSelected[0]
                             ? TransactionType.invest
                             : TransactionType.withdraw
-                        // 7. (关键修改) 设置 SUPABASE ID 关系，而不是 IsarLink
                         ..accountSupabaseId = account.supabaseId; 
-                      
-                      // 8. 调用 syncService 保存
+
+                      // 2. (!!! 关键：先在本地写入，获取一个稳定的 Isar ID !!!)
+                      final isar = DatabaseService().isar; 
+                      await isar.writeTxn(() async {
+                        await isar.accountTransactions.put(newTxn);
+                      });
+                      // (此时 newTxn.id 已经是一个有效的 Isar ID, 不再是 null)
+
+                      // 3. 调用 syncService (传入带有 Isar ID 的对象)
+                      //    (如果这一步失败，它会抛出异常，被下面的 catch 捕获)
                       await syncService.saveAccountTransaction(newTxn);
 
-                      // (旧的 Isar.writeTxn 和 .save() 已删除)
-                      
-                      // 刷新当前页和所有上级页面
+                      // 4. 刷新UI (只有在 2 和 3 都成功后才会执行)
                       ref.invalidate(accountPerformanceProvider(account.id)); 
                       ref.invalidate(dashboardDataProvider);
 
+                      // 5. 成功后关闭对话框并导航
                       if (dialogContext.mounted) {
                         Navigator.of(dialogContext).pop();
-                          Navigator.of(context).push( 
-                           MaterialPageRoute(
-                              builder: (_) => TransactionHistoryPage(accountId: account.id),
-                           ),
-                         );
+                        Navigator.of(context).push( 
+                          MaterialPageRoute(
+                            builder: (_) => TransactionHistoryPage(accountId: account.id),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      // (捕获所有错误并提示，包括本地保存或同步失败)
+                      print('资金操作失败: $e');
+                      if (dialogContext.mounted) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          SnackBar(content: Text('操作失败: $e')),
+                        );
                       }
                     }
                   },
@@ -346,6 +354,7 @@ class AccountDetailPage extends ConsumerWidget {
     );
   }
 
+  // (*** 这是修复后的 _showUpdateValueDialog ***)
   void _showUpdateValueDialog(
       BuildContext context, WidgetRef ref, Account account) {
     final valueController = TextEditingController();
@@ -359,7 +368,6 @@ class AccountDetailPage extends ConsumerWidget {
             return AlertDialog(
               title: const Text('更新账户总值'),
               content: Column(
-                // (UI 保持不变)
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(
@@ -398,25 +406,42 @@ class AccountDetailPage extends ConsumerWidget {
                     onPressed: () => Navigator.of(dialogContext).pop(),
                     child: const Text('取消')),
                 TextButton(
+                  // --- (*** 这是修复后的 onPressed ***) ---
                   onPressed: () async {
-                    final value = double.tryParse(valueController.text);
-                    if (value != null) {
-                      // 9. (*** 关键修改：同上 ***)
+                     try {
+                      final value = double.tryParse(valueController.text);
+                      if (value == null) { // 允许 0
+                         ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请输入有效的价值')),
+                        );
+                        return;
+                      }
+
                       final syncService = ref.read(syncServiceProvider);
+
+                      // 1. 创建新对象
                       final newTxn = AccountTransaction()
                         ..amount = value
                         ..date = selectedDate
-                        ..createdAt = DateTime.now() // (设置 createdAt)
+                        ..createdAt = DateTime.now() 
                         ..type = TransactionType.updateValue
-                        // 10. (关键修改) 设置 SUPABASE ID 关系
                         ..accountSupabaseId = account.supabaseId; 
                       
+                      // 2. (!!! 关键：先在本地写入 !!!)
+                      final isar = DatabaseService().isar;
+                       await isar.writeTxn(() async {
+                        await isar.accountTransactions.put(newTxn);
+                      });
+                      // (此时 newTxn.id 已经是一个有效的 Isar ID)
+
+                      // 3. 调用 syncService 保存
                       await syncService.saveAccountTransaction(newTxn);
                       
-                      // 刷新
+                      // 4. 刷新
                       ref.invalidate(accountPerformanceProvider(account.id));
                       ref.invalidate(dashboardDataProvider);
 
+                      // 5. 成功后关闭并导航
                       if (dialogContext.mounted) {
                         Navigator.of(dialogContext).pop();
                           Navigator.of(context).push(
@@ -424,6 +449,14 @@ class AccountDetailPage extends ConsumerWidget {
                               builder: (_) => TransactionHistoryPage(accountId: account.id),
                            ),
                          );
+                      }
+                    } catch (e) {
+                      // (捕获所有错误并提示)
+                      print('更新总值失败: $e');
+                      if (dialogContext.mounted) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          SnackBar(content: Text('操作失败: $e')),
+                        );
                       }
                     }
                   },
@@ -437,14 +470,14 @@ class AccountDetailPage extends ConsumerWidget {
     );
   }
 
-  // (*** 修正：传入 accountId 和 account 对象 ***)
+  // (*** 这是修复后的 _buildMicroView ***)
+  // (它现在可以正确调用 _buildHistoryChart 和 _buildAssetCard，因为它们都是同级的类成员)
   Widget _buildMicroView(BuildContext context, WidgetRef ref, int accountId, Account account) {
-    // 11. (关键修复) provider 现在使用 accountId (int)，逻辑已在 provider 内部修复
     final asyncAssets = ref.watch(trackedAssetsWithPerformanceProvider(accountId));
     
     return Column(
       children: [
-        ref.watch(accountHistoryProvider(account)).when( // (使用传入的 account 对象)
+        ref.watch(accountHistoryProvider(account)).when( 
           data: (spots) {
             if (spots.length < 2) return const SizedBox.shrink();
             return Card(
@@ -455,7 +488,7 @@ class AccountDetailPage extends ConsumerWidget {
                   children: [
                     const Text('账户净值趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 24),
-                    _buildHistoryChart(context, spots, account),
+                    _buildHistoryChart(context, spots, account), // <-- 这是正确的调用
                   ],
                 ),
               ),
@@ -475,15 +508,11 @@ class AccountDetailPage extends ConsumerWidget {
               icon: const Icon(Icons.add),
               tooltip: '添加持仓资产',
               onPressed: () {
-                // 12. (*** 关键修复：修复您报告的编译错误 ***)
-                // 导航回 AddEditAssetPage，并传递它所期望的 accountId (int)
-                // 我们不再尝试传递 'account' 对象
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => AddEditAssetPage(accountId: accountId), // <-- (修正)
+                    builder: (_) => AddEditAssetPage(accountId: accountId), 
                   ),
                 ).then((_) {
-                  // 刷新保持不变
                   ref.invalidate(accountDetailProvider(accountId));
                   ref.invalidate(accountPerformanceProvider(accountId));
                   ref.invalidate(trackedAssetsWithPerformanceProvider(accountId)); 
@@ -499,7 +528,7 @@ class AccountDetailPage extends ConsumerWidget {
               return const Card(child: ListTile(title: Text('暂无持仓资产')));
             }
             return Column(
-              children: assetsData.map((assetData) => _buildAssetCard(context, ref, assetData, accountId)).toList(),
+              children: assetsData.map((assetData) => _buildAssetCard(context, ref, assetData, accountId)).toList(), // <-- 这是正确的调用
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -513,8 +542,6 @@ class AccountDetailPage extends ConsumerWidget {
     final Asset asset = assetData['asset'];
     final Map<String, dynamic> performance = assetData['performance'];
     
-    // (*** 内部逻辑和布局保持不变 ***)
-
     final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
 
     final double totalValue = (asset.trackingMethod == AssetTrackingMethod.shareBased
@@ -560,7 +587,6 @@ class AccountDetailPage extends ConsumerWidget {
         trailing: const Icon(Icons.arrow_forward_ios),
         
         onTap: () {
-          // (导航保持不变，但详情页稍后必须修复)
           final pageRoute = MaterialPageRoute(builder: (context) {
             return asset.trackingMethod == AssetTrackingMethod.shareBased
                 ? ShareAssetDetailPage(assetId: asset.id)
@@ -584,7 +610,6 @@ class AccountDetailPage extends ConsumerWidget {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          // (UI 保持不变)
           title: Text('删除资产 "${asset.name}"'),
           content: const Text('此操作不可撤销，将删除此资产下的所有记录。'),
           actions: [
@@ -602,7 +627,6 @@ class AccountDetailPage extends ConsumerWidget {
     ).then((ok) async {
       if (ok != true) return;
       if (asset.supabaseId == null) {
-        // 安全检查：如果资产从未同步过，执行纯本地删除
         final isar = DatabaseService().isar;
         await isar.writeTxn(() => isar.assets.delete(asset.id));
         ref.invalidate(accountPerformanceProvider(accountId));
@@ -612,31 +636,22 @@ class AccountDetailPage extends ConsumerWidget {
 
       final isar = DatabaseService().isar;
       final syncService = ref.read(syncServiceProvider);
-
-      // 13. (*** 关键修复：重写级联删除逻辑 ***)
-      // 我们必须先删除所有子记录 (Transactions 和 Snapshots)，然后再删除 Asset
       
-      // 1. 找到此 Asset 的所有 Transactions
       final txs = await isar.transactions.where()
                           .filter()
                           .assetSupabaseIdEqualTo(asset.supabaseId)
                           .findAll();
-      // 2. 找到此 Asset 的所有 Snapshots
       final snaps = await isar.positionSnapshots.where()
                                 .filter()
                                 .assetSupabaseIdEqualTo(asset.supabaseId)
                                 .findAll();
       
-      // 3. (云端+本地删除)
       for (final tx in txs) { await syncService.deleteTransaction(tx); }
       for (final snap in snaps) { await syncService.deletePositionSnapshot(snap); }
       
-      // 4. (云端+本地) 最后删除 Asset 本身
       await syncService.deleteAsset(asset);
 
-      // 刷新当前页面
       ref.invalidate(accountPerformanceProvider(accountId));
-      // 刷新全局
       ref.invalidate(dashboardDataProvider);
 
       if (context.mounted) {
@@ -647,7 +662,6 @@ class AccountDetailPage extends ConsumerWidget {
     });
   }
 
-  // (*** 您的 _buildHistoryChart 和 _buildMetricRow 函数保持不变 ***)
   Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots, Account account) {
     final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: getCurrencySymbol(account.currency));
     final colorScheme = Theme.of(context).colorScheme;
