@@ -173,33 +173,41 @@ class SupabaseSyncService {
   }
 
   Future<void> _handleUpsert(Map<String, dynamic> remoteData, String tableName) async {
+    print('[SupabaseSync] Realtime event: $tableName / ${remoteData['id']} -> processing...');
+    
     await _isar.writeTxn(() async {
-      switch (tableName) {
-        case 'Account':
-          final remoteItem = Account.fromSupabaseJson(remoteData);
-          final localItem = await _isar.accounts.where().supabaseIdEqualTo(remoteItem.supabaseId).findFirst();
-          await _performLWWPut(localItem, remoteItem, _isar.accounts);
-          break;
-        case 'Asset':
-          final remoteItem = Asset.fromSupabaseJson(remoteData);
-          final localItem = await _isar.assets.where().supabaseIdEqualTo(remoteItem.supabaseId).findFirst();
-          await _performLWWPut(localItem, remoteItem, _isar.assets);
-          break;
-        case 'Transaction':
-          final remoteItem = Transaction.fromSupabaseJson(remoteData);
-          final localItem = await _isar.transactions.where().supabaseIdEqualTo(remoteItem.supabaseId).findFirst();
-          await _performLWWPut(localItem, remoteItem, _isar.transactions);
-          break;
-        case 'AccountTransaction':
-          final remoteItem = AccountTransaction.fromSupabaseJson(remoteData);
-          final localItem = await _isar.accountTransactions.where().supabaseIdEqualTo(remoteItem.supabaseId).findFirst();
-          await _performLWWPut(localItem, remoteItem, _isar.accountTransactions);
-          break;
-        case 'PositionSnapshot':
-          final remoteItem = PositionSnapshot.fromSupabaseJson(remoteData);
-          final localItem = await _isar.positionSnapshots.where().supabaseIdEqualTo(remoteItem.supabaseId).findFirst();
-          await _performLWWPut(localItem, remoteItem, _isar.positionSnapshots);
-          break;
+      try {
+        switch (tableName) {
+          case 'Account':
+            final remoteItem = Account.fromSupabaseJson(remoteData);
+            final localItem = await _isar.accounts.where().supabaseIdEqualTo(remoteItem.supabaseId).findFirst();
+            await _performLWWPut(localItem, remoteItem, _isar.accounts);
+            break;
+          case 'Asset':
+            final remoteItem = Asset.fromSupabaseJson(remoteData);
+            final localItem = await _isar.assets.where().supabaseIdEqualTo(remoteItem.supabaseId).findFirst();
+            await _performLWWPut(localItem, remoteItem, _isar.assets);
+            break;
+          case 'Transaction':
+            final remoteItem = Transaction.fromSupabaseJson(remoteData);
+            final localItem = await _isar.transactions.where().supabaseIdEqualTo(remoteItem.supabaseId).findFirst();
+            await _performLWWPut(localItem, remoteItem, _isar.transactions);
+            break;
+          case 'AccountTransaction':
+            final remoteItem = AccountTransaction.fromSupabaseJson(remoteData);
+            final localItem = await _isar.accountTransactions.where().supabaseIdEqualTo(remoteItem.supabaseId).findFirst();
+            await _performLWWPut(localItem, remoteItem, _isar.accountTransactions);
+            break;
+          case 'PositionSnapshot':
+            final remoteItem = PositionSnapshot.fromSupabaseJson(remoteData);
+            final localItem = await _isar.positionSnapshots.where().supabaseIdEqualTo(remoteItem.supabaseId).findFirst();
+            await _performLWWPut(localItem, remoteItem, _isar.positionSnapshots);
+            break;
+        }
+        print('[SupabaseSync] Realtime event: $tableName / ${remoteData['id']} -> processed successfully');
+      } catch (e) {
+        print('[SupabaseSync] Realtime event: $tableName / ${remoteData['id']} -> failed: $e');
+        // 不重新抛出错误，避免中断实时监听器
       }
     });
   }
@@ -229,100 +237,194 @@ class SupabaseSyncService {
   /// 辅助方法：执行 Last-Write-Wins (LWW) 逻辑并写入 Isar
   Future<void> _performLWWPut<T>(T? localItem, T remoteItem, IsarCollection<T> collection) async {
     final remoteUpdatedAt = (remoteItem as dynamic).updatedAt as DateTime?;
+    final remoteSupabaseId = (remoteItem as dynamic).supabaseId as String?;
 
     if (localItem == null) {
       // 本地不存在，直接写入
-      await collection.put(remoteItem);
+      try {
+        await collection.put(remoteItem);
+        print('[SupabaseSync] LWW: Created new local record for $remoteSupabaseId');
+      } catch (e) {
+        if (e.toString().contains('Unique index violated')) {
+          print('[SupabaseSync] LWW: Unique constraint violated for $remoteSupabaseId - ignoring (likely race condition)');
+          // 忽略这个错误，可能是并发创建导致的
+          return;
+        }
+        rethrow;
+      }
     } else {
       final localUpdatedAt = (localItem as dynamic).updatedAt as DateTime?;
       // 远端版本较新，或者本地没有时间戳，就覆盖本地
       if (localUpdatedAt == null || (remoteUpdatedAt != null && remoteUpdatedAt.isAfter(localUpdatedAt))) {
         (remoteItem as dynamic).id = (localItem as dynamic).id; // 关键：保留本地的 Isar Id
         await collection.put(remoteItem);
+        print('[SupabaseSync] LWW: Updated local record for $remoteSupabaseId');
+      } else {
+        print('[SupabaseSync] LWW: Skipped update for $remoteSupabaseId (local newer or equal)');
       }
       // else: 本地版本较新或相同，忽略
     }
   }
 
-  // --- 外部：推送 (Push) / 写入 API ---
-  
-  // (*** 这是修复后的 _saveObject 函数 ***)
-  /// 通用的保存方法 (创建或更新)
-  Future<void> _saveObject<T>(
-    String tableName, 
-    T isarObject, // 包含 Isar ID 和本地更改的对象
-    IsarCollection<T> isarCollection,
-    Map<String, dynamic> jsonData, // isarObject.toSupabaseJson() 的结果
-    dynamic fromSupabaseJson // 例如：(json) => Asset.fromSupabaseJson(json)
+  /// 通用的保存方法 - 处理竞态条件的关键逻辑
+  Future<void> _saveWithRaceConditionHandling<T>(
+    T definitiveItem,
+    Id isarId,
+    String? definitiveSupaId,
+    T isarObject,
+    IsarCollection<T> isarCollection
   ) async {
-    if (!isLoggedIn) throw Exception("未登录");
-
-    final isarId = (isarObject as dynamic).id; // (*** 这必须是一个有效的 ID，不能是 null ***)
-    final supabaseId = (isarObject as dynamic).supabaseId as String?;
-
-    // (*** 关键修复：UI 层必须确保 isarId 不是 null ***)
-    if (isarId == null) {
-       throw Exception("SaveObject 失败: 传入对象的 Isar ID 为 null。必须先在本地保存。");
-    }
-
-    // 如果是更新，我们需要将 'id' (Supabase UUID) 添加到数据中，以便 .upsert() 知道要更新哪一行
-    if (supabaseId != null) {
-      jsonData['id'] = supabaseId; 
-    }
-    // 'user_id' 会被我们在第 0 步设置的 SQL (DEFAULT auth.uid()) 自动处理
-
-    try {
-      // 1. (推送) 使用 .upsert() 将数据写入 Supabase。
-      final response = await _client.from(tableName).upsert(jsonData).select();
-      
-      if (response.isEmpty) {
-         throw Exception('Upsert 成功，但 RLS 策略阻止了 SELECT 返回数据。');
-      }
-      
-      final savedData = response.first as Map<String, dynamic>;
-
-      // 2. (回写) 我们收到了来自 Supabase 的权威数据
-      final definitiveItem = fromSupabaseJson(savedData) as T;
-      final definitiveSupaId = (definitiveItem as dynamic).supabaseId as String?;
-      
-      // --- (*** 关键修复：处理竞态条件 + 修正拼写错误 ***) ---
-      if (definitiveSupaId != null) { 
-          dynamic duplicateFromListener;
+    bool saveSuccessful = false;
+    int retryCount = 0;
+    const maxRetries = 3;
+    
+    while (!saveSuccessful && retryCount < maxRetries) {
+      try {
+        await _isar.writeTxn(() => isarCollection.put(definitiveItem));
+        saveSuccessful = true;
+        print('[SupabaseSync] Successfully saved with ID $isarId (attempt ${retryCount + 1})');
+        break;
+      } catch (e) {
+        retryCount++;
+        
+        if (e.toString().contains('Unique index violated') && definitiveSupaId != null) {
+          print('[SupabaseSync] Race condition detected (attempt $retryCount) for $definitiveSupaId, cleaning up...');
           
-          // 修正：.where() 后面必须跟 .filter() 才能使用 .not()
-          if (isarObject is Account) duplicateFromListener = await _isar.accounts.where().supabaseIdEqualTo(definitiveSupaId).filter().not().idEqualTo(isarId).findFirst();
-          else if (isarObject is Asset) duplicateFromListener = await _isar.assets.where().supabaseIdEqualTo(definitiveSupaId).filter().not().idEqualTo(isarId).findFirst();
-          else if (isarObject is Transaction) duplicateFromListener = await _isar.transactions.where().supabaseIdEqualTo(definitiveSupaId).filter().not().idEqualTo(isarId).findFirst();
-          else if (isarObject is AccountTransaction) duplicateFromListener = await _isar.accountTransactions.where().supabaseIdEqualTo(definitiveSupaId).filter().not().idEqualTo(isarId).findFirst();
-          else if (isarObject is PositionSnapshot) duplicateFromListener = await _isar.positionSnapshots.where().supabaseIdEqualTo(definitiveSupaId).filter().not().idEqualTo(isarId).findFirst();
+          // 找到并删除监听器创建的重复记录
+          dynamic duplicateFromListener;
+          if (isarObject is Account) {
+            duplicateFromListener = await _isar.accounts
+                .where()
+                .supabaseIdEqualTo(definitiveSupaId)
+                .filter()
+                .not()
+                .idEqualTo(isarId)
+                .findFirst();
+          } else if (isarObject is Asset) {
+            duplicateFromListener = await _isar.assets
+                .where()
+                .supabaseIdEqualTo(definitiveSupaId)
+                .filter()
+                .not()
+                .idEqualTo(isarId)
+                .findFirst();
+          } else if (isarObject is Transaction) {
+            duplicateFromListener = await _isar.transactions
+                .where()
+                .supabaseIdEqualTo(definitiveSupaId)
+                .filter()
+                .not()
+                .idEqualTo(isarId)
+                .findFirst();
+          } else if (isarObject is AccountTransaction) {
+            duplicateFromListener = await _isar.accountTransactions
+                .where()
+                .supabaseIdEqualTo(definitiveSupaId)
+                .filter()
+                .not()
+                .idEqualTo(isarId)
+                .findFirst();
+          } else if (isarObject is PositionSnapshot) {
+            duplicateFromListener = await _isar.positionSnapshots
+                .where()
+                .supabaseIdEqualTo(definitiveSupaId)
+                .filter()
+                .not()
+                .idEqualTo(isarId)
+                .findFirst();
+          }
 
           if (duplicateFromListener != null) {
-              // 竞态条件发生！侦听器赢了 (创建了 duplicateFromListener)
-              // 我们必须删除这个重复项，因为我们将更新我们自己的占位符 (isarId)
-              await _isar.writeTxn(() => isarCollection.delete((duplicateFromListener as dynamic).id));
+            print('[SupabaseSync] Found duplicate record with ID ${(duplicateFromListener as dynamic).id}, deleting...');
+            await _isar.writeTxn(() => isarCollection.delete((duplicateFromListener as dynamic).id));
+            print('[SupabaseSync] Deleted duplicate record, retrying save...');
+            // 继续循环重试
+          } else {
+            print('[SupabaseSync] No duplicate found but unique constraint violated. Breaking.');
+            break;
           }
+        } else {
+          // 其他类型的错误，重新抛出
+          rethrow;
+        }
       }
-      // --- (*** 修复结束 ***) ---
-      
-      // 3. 将这个权威版本写回本地 Isar，同时保留我们原始的本地 Isar ID
-      (definitiveItem as dynamic).id = isarId; 
-      await _isar.writeTxn(() => isarCollection.put(definitiveItem));
-
-    } catch (e) {
-      print('Supabase Save ($tableName) 失败: $e');
-      // 即使推送失败，数据仍然保存在本地 Isar 中
-      (isarObject as dynamic).id = isarId; // 确保 Isar ID 还在
-      try {
-        // (*** 关键修复：包裹回退逻辑以防止崩溃 ***)
-        await _isar.writeTxn(() => isarCollection.put(isarObject)); // 至少保存本地更改
-      } catch (e2) {
-        print('Supabase Fallback Save 失败 (可能是重复的 null unique key): $e2');
-      }
-      // (*** 关键修复：重新抛出错误，让 UI 层知道失败了 ***)
-      throw e;
+    }
+    
+    if (!saveSuccessful) {
+      throw Exception('Failed to save after $maxRetries attempts due to race conditions');
     }
   }
 
+  // --- 外部：推送 (Push) / 写入 API ---
+  
+  /// 通用的保存方法 (创建或更新)
+// 在你的 SupabaseSyncService 中，找到 _saveObject 方法，替换成这个版本：
+
+Future<void> _saveObject<T>(
+  String tableName, 
+  T isarObject,
+  IsarCollection<T> isarCollection,
+  Map<String, dynamic> jsonData,
+  dynamic fromSupabaseJson
+) async {
+  if (!isLoggedIn) throw Exception("未登录");
+
+  final isarId = (isarObject as dynamic).id;
+  final supabaseId = (isarObject as dynamic).supabaseId as String?;
+
+  if (isarId == null) {
+     throw Exception("SaveObject 失败: 传入对象的 Isar ID 为 null。必须先在本地保存。");
+  }
+
+  if (supabaseId != null) {
+    jsonData['id'] = supabaseId; 
+  }
+
+  try {
+    // 1. 推送到 Supabase
+    final response = await _client.from(tableName).upsert(jsonData).select();
+    
+    if (response.isEmpty) {
+       throw Exception('Upsert 成功，但 RLS 策略阻止了 SELECT 返回数据。');
+    }
+    
+    final savedData = response.first as Map<String, dynamic>;
+    final definitiveItem = fromSupabaseJson(savedData) as T;
+    final definitiveSupaId = (definitiveItem as dynamic).supabaseId as String?;
+    
+    // 2. 写回本地
+    (definitiveItem as dynamic).id = isarId; 
+    
+    // 使用专门的竞态条件处理方法
+    await _saveWithRaceConditionHandling(
+      definitiveItem, 
+      isarId, 
+      definitiveSupaId, 
+      isarObject, 
+      isarCollection
+    );
+
+    // 关键修复：在这里直接返回，不要继续到 catch 块
+    return;
+
+  } catch (e) {
+    print('Supabase Save ($tableName) 失败: $e');
+    
+    // 只有在真正失败时才进行回退操作和重新抛出异常
+    // 检查错误信息，如果包含成功信息就不抛出
+    if (!e.toString().contains('Successfully saved')) {
+      // 回退逻辑
+      (isarObject as dynamic).id = isarId;
+      try {
+        await _isar.writeTxn(() => isarCollection.put(isarObject));
+      } catch (e2) {
+        print('Supabase Fallback Save 失败: $e2');
+      }
+      rethrow; // 只有真正失败时才重新抛出
+    }
+    // 如果包含成功信息，就什么也不做，让方法正常结束
+  }
+}
 
   /// 通用的删除方法
   Future<void> _deleteObject<T>(
