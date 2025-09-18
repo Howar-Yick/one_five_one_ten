@@ -90,10 +90,32 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Widget build(BuildContext context) {
     // 2. 使用 ref.watch 监听 syncService。当登录/登出时，authState 改变，UI 将自动刷新
     final syncService = ref.watch(syncServiceProvider);
+    final priceSyncState = ref.watch(priceSyncControllerProvider);
     
     return Scaffold(
       appBar: AppBar(
         title: const Text('我的设置'),
+        // --- (*** 新增：AppBar 的 actions 按钮 ***) ---
+        actions: [
+          if (priceSyncState == PriceSyncState.loading)
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: '同步所有资产价格',
+              onPressed: () {
+                ref.read(priceSyncControllerProvider.notifier).syncAllPrices();
+              },
+            ),
+        ],
+        // --- (*** 新增结束 ***) ---
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -128,7 +150,31 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
           ),
 
+          // --- (*** 新增：数据操作 ***) ---
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+            child: Text('数据操作', style: Theme.of(context).textTheme.titleLarge),
+          ),
+          ListTile(
+            leading: const Icon(Icons.cloud_sync_outlined),
+            title: const Text('同步所有资产价格'),
+            subtitle: const Text('从网络获取最新的收盘价和基金净值'),
+            // 如果正在加载，禁用点击
+            onTap: (priceSyncState == PriceSyncState.loading) 
+              ? null 
+              : () {
+                  ref.read(priceSyncControllerProvider.notifier).syncAllPrices();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('已开始同步...'), duration: Duration(seconds: 2))
+                  );
+                },
+          ),
+          // --- (*** 新增结束 ***) ---
+
           const Divider(height: 32),
+
+          // ========== 本地备份...
 
           // ========== 本地备份 (保留您现有的逻辑) ==========
           Padding(

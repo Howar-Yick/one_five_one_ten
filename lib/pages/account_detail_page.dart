@@ -95,10 +95,37 @@ class AccountDetailPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncAccount = ref.watch(accountDetailProvider(accountId));
     final asyncPerformance = ref.watch(accountPerformanceProvider(accountId));
+    final syncState = ref.watch(priceSyncControllerProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(asyncAccount.asData?.value?.name ?? '加载中...'),
+        // --- (*** 新增：AppBar 的 actions 按钮 ***) ---
+        actions: [
+          if (syncState == PriceSyncState.loading)
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: '同步所有资产价格',
+              onPressed: () {
+                // 调用价格同步
+                ref.read(priceSyncControllerProvider.notifier).syncAllPrices();
+                
+                // (可选) 价格同步后，也主动刷新一下当前页面的数据
+                ref.invalidate(accountPerformanceProvider(accountId));
+                ref.invalidate(trackedAssetsWithPerformanceProvider(accountId));
+              },
+            ),
+        ],
+        // --- (*** 新增结束 ***) ---
       ),
       body: asyncPerformance.when(
         data: (performance) {
@@ -108,8 +135,15 @@ class AccountDetailPage extends ConsumerWidget {
           final account = asyncAccount.asData!.value!;
           return RefreshIndicator(
              onRefresh: () async {
+                // 1. 先触发价格同步 (异步，不等待)
+                ref.read(priceSyncControllerProvider.notifier).syncAllPrices();
+                
+                // 2. 刷新当前页面的 Provider
                 ref.invalidate(accountPerformanceProvider(accountId));
                 ref.invalidate(trackedAssetsWithPerformanceProvider(accountId));
+                
+                // (给网络请求一点时间，体验更好)
+                await Future.delayed(const Duration(milliseconds: 500));
               },
             child: ListView(
               padding: const EdgeInsets.all(16.0),
@@ -577,7 +611,14 @@ class AccountDetailPage extends ConsumerWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(''), // 占位符
+                // --- (*** 新增：显示价格更新日期 ***) ---
+                Text(
+                  asset.priceUpdateDate != null 
+                    ? '价格 @ ${DateFormat('MM-dd HH:mm').format(asset.priceUpdateDate!)}'
+                    : '价格未更新', 
+                  style: const TextStyle(fontSize: 12, color: Colors.grey)
+                ),
+                // --- (*** 新增结束 ***) ---
                 Text('年化: ${percentFormat.format(annualizedReturn)}',
                   style: TextStyle(color: profitColor, fontSize: 12)),
               ],

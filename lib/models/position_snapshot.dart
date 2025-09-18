@@ -1,4 +1,5 @@
 // 文件: lib/models/position_snapshot.dart
+// (这是修复了 'cost_basis' 字段映射错误的代码)
 import 'package:isar/isar.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 
@@ -12,26 +13,20 @@ class PositionSnapshot {
 
   late double totalShares; // 总份额
 
-  late double averageCost; // 单位成本
+  late double averageCost; // 单位成本 (Dart 内部使用的名字)
 
-  // --- 关键变更：替换 IsarLink 为 SupabaseId 引用 ---
-  // final asset = IsarLink<Asset>(); // <-- 旧的
   @Index()
-  String? assetSupabaseId; // <-- 新的：存储所属 Asset 的 Supabase UUID
-  // --- 变更结束 ---
+  String? assetSupabaseId; 
 
-  // --- 新增：Supabase 同步字段 ---
   @Index(type: IndexType.value, unique: true, caseSensitive: false)
-  String? supabaseId; // 此 PositionSnapshot 自己的 Supabase UUID
+  String? supabaseId; 
 
   late DateTime createdAt;
   DateTime? updatedAt;
-  // --- 新增结束 ---
   
-  // --- 新增：空的构造函数 (Isar 需要) ---
   PositionSnapshot();
   
-  // --- 新增：Supabase 序列化/反序列化方法 ---
+  // --- Supabase 序列化/反序列化方法 ---
   
   factory PositionSnapshot.fromSupabaseJson(Map<String, dynamic> json) {
     final snap = PositionSnapshot();
@@ -45,9 +40,12 @@ class PositionSnapshot {
 
     snap.date = DateTime.parse(json['date']).toLocal();
     snap.totalShares = (json['total_shares'] as num?)?.toDouble() ?? 0.0;
-    snap.averageCost = (json['average_cost'] as num?)?.toDouble() ?? 0.0;
     
-    snap.assetSupabaseId = json['asset_id']; // 关联 Asset 的 UUID
+    // --- 关键修复：从 'cost_basis' 读取 ---
+    snap.averageCost = (json['cost_basis'] as num?)?.toDouble() ?? 0.0; // <-- 修正
+    // --- 修复结束 ---
+    
+    snap.assetSupabaseId = json['asset_id']; 
     return snap;
   }
   
@@ -55,8 +53,12 @@ class PositionSnapshot {
     return {
       'date': date.toIso8601String(),
       'total_shares': totalShares,
-      'average_cost': averageCost,
-      'asset_id': assetSupabaseId, // 同步关系链接
+      
+      // --- 关键修复：写入到 'cost_basis' ---
+      'cost_basis': averageCost, // <-- 修正: Dart 属性 'averageCost' 映射到数据库列 'cost_basis'
+      // --- 修复结束 ---
+      
+      'asset_id': assetSupabaseId, 
       'created_at': createdAt.toIso8601String(),
     };
   }
