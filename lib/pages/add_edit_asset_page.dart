@@ -1,5 +1,5 @@
 // 文件: lib/pages/add_edit_asset_page.dart
-// (这是完整、已修复的文件代码)
+// (这是完整、已修复的文件代码，包含调试功能)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -211,6 +211,19 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   // 创建份额法记录
   Future<void> _createShareBasedRecord(Asset syncedAsset, SupabaseSyncService syncService, Isar isar) async {
     try {
+      // 调试：检查现有快照
+      final existingSnapshots = await isar.positionSnapshots
+          .filter()
+          .assetSupabaseIdEqualTo(syncedAsset.supabaseId)
+          .findAll();
+          
+      print('[DEBUG] Existing snapshots for asset ${syncedAsset.supabaseId}: ${existingSnapshots.length}');
+      
+      if (existingSnapshots.isNotEmpty) {
+        print('[DEBUG] Snapshot already exists, skipping creation');
+        return;
+      }
+      
       final snapshot = PositionSnapshot()
         ..totalShares = double.parse(_sharesController.text)
         ..averageCost = double.parse(_costController.text)
@@ -233,47 +246,95 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     }
   }
 
-  // 创建价值法记录
+  // 创建价值法记录（带调试功能）
   Future<void> _createValueBasedRecords(Asset syncedAsset, SupabaseSyncService syncService, Isar isar) async {
+    // 添加调试：检查本地已存在的记录
+    final existingTransactions = await isar.transactions
+        .filter()
+        .assetSupabaseIdEqualTo(syncedAsset.supabaseId)
+        .findAll();
+        
+    print('[DEBUG] Existing transactions for asset ${syncedAsset.supabaseId}: ${existingTransactions.length}');
+    for (var tx in existingTransactions) {
+      print('[DEBUG] - Type: ${tx.type}, Amount: ${tx.amount}, Date: ${tx.date}, IsarId: ${tx.id}, SupabaseId: ${tx.supabaseId}');
+    }
+    
     final initialInvestment = double.parse(_initialInvestmentController.text);
     
     try {
-      // 创建投资记录
-      final transaction = Transaction()
-        ..type = TransactionType.invest
-        ..amount = initialInvestment
-        ..date = _selectedDate
-        ..createdAt = DateTime.now()
-        ..assetSupabaseId = syncedAsset.supabaseId;
+      // 检查是否已经存在相同类型的交易
+      final existingInvest = await isar.transactions
+          .filter()
+          .assetSupabaseIdEqualTo(syncedAsset.supabaseId)
+          .and()
+          .typeEqualTo(TransactionType.invest)
+          .findFirst();
+          
+      if (existingInvest != null) {
+        print('[DEBUG] Investment transaction already exists, skipping creation');
+      } else {
+        // 添加更长的延迟，确保资产的实时事件完全处理完成
+        await Future.delayed(const Duration(milliseconds: 1000));
+        
+        // 创建投资记录
+        final transaction = Transaction()
+          ..type = TransactionType.invest
+          ..amount = initialInvestment
+          ..date = _selectedDate
+          ..createdAt = DateTime.now()
+          ..assetSupabaseId = syncedAsset.supabaseId;
 
-      await isar.writeTxn(() async {
-        await isar.transactions.put(transaction);
-      });
-      await syncService.saveTransaction(transaction);
-      print('[UI] Investment transaction created successfully');
+        // 分别处理每个事务，增加错误容错
+        try {
+          await isar.writeTxn(() async {
+            await isar.transactions.put(transaction);
+          });
+          await syncService.saveTransaction(transaction);
+          print('[UI] Investment transaction created successfully');
+        } catch (e) {
+          print('[UI] Failed to create investment transaction: $e');
+          // 继续尝试创建下一个
+        }
+      }
 
-      // 稍等一下再创建下一个记录，避免过快的连续请求
-      await Future.delayed(const Duration(milliseconds: 300));
+      // 检查是否已经存在 updateValue 类型的交易
+      final existingUpdate = await isar.transactions
+          .filter()
+          .assetSupabaseIdEqualTo(syncedAsset.supabaseId)
+          .and()
+          .typeEqualTo(TransactionType.updateValue)
+          .findFirst();
+          
+      if (existingUpdate != null) {
+        print('[DEBUG] UpdateValue transaction already exists, skipping creation');
+      } else {
+        // 更长的延迟，避免过快的连续操作
+        await Future.delayed(const Duration(milliseconds: 1000));
 
-      // 创建总值更新记录
-      final updateValueTxn = Transaction()
-        ..type = TransactionType.updateValue
-        ..amount = initialInvestment
-        ..date = _selectedDate
-        ..createdAt = DateTime.now()
-        ..assetSupabaseId = syncedAsset.supabaseId;
+        // 创建总值更新记录 - 使用不同的时间避免任何潜在冲突
+        final updateValueTxn = Transaction()
+          ..type = TransactionType.updateValue
+          ..amount = initialInvestment
+          ..date = _selectedDate.add(const Duration(minutes: 1))  // 不同的日期
+          ..createdAt = DateTime.now().add(const Duration(seconds: 1))  // 不同的创建时间
+          ..assetSupabaseId = syncedAsset.supabaseId;
 
-      await isar.writeTxn(() async {
-        await isar.transactions.put(updateValueTxn);
-      });
-      await syncService.saveTransaction(updateValueTxn);
-      print('[UI] UpdateValue transaction created successfully');
+        try {
+          await isar.writeTxn(() async {
+            await isar.transactions.put(updateValueTxn);
+          });
+          await syncService.saveTransaction(updateValueTxn);
+          print('[UI] UpdateValue transaction created successfully');
+        } catch (e) {
+          print('[UI] Failed to create updateValue transaction: $e');
+        }
+      }
 
     } catch (e) {
       print('[UI] Failed to create transactions: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('初始交易记录创建失败: $e'))
+          SnackBar(content: Text('部分初始交易记录创建失败: $e'))
         );
       }
     }

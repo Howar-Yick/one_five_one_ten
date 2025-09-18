@@ -61,25 +61,37 @@ class Transaction {
     tx.type = TransactionType.values.byName(json['type'] ?? 'invest');
     tx.date = DateTime.parse(json['date']).toLocal();
     tx.amount = (json['amount'] as num?)?.toDouble() ?? 0.0;
-    tx.shares = (json['shares'] as num?)?.toDouble();
+    tx.shares = (json['quantity'] as num?)?.toDouble(); // 修正：从 'quantity' 字段读取
     tx.price = (json['price'] as num?)?.toDouble();
-    tx.note = json['note'];
+    tx.note = json['notes']; // 修正：从 'notes' 字段读取
     
     tx.assetSupabaseId = json['asset_id']; // 关联 Asset 的 UUID
     return tx;
   }
   
   Map<String, dynamic> toSupabaseJson() {
-    return {
-      'type': type.name,
-      'date': date.toIso8601String(),
-      'amount': amount,
-      'shares': shares,
-      'price': price,
-      'note': note,
-      'asset_id': assetSupabaseId, // 同步关系链接
-      'created_at': createdAt.toIso8601String(),
-    };
+    final json = <String, dynamic>{};
+    
+    // 基本必需字段
+    json['type'] = type.name;
+    json['date'] = date.toIso8601String();
+    json['amount'] = amount;
+    json['asset_id'] = assetSupabaseId;
+    json['created_at'] = createdAt.toIso8601String();
+    json['updated_at'] = (updatedAt ?? DateTime.now()).toIso8601String();
+    
+    // 可选字段 - 只在有值时才添加，避免null值问题
+    if (shares != null) {
+      json['quantity'] = shares; // 映射到数据库的 'quantity' 字段
+    }
+    if (price != null) {
+      json['price'] = price;
+    }
+    if (note != null && note!.isNotEmpty) {
+      json['notes'] = note; // 映射到数据库的 'notes' 字段
+    }
+    
+    return json;
   }
   // --- 新增结束 ---
 }
