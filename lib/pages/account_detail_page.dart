@@ -1,5 +1,5 @@
 // 文件: lib/pages/account_detail_page.dart
-// (这是已修复“资产卡片显示代码”的完整文件)
+// (这是已添加资产排序功能的完整文件)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,7 +22,7 @@ import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 
 
-// --- (Providers 保持不变) ---
+// --- (Provider 保持不变) ---
 final accountDetailProvider =
     FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
   final isar = DatabaseService().isar;
@@ -82,23 +82,43 @@ final accountHistoryProvider = FutureProvider.autoDispose.family<List<FlSpot>, A
   return CalculatorService().getAccountValueHistory(account);
 });
 
+// --- (*** 新增：排序标准枚举 ***) ---
+enum AssetSortCriteria {
+  marketValue,    // 持仓金额
+  totalProfit,    // 收益金额
+  profitRate,     // 收益率
+  annualizedReturn, // 年化
+}
+// --- (*** 新增结束 ***) ---
 
-class AccountDetailPage extends ConsumerWidget {
+
+// --- (*** 1. 关键修改：转换为 ConsumerStatefulWidget ***) ---
+class AccountDetailPage extends ConsumerStatefulWidget {
   final int accountId;
   const AccountDetailPage({super.key, required this.accountId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final asyncAccount = ref.watch(accountDetailProvider(accountId));
-    final asyncPerformance = ref.watch(accountPerformanceProvider(accountId));
-    
-    // (*** 监听价格同步状态 ***)
+  ConsumerState<AccountDetailPage> createState() => _AccountDetailPageState();
+}
+
+// --- (*** 2. 新增 State 类 ***) ---
+class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
+
+  // --- (*** 3. 新增状态变量 ***) ---
+  AssetSortCriteria _sortCriteria = AssetSortCriteria.marketValue; // 默认按持仓金额排序
+  bool _sortAscending = false; // 默认降序（从高到低）
+  // --- (*** 新增结束 ***) ---
+
+  @override
+  Widget build(BuildContext context) {
+    // (*** 4. 修改：所有 ref.watch 和 widget.accountId 都在 State 类中访问 ***)
+    final asyncAccount = ref.watch(accountDetailProvider(widget.accountId));
+    final asyncPerformance = ref.watch(accountPerformanceProvider(widget.accountId));
     final syncState = ref.watch(priceSyncControllerProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(asyncAccount.asData?.value?.name ?? '加载中...'),
-        // (*** 价格同步按钮 ***)
         actions: [
           if (syncState == PriceSyncState.loading)
             const Padding(
@@ -115,8 +135,8 @@ class AccountDetailPage extends ConsumerWidget {
               tooltip: '同步所有资产价格',
               onPressed: () {
                 ref.read(priceSyncControllerProvider.notifier).syncAllPrices();
-                ref.invalidate(accountPerformanceProvider(accountId));
-                ref.invalidate(trackedAssetsWithPerformanceProvider(accountId));
+                ref.invalidate(accountPerformanceProvider(widget.accountId));
+                ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
               },
             ),
         ],
@@ -130,8 +150,8 @@ class AccountDetailPage extends ConsumerWidget {
           return RefreshIndicator(
                onRefresh: () async {
                 ref.read(priceSyncControllerProvider.notifier).syncAllPrices();
-                ref.invalidate(accountPerformanceProvider(accountId));
-                ref.invalidate(trackedAssetsWithPerformanceProvider(accountId));
+                ref.invalidate(accountPerformanceProvider(widget.accountId));
+                ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
                 await Future.delayed(const Duration(milliseconds: 500));
                },
             child: ListView(
@@ -139,7 +159,8 @@ class AccountDetailPage extends ConsumerWidget {
               children: [
                 _buildMacroView(context, ref, account, performance),
                 const SizedBox(height: 24),
-                _buildMicroView(context, ref, accountId, account), 
+                // (*** 5. 修改：调用 _buildMicroView 时不再需要传 context/ref ***)
+                _buildMicroView(widget.accountId, account), 
               ],
             ),
           );
@@ -150,9 +171,10 @@ class AccountDetailPage extends ConsumerWidget {
     );
   }
 
-  // ... ( _buildMacroView, _showInvestWithdrawDialog, _showUpdateValueDialog 保持不变 ) ...
-  // (为简洁起见，此处省略了这些未改动的函数，请保留你文件中的这些函数)
-Widget _buildMacroView(BuildContext context, WidgetRef ref, Account account,
+  // (*** 6. 修改：所有辅助函数现在都是 _AccountDetailPageState 的成员 ***)
+  
+  // ( _buildMacroView, _showInvestWithdrawDialog, _showUpdateValueDialog 保持不变 )
+  Widget _buildMacroView(BuildContext context, WidgetRef ref, Account account,
     Map<String, dynamic> performance) {
   
   final percentFormat =
@@ -240,243 +262,245 @@ Widget _buildMacroView(BuildContext context, WidgetRef ref, Account account,
   );
 }
 
-void _showInvestWithdrawDialog(
-    BuildContext context, WidgetRef ref, Account account) {
-  final amountController = TextEditingController();
-  final List<bool> isSelected = [true, false];
-  DateTime selectedDate = DateTime.now();
+  void _showInvestWithdrawDialog(
+      BuildContext context, WidgetRef ref, Account account) {
+    final amountController = TextEditingController();
+    final List<bool> isSelected = [true, false];
+    DateTime selectedDate = DateTime.now();
 
-  showDialog(
-    context: context,
-    builder: (dialogContext) {
-      return StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('资金操作'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ToggleButtons(
-                  isSelected: isSelected,
-                  onPressed: (index) {
-                    setState(() {
-                      isSelected[0] = index == 0;
-                      isSelected[1] = index == 1;
-                    });
-                  },
-                  borderRadius: BorderRadius.circular(8.0),
-                  children: const [
-                    Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        child: Text('投入')),
-                    Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        child: Text('转出')),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                    controller: amountController,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                        labelText: '金额', prefixText: getCurrencySymbol(account.currency))),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    const Text("日期:", style: TextStyle(fontSize: 16)),
-                    const Spacer(),
-                    TextButton(
-                      child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
-                      onPressed: () async {
-                        final pickedDate = await showDatePicker(
-                          context: context,
-                          initialDate: selectedDate,
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime.now(),
-                        );
-                        if (pickedDate != null) {
-                          setState(() {
-                            selectedDate = pickedDate;
-                          });
-                        }
-                      },
-                    )
-                  ],
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('取消')),
-              TextButton(
-                onPressed: () async {
-                  try {
-                    final amount = double.tryParse(amountController.text);
-                    if (amount == null || amount <= 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('请输入有效的金额')),
-                      );
-                      return;
-                    }
-
-                    final syncService = ref.read(syncServiceProvider);
-                    
-                    final newTxn = AccountTransaction()
-                      ..amount = amount
-                      ..date = selectedDate
-                      ..createdAt = DateTime.now() 
-                      ..type = isSelected[0]
-                          ? TransactionType.invest
-                          : TransactionType.withdraw
-                      ..accountSupabaseId = account.supabaseId; 
-
-                    final isar = DatabaseService().isar; 
-                    await isar.writeTxn(() async {
-                      await isar.accountTransactions.put(newTxn);
-                    });
-
-                    await syncService.saveAccountTransaction(newTxn);
-
-                    ref.invalidate(accountPerformanceProvider(account.id)); 
-                    ref.invalidate(dashboardDataProvider);
-
-                    if (dialogContext.mounted) {
-                      Navigator.of(dialogContext).pop();
-                      Navigator.of(context).push( 
-                        MaterialPageRoute(
-                          builder: (_) => TransactionHistoryPage(accountId: account.id),
-                        ),
-                      );
-                    }
-                  } catch (e) {
-                    print('资金操作失败: $e');
-                    if (dialogContext.mounted) {
-                      ScaffoldMessenger.of(dialogContext).showSnackBar(
-                        SnackBar(content: Text('操作失败: $e')),
-                      );
-                    }
-                  }
-                },
-                child: const Text('保存'),
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('资金操作'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ToggleButtons(
+                    isSelected: isSelected,
+                    onPressed: (index) {
+                      setState(() {
+                        isSelected[0] = index == 0;
+                        isSelected[1] = index == 1;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(8.0),
+                    children: const [
+                      Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('投入')),
+                      Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('转出')),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                      controller: amountController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                          labelText: '金额', prefixText: getCurrencySymbol(account.currency))),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text("日期:", style: TextStyle(fontSize: 16)),
+                      const Spacer(),
+                      TextButton(
+                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
+                        onPressed: () async {
+                          final pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime.now(),
+                          );
+                          if (pickedDate != null) {
+                            setState(() {
+                              selectedDate = pickedDate;
+                            });
+                          }
+                        },
+                      )
+                    ],
+                  ),
+                ],
               ),
-            ],
-          );
-        },
-      );
-    },
-  );
-}
-
-void _showUpdateValueDialog(
-    BuildContext context, WidgetRef ref, Account account) {
-  final valueController = TextEditingController();
-  DateTime selectedDate = DateTime.now();
-
-  showDialog(
-    context: context,
-    builder: (dialogContext) {
-      return StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('更新账户总值'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                    controller: valueController,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                        labelText: '当前总资产价值', prefixText: getCurrencySymbol(account.currency))),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    const Text("日期:", style: TextStyle(fontSize: 16)),
-                    const Spacer(),
-                    TextButton(
-                      child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
-                      onPressed: () async {
-                        final DateTime? pickedDate = await showDatePicker(
-                          context: context,
-                          initialDate: selectedDate,
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime.now(),
-                        );
-                        if (pickedDate != null) {
-                          setState(() {
-                            selectedDate = pickedDate;
-                          });
-                        }
-                      },
-                    )
-                  ],
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('取消')),
-              TextButton(
-                onPressed: () async {
-                     try {
-                      final value = double.tryParse(valueController.text);
-                      if (value == null) { // 允许 0
-                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('请输入有效的价值')),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('取消')),
+                TextButton(
+                  onPressed: () async {
+                    try {
+                      final amount = double.tryParse(amountController.text);
+                      if (amount == null || amount <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请输入有效的金额')),
                         );
                         return;
                       }
 
                       final syncService = ref.read(syncServiceProvider);
-
+                      
                       final newTxn = AccountTransaction()
-                        ..amount = value
+                        ..amount = amount
                         ..date = selectedDate
                         ..createdAt = DateTime.now() 
-                        ..type = TransactionType.updateValue
+                        ..type = isSelected[0]
+                            ? TransactionType.invest
+                            : TransactionType.withdraw
                         ..accountSupabaseId = account.supabaseId; 
-                      
-                      final isar = DatabaseService().isar;
-                       await isar.writeTxn(() async {
+
+                      final isar = DatabaseService().isar; 
+                      await isar.writeTxn(() async {
                         await isar.accountTransactions.put(newTxn);
                       });
 
                       await syncService.saveAccountTransaction(newTxn);
-                      
-                      ref.invalidate(accountPerformanceProvider(account.id));
+
+                      ref.invalidate(accountPerformanceProvider(account.id)); 
                       ref.invalidate(dashboardDataProvider);
 
                       if (dialogContext.mounted) {
                         Navigator.of(dialogContext).pop();
-                          Navigator.of(context).push(
-                           MaterialPageRoute(
-                              builder: (_) => TransactionHistoryPage(accountId: account.id),
-                           ),
-                         );
+                        Navigator.of(context).push( 
+                          MaterialPageRoute(
+                            builder: (_) => TransactionHistoryPage(accountId: account.id),
+                          ),
+                        );
                       }
                     } catch (e) {
-                      print('更新总值失败: $e');
+                      print('资金操作失败: $e');
                       if (dialogContext.mounted) {
                         ScaffoldMessenger.of(dialogContext).showSnackBar(
                           SnackBar(content: Text('操作失败: $e')),
                         );
                       }
                     }
-                },
-                child: const Text('保存'),
+                  },
+                  child: const Text('保存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showUpdateValueDialog(
+      BuildContext context, WidgetRef ref, Account account) {
+    final valueController = TextEditingController();
+    DateTime selectedDate = DateTime.now();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('更新账户总值'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                      controller: valueController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                          labelText: '当前总资产价值', prefixText: getCurrencySymbol(account.currency))),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text("日期:", style: TextStyle(fontSize: 16)),
+                      const Spacer(),
+                      TextButton(
+                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
+                        onPressed: () async {
+                          final DateTime? pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime.now(),
+                          );
+                          if (pickedDate != null) {
+                            setState(() {
+                              selectedDate = pickedDate;
+                            });
+                          }
+                        },
+                      )
+                    ],
+                  ),
+                ],
               ),
-            ],
-          );
-        },
-      );
-    },
-  );
-}
-  
-  Widget _buildMicroView(BuildContext context, WidgetRef ref, int accountId, Account account) {
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('取消')),
+                TextButton(
+                  onPressed: () async {
+                       try {
+                        final value = double.tryParse(valueController.text);
+                        if (value == null) { // 允许 0
+                           ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('请输入有效的价值')),
+                          );
+                          return;
+                        }
+
+                        final syncService = ref.read(syncServiceProvider);
+
+                        final newTxn = AccountTransaction()
+                          ..amount = value
+                          ..date = selectedDate
+                          ..createdAt = DateTime.now() 
+                          ..type = TransactionType.updateValue
+                          ..accountSupabaseId = account.supabaseId; 
+                        
+                        final isar = DatabaseService().isar;
+                         await isar.writeTxn(() async {
+                          await isar.accountTransactions.put(newTxn);
+                        });
+
+                        await syncService.saveAccountTransaction(newTxn);
+                        
+                        ref.invalidate(accountPerformanceProvider(account.id));
+                        ref.invalidate(dashboardDataProvider);
+
+                        if (dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop();
+                            Navigator.of(context).push(
+                             MaterialPageRoute(
+                                builder: (_) => TransactionHistoryPage(accountId: account.id),
+                             ),
+                           );
+                        }
+                      } catch (e) {
+                        print('更新总值失败: $e');
+                        if (dialogContext.mounted) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(content: Text('操作失败: $e')),
+                          );
+                        }
+                      }
+                  },
+                  child: const Text('保存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // --- (*** 7. 关键修改：_buildMicroView 现在是 State 的一部分 ***) ---
+  Widget _buildMicroView(int accountId, Account account) {
+    // (*** 8. 修改：现在从 State 访问 ref ***)
     final asyncAssets = ref.watch(trackedAssetsWithPerformanceProvider(accountId));
     
     return Column(
@@ -504,35 +528,71 @@ void _showUpdateValueDialog(
         
         const SizedBox(height: 24),
 
+        // --- (*** 9. 关键修改：添加排序按钮 ***) ---
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text('持仓资产', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            IconButton(
-              icon: const Icon(Icons.add),
-              tooltip: '添加持仓资产',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => AddEditAssetPage(accountId: accountId), 
-                  ),
-                ).then((_) {
-                  ref.invalidate(accountDetailProvider(accountId));
-                  ref.invalidate(accountPerformanceProvider(accountId));
-                  ref.invalidate(trackedAssetsWithPerformanceProvider(accountId)); 
-                });
-              },
-            ),
+            Row(
+              children: [
+                // (*** 新增的排序按钮 ***)
+                PopupMenuButton<AssetSortCriteria>(
+                  onSelected: (criteria) {
+                    setState(() {
+                      if (_sortCriteria == criteria) {
+                        // 如果点击的是当前标准，则反转排序方向
+                        _sortAscending = !_sortAscending;
+                      } else {
+                        // 否则，切换到新标准并默认为降序
+                        _sortCriteria = criteria;
+                        _sortAscending = false;
+                      }
+                    });
+                  },
+                  icon: Icon(Icons.sort, color: Theme.of(context).colorScheme.primary),
+                  tooltip: '排序',
+                  itemBuilder: (context) => [
+                    _buildSortMenuItem(AssetSortCriteria.marketValue, '按持仓金额'),
+                    _buildSortMenuItem(AssetSortCriteria.totalProfit, '按收益金额'),
+                    _buildSortMenuItem(AssetSortCriteria.profitRate, '按收益率'),
+                    _buildSortMenuItem(AssetSortCriteria.annualizedReturn, '按年化收益率'),
+                  ],
+                ),
+                // (*** 现有的添加按钮 ***)
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  tooltip: '添加持仓资产',
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => AddEditAssetPage(accountId: accountId), 
+                      ),
+                    ).then((_) {
+                      ref.invalidate(accountDetailProvider(accountId));
+                      ref.invalidate(accountPerformanceProvider(accountId));
+                      ref.invalidate(trackedAssetsWithPerformanceProvider(accountId)); 
+                    });
+                  },
+                ),
+              ],
+            )
           ],
         ),
+        // --- (*** 修改结束 ***) ---
+        
         const Divider(height: 20),
         asyncAssets.when(
           data: (assetsData) {
-            if (assetsData.isEmpty) {
+            
+            // --- (*** 10. 关键修改：应用排序 ***) ---
+            final sortedAssets = _sortAssetList(assetsData, _sortCriteria, _sortAscending);
+            // --- (*** 修改结束 ***) ---
+            
+            if (sortedAssets.isEmpty) { // (使用 sortedAssets)
               return const Card(child: ListTile(title: Text('暂无持仓资产')));
             }
             return Column(
-              children: assetsData.map((assetData) => _buildAssetCard(context, ref, assetData, accountId)).toList(), 
+              children: sortedAssets.map((assetData) => _buildAssetCard(context, ref, assetData, accountId)).toList(), // (使用 sortedAssets)
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -542,16 +602,70 @@ void _showUpdateValueDialog(
     );
   }
   
-  // --- (*** 这是关键修复：_buildAssetCard ***) ---
+  // (*** 11. 新增：排序菜单项的辅助函数 ***)
+  PopupMenuItem<AssetSortCriteria> _buildSortMenuItem(AssetSortCriteria criteria, String text) {
+    bool isSelected = _sortCriteria == criteria;
+    return PopupMenuItem(
+      value: criteria,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(text, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+          if (isSelected)
+            Icon(_sortAscending ? Icons.arrow_upward : Icons.arrow_downward, size: 20),
+        ],
+      ),
+    );
+  }
+
+  // (*** 12. 新增：获取排序值的辅助函数 ***)
+  double _getSortableValue(Map<String, dynamic> assetData, AssetSortCriteria criteria) {
+    final performance = assetData['performance'] as Map<String, dynamic>;
+    final asset = assetData['asset'] as Asset;
+
+    switch (criteria) {
+      case AssetSortCriteria.marketValue:
+        return (asset.trackingMethod == AssetTrackingMethod.shareBased
+            ? performance['marketValue']
+            : performance['currentValue']) ?? 0.0;
+      case AssetSortCriteria.totalProfit:
+        return (performance['totalProfit'] ?? 0.0) as double;
+      case AssetSortCriteria.profitRate:
+        return (performance['profitRate'] ?? 0.0) as double;
+      case AssetSortCriteria.annualizedReturn:
+        return (performance['annualizedReturn'] ?? 0.0) as double;
+    }
+  }
+
+  // (*** 13. 新增：主排序逻辑函数 ***)
+  List<Map<String, dynamic>> _sortAssetList(List<Map<String, dynamic>> list, AssetSortCriteria criteria, bool ascending) {
+    // 创建一个可修改的副本以进行排序
+    final sortedList = List<Map<String, dynamic>>.from(list);
+    
+    sortedList.sort((a, b) {
+      final valA = _getSortableValue(a, criteria);
+      final valB = _getSortableValue(b, criteria);
+      
+      // 处理 NaN (无效数字，例如 0/0)
+      if (valA.isNaN && valB.isNaN) return 0;
+      if (valA.isNaN) return 1; // 将 NaN 值排到最后
+      if (valB.isNaN) return -1; // 将 NaN 值排到最后
+
+      final comparison = valA.compareTo(valB);
+      return ascending ? comparison : -comparison; // -comparison 实现降序
+    });
+    
+    return sortedList;
+  }
+
+  // (*** 14. 修改：_buildAssetCard 现在是 State 的一部分 ***)
   Widget _buildAssetCard(BuildContext context, WidgetRef ref, Map<String, dynamic> assetData, int accountId) {
     final Asset asset = assetData['asset'];
     final Map<String, dynamic> performance = assetData['performance'];
     
     final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
 
-    final double totalValue = (asset.trackingMethod == AssetTrackingMethod.shareBased
-        ? performance['marketValue']
-        : performance['currentValue']) ?? 0.0;
+    final double totalValue = _getSortableValue(assetData, AssetSortCriteria.marketValue); // (复用我们的新函数)
     
     final double totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final double profitRate = (performance['profitRate'] ?? 0.0) as double;
@@ -567,12 +681,10 @@ void _showUpdateValueDialog(
           : Icons.account_balance_wallet_outlined),
         title: Text('${asset.name} (${asset.currency})', style: const TextStyle(fontWeight: FontWeight.bold)),
         
-        // --- (*** 这是修复后的 Subtitle ***) ---
+        // (*** 这是修复后的 Subtitle，已包含 asset.code ***)
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            
-            // --- 1. (新增) 显示资产代码 ---
             if (asset.code.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4.0),
@@ -581,9 +693,7 @@ void _showUpdateValueDialog(
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
                 ),
               ),
-            // --- 新增结束 ---
-
-            const SizedBox(height: 4), // (原有的 SizedBox)
+            const SizedBox(height: 4), 
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -630,9 +740,8 @@ void _showUpdateValueDialog(
       ),
     );
   }
-  // --- (*** 修复结束 ***) ---
 
-
+  // (*** 15. 修改：_showDeleteAssetConfirmationDialog 现在是 State 的一部分 ***)
   void _showDeleteAssetConfirmationDialog(BuildContext context, WidgetRef ref, Asset asset, int accountId) {
     showDialog<bool>(
       context: context,
@@ -672,7 +781,7 @@ void _showUpdateValueDialog(
           for (final snap in snaps) { await syncService.deletePositionSnapshot(snap); }
       }
       
-      await syncService.deleteAsset(asset); // deleteAsset 会处理本地删除
+      await syncService.deleteAsset(asset); 
 
       ref.invalidate(accountPerformanceProvider(accountId));
       ref.invalidate(dashboardDataProvider);
@@ -685,8 +794,7 @@ void _showUpdateValueDialog(
     });
   }
 
-  // ... ( _buildHistoryChart 和 _buildMetricRow 保持不变 ) ...
-  // (为简洁起见，此处省略了这些未改动的函数，请保留你文件中的这些函数)
+  // (*** 16. 修改：_buildHistoryChart 现在是 State 的一部分 ***)
   Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots, Account account) {
     final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: getCurrencySymbol(account.currency));
     final colorScheme = Theme.of(context).colorScheme;
@@ -775,6 +883,7 @@ void _showUpdateValueDialog(
     );
   }
 
+  // (*** 17. 修改：_buildMetricRow 现在是 State 的一部分 ***)
   Widget _buildMetricRow(BuildContext context, String title, String value,
       {Color? color}) {
     return Padding(
