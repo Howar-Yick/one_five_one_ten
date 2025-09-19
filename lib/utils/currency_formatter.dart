@@ -1,47 +1,44 @@
+// 文件: lib/utils/currency_formatter.dart
+// (这是正确的，无需修改)
+
 import 'package:intl/intl.dart';
+import 'package:one_five_one_ten/models/asset.dart'; // (确保这个 import 存在)
 
-final Map<String, NumberFormat> _formatters = {
-  'CNY': NumberFormat.currency(locale: 'zh_CN', symbol: '¥', decimalDigits: 2),
-  'USD': NumberFormat.currency(locale: 'en_US', symbol: '\$', decimalDigits: 2),
-  'HKD': NumberFormat.currency(locale: 'zh_HK', symbol: 'HK\$', decimalDigits: 2),
-};
-
-final Map<String, NumberFormat> _priceFormatters = {
-  'CNY_STOCK': NumberFormat.currency(locale: 'zh_CN', symbol: '¥', decimalDigits: 2),
-  'CNY_FUND': NumberFormat.currency(locale: 'zh_CN', symbol: '¥', decimalDigits: 4),
-  'USD': NumberFormat.currency(locale: 'en_US', symbol: '\$', decimalDigits: 2),
-  'HKD': NumberFormat.currency(locale: 'zh_HK', symbol: 'HK\$', decimalDigits: 3),
-};
-
-String formatCurrency(double amount, String currencyCode) {
-  if (!_formatters.containsKey(currencyCode)) {
-    return '$currencyCode ${amount.toStringAsFixed(2)}';
-  }
-  return _formatters[currencyCode]!.format(amount);
-}
-
-String formatPrice(double price, String currencyCode, String subTypeName) {
-  String key = currencyCode;
-  if (currencyCode == 'CNY') {
-    key = (subTypeName == 'mutualFund') ? 'CNY_FUND' : 'CNY_STOCK';
-  }
-  
-  if (!_priceFormatters.containsKey(key)) {
-    return '${currencyCode} ${price.toStringAsFixed(3)}';
-  }
-  return _priceFormatters[key]!.format(price);
-}
-
-// --- 新增：获取货币符号的辅助函数 ---
 String getCurrencySymbol(String currencyCode) {
   switch (currencyCode) {
-    case 'CNY':
-      return '¥ ';
     case 'USD':
-      return '\$ ';
+      return '\$';
     case 'HKD':
-      return 'HK\$ ';
+      return 'HK\$';
+    case 'CNY':
     default:
-      return '$currencyCode ';
+      return '¥';
   }
 }
+
+String formatCurrency(double value, String currencyCode, {bool showSymbol = true}) {
+  final format = NumberFormat.currency(
+    locale: 'zh_CN',
+    symbol: showSymbol ? getCurrencySymbol(currencyCode) : '',
+    decimalDigits: 2, 
+  );
+  return format.format(value);
+}
+
+// --- 这是我们需要的函数 ---
+String formatPrice(double price, AssetSubType subType) {
+  if (price == 0) {
+    return 'N/A';
+  }
+
+  switch (subType) {
+    case AssetSubType.mutualFund: // 场外基金
+      return price.toStringAsFixed(4); // 4 位小数
+    case AssetSubType.etf: // 场内基金
+      return price.toStringAsFixed(3); // 3 位小数
+    case AssetSubType.stock: // 股票
+    default:
+      return price.toStringAsFixed(2); // 股票和其它默认 2 位
+  }
+}
+// --- 函数结束 ---
