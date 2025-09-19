@@ -1,23 +1,25 @@
 // 文件: lib/pages/share_asset_detail_page.dart
-// (这是已移除 Providers 和 Transaction 逻辑，并修复所有错误的最终文件)
+// (这是已修复“编辑按钮”和“代码显示”的完整文件)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:one_five_one_ten/models/account.dart'; // <-- 1. 新增导入 (编辑按钮需要)
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
-// import 'package:one_five_one_ten/models/transaction.dart'; // <-- 已移除 (不需要了)
+// import 'package:one_five_one_ten/models/transaction.dart'; // (已移除)
 import 'package:one_five_one_ten/pages/snapshot_history_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
-import 'package:one_five_one_ten/providers/global_providers.dart'; // (现在所有 Provider 都来自这里)
+import 'package:one_five_one_ten/providers/global_providers.dart'; 
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
-// import 'package:one_five_one_ten/pages/asset_transaction_history_page.dart'; // <-- 已移除 (不需要了)
+// import 'package:one_five_one_ten/pages/asset_transaction_history_page.dart'; // (已移除)
 import 'package:isar/isar.dart';
+import 'package:one_five_one_ten/pages/add_edit_asset_page.dart'; // <-- 2. 新增导入 (编辑按钮需要)
 
-// (*** 关键修复：顶部的所有 Provider 定义都已被【移除】并转移到 global_providers.dart ***)
+// (Providers 已全部在 global_providers.dart 中定义)
 
 
 class ShareAssetDetailPage extends ConsumerWidget {
@@ -26,7 +28,6 @@ class ShareAssetDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // (我们现在从 global_providers.dart 中 watch 这些 Provider)
     final asyncAsset = ref.watch(shareAssetDetailProvider(assetId));
     final asyncPerformance = ref.watch(shareAssetPerformanceProvider(assetId));
     final asyncChartData = ref.watch(assetHistoryChartProvider(assetId));
@@ -39,10 +40,37 @@ class ShareAssetDetailPage extends ConsumerWidget {
             body: const Center(child: Text('此资产可能已被删除。')),
           );
         }
-
+        
         return Scaffold(
           appBar: AppBar(
             title: Text(asset.name),
+            // --- (*** 3. 这是关键修复：恢复“编辑”按钮 ***) ---
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.edit_outlined),
+                tooltip: '编辑资产',
+                onPressed: () async { 
+                  // 编辑按钮需要父账户的本地 ID 才能导航
+                  final isar = DatabaseService().isar;
+                  final parentAccount = await isar.accounts.where()
+                      .filter()
+                      .supabaseIdEqualTo(asset.accountSupabaseId)
+                      .findFirst();
+                  
+                  if (parentAccount != null && context.mounted) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        // 传入正确的 accountId 和 assetId
+                        builder: (_) => AddEditAssetPage(accountId: parentAccount.id, assetId: asset.id),
+                      ),
+                    );
+                  } else if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('错误：找不到父账户')));
+                  }
+                },
+              ),
+            ],
+            // --- (*** 修复结束 ***) ---
           ),
           body: RefreshIndicator(
             onRefresh: () async {
@@ -56,6 +84,15 @@ class ShareAssetDetailPage extends ConsumerWidget {
               chartAsync: asyncChartData,
             ),
           ),
+          // --- (*** 4. 添加 FAB 按钮 ***) ---
+          floatingActionButton: FloatingActionButton(
+            child: const Icon(Icons.sync_alt), 
+            tooltip: '更新持仓快照',
+            onPressed: () {
+              _ShareAssetDetailView.showUpdateSnapshotDialog(context, ref, asset);
+            },
+          ),
+          // --- (*** 添加结束 ***) ---
         );
       },
       loading: () => Scaffold(
@@ -93,7 +130,6 @@ class _ShareAssetDetailView extends ConsumerWidget {
         return ListView(
           padding: const EdgeInsets.all(16.0),
           children: [
-            // 1. 顶部卡片 (总览)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -126,12 +162,12 @@ class _ShareAssetDetailView extends ConsumerWidget {
                     ),
                     const Divider(height: 24),
                     _buildMetricRow(
-                      context, // (已修复：传递 context)
+                      context,
                       '最新价格:',
                       latestPriceString,
                     ),
                     _buildMetricRow(
-                      context, // (已修复：传递 context)
+                      context, 
                       '单位成本:',
                       avgCostString,
                     ),
@@ -142,15 +178,10 @@ class _ShareAssetDetailView extends ConsumerWidget {
               ),
             ),
             
-            // 2. 中部卡片 (业绩)
             _buildPerformanceCard(context, performance, asset.currency),
-            
-            // --- (*** 3. 按钮已根据你的要求移除 ***) ---
-            // const SizedBox(height: 8),
-            // _buildActionButtons(context, ref, asset), // <-- 已移除
-            // const SizedBox(height: 8),
 
-            // 4. 图表卡片
+            // (按钮区已按要求移除)
+
             chartAsync.when(
               data: (spots) => (spots.length < 2) 
                   ? const SizedBox.shrink() 
@@ -162,7 +193,6 @@ class _ShareAssetDetailView extends ConsumerWidget {
               error: (e, s) => Text('图表加载失败: $e'),
             ),
             
-            // 5. 辅助按钮
             const SizedBox(height: 8),
             Wrap(
               spacing: 8.0,
@@ -171,14 +201,14 @@ class _ShareAssetDetailView extends ConsumerWidget {
                   child: const Text('查看持仓快照历史'),
                   onPressed: () {
                     Navigator.of(context).push(MaterialPageRoute(
-                      // (*** 导航错误已修复 ***)
                       builder: (_) => SnapshotHistoryPage(assetId: asset.id), 
                     ));
                   },
                 ),
-                // (*** “查看交易历史”按钮已根据你的要求移除 ***)
+                // (“交易历史”按钮已移除)
               ],
-            )
+            ),
+            const SizedBox(height: 80), // (为 FAB 留出空间)
           ],
         );
       },
@@ -187,10 +217,124 @@ class _ShareAssetDetailView extends ConsumerWidget {
     );
   }
 
-  // --- (*** _buildActionButtons 和 _showAddTransactionDialog 已被删除 ***) ---
+  // --- (*** 5. 新增：快照更新弹窗 (静态方法) ***) ---
+  static void showUpdateSnapshotDialog(BuildContext context, WidgetRef ref, Asset asset) {
+    final performance = ref.read(shareAssetPerformanceProvider(asset.id));
+    final sharesController = TextEditingController(
+      text: performance.asData?.value['totalShares']?.toString() ?? ''
+    );
+    final costController = TextEditingController(
+       text: performance.asData?.value['averageCost']?.toString() ?? ''
+    );
+    final priceController = TextEditingController(text: asset.latestPrice > 0 ? asset.latestPrice.toString() : ''); 
+    DateTime selectedDate = DateTime.now();
 
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('更新持仓快照'),
+              content: SingleChildScrollView( 
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(controller: sharesController, decoration: const InputDecoration(labelText: '最新总份额'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                    TextField(controller: costController, decoration: InputDecoration(labelText: '最新单位成本', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                    TextField(controller: priceController, decoration: InputDecoration(labelText: '最新价格 (可选)', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Text("快照日期:", style: TextStyle(fontSize: 16)),
+                        const Spacer(),
+                        TextButton(
+                          child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
+                          onPressed: () async {
+                            final pickedDate = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime.now());
+                            if (pickedDate != null) setState(() => selectedDate = pickedDate);
+                          },
+                        )
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
+                TextButton(
+                  onPressed: () async {
+                    final shares = double.tryParse(sharesController.text);
+                    final cost = double.tryParse(costController.text);
+                    final priceText = priceController.text.trim();
+                    
+                    if (shares == null || cost == null) {
+                       if (context.mounted) {
+                         ScaffoldMessenger.of(context).showSnackBar(
+                           const SnackBar(content: Text('请输入有效的份额和成本'))
+                         );
+                       }
+                       return;
+                    }
 
-  // (Metric Row 辅助函数)
+                    try {
+                      final syncService = ref.read(syncServiceProvider); 
+                      
+                      bool assetUpdated = false;
+                      if (priceText.isNotEmpty) {
+                        asset.latestPrice = double.tryParse(priceText) ?? asset.latestPrice;
+                        asset.priceUpdateDate = DateTime.now();
+                        assetUpdated = true;
+                      }
+
+                      final newSnapshot = PositionSnapshot()
+                        ..totalShares = shares
+                        ..averageCost = cost
+                        ..date = selectedDate
+                        ..createdAt = DateTime.now()
+                        ..assetSupabaseId = asset.supabaseId; 
+                      
+                      await syncService.savePositionSnapshot(newSnapshot);
+                      
+                      if(assetUpdated) {
+                        await syncService.saveAsset(asset);
+                      }
+
+                      ref.invalidate(shareAssetPerformanceProvider(asset.id));
+                      ref.invalidate(dashboardDataProvider);
+
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop(); // 1. 关闭弹窗
+                      }
+                      
+                      // 6. (*** 按要求导航到历史页 ***)
+                      if (context.mounted) {
+                         Navigator.of(context).push(MaterialPageRoute(
+                           builder: (_) => SnapshotHistoryPage(assetId: asset.id),
+                         ));
+                      }
+
+                    } catch (e) {
+                       print('更新快照失败: $e');
+                       if (context.mounted) {
+                         ScaffoldMessenger.of(context).showSnackBar(
+                           SnackBar(content: Text('保存失败: $e'))
+                         );
+                       }
+                    }
+                  },
+                  child: const Text('保存并查看历史'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+  // --- (*** 新增结束 ***) ---
+
+  // (Metric Row 辅助函数保持不变)
   Widget _buildMetricRow(BuildContext context, String title, String value, {Color? color}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -204,7 +348,7 @@ class _ShareAssetDetailView extends ConsumerWidget {
     );
   }
 
-  // (Performance Card 函数 - 已修复 context 传递)
+  // (Performance Card 函数保持不变)
   Widget _buildPerformanceCard(
       BuildContext context, Map<String, dynamic> performance, String currencyCode) {
     final double totalProfit = (performance['totalProfit'] ?? 0.0) as double;
@@ -228,13 +372,13 @@ class _ShareAssetDetailView extends ConsumerWidget {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const Divider(height: 24),
             _buildMetricRow(
-              context, // <-- 已修复
+              context, 
               '总收益:',
               '${formatCurrency(totalProfit, currencyCode)} (${percentFormat.format(profitRate)})',
                color: profitColor,
             ),
             _buildMetricRow(
-              context, // <-- 已修复
+              context, 
               '年化收益率:',
               percentFormat.format(annualizedReturn),
               color: annualizedReturn > 0 
@@ -247,7 +391,7 @@ class _ShareAssetDetailView extends ConsumerWidget {
     );
   }
 
-  // (Chart Card 函数 - 已修复小数位)
+  // (Chart Card 函数保持不变)
   Widget _buildChartCard(
       BuildContext context, List<FlSpot> spots, Asset asset) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -255,10 +399,10 @@ class _ShareAssetDetailView extends ConsumerWidget {
     final String chartTitle = (asset.subType == AssetSubType.mutualFund) ? '单位净值历史' : '价格历史 (日K收盘)';
     
     final yAxisFormat = (asset.subType == AssetSubType.mutualFund)
-      ? NumberFormat("0.0000") // 4 位
+      ? NumberFormat("0.0000") 
       : (asset.subType == AssetSubType.etf 
-        ? NumberFormat("0.000") // 3 位
-        : NumberFormat("0.00")); // 2 位
+        ? NumberFormat("0.000") 
+        : NumberFormat("0.00")); 
     
     final tooltipFormat = yAxisFormat;
 
@@ -309,7 +453,6 @@ class _ShareAssetDetailView extends ConsumerWidget {
                     leftTitles: AxisTitles(sideTitles: SideTitles(
                       showTitles: true, 
                       reservedSize: 50, 
-                      // (已修复)
                       getTitlesWidget: (value, meta) => Text(
                           yAxisFormat.format(value),
                           style: const TextStyle(fontSize: 10)),
@@ -352,7 +495,6 @@ class _ShareAssetDetailView extends ConsumerWidget {
                           final date = DateFormat('yyyy-MM-dd')
                               .format(DateTime.fromMillisecondsSinceEpoch(originalSpot.x.toInt()));
                           
-                          // (已修复)
                           final valueStr = tooltipFormat.format(originalSpot.y); 
 
                           return LineTooltipItem(

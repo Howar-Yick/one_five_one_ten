@@ -1,5 +1,5 @@
 // 文件: lib/pages/add_edit_asset_page.dart
-// (这是完整、已修复的文件代码，包含对唯一索引冲突的修复)
+// (这是已修复“新建资产代码不保存”Bug 的完整文件)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -111,10 +111,10 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
       final isar = DatabaseService().isar;
 
       if (_isEditing) {
-        // --- 更新逻辑保持不变 ---
+        // --- 更新逻辑 ---
         final assetToUpdate = _editingAsset!;
         assetToUpdate.name = _nameController.text.trim();
-        assetToUpdate.code = _codeController.text.trim();
+        assetToUpdate.code = _codeController.text.trim(); // (更新时保存代码是正常的)
         assetToUpdate.subType = _selectedSubType;
         assetToUpdate.currency = _selectedCurrency;
         
@@ -122,7 +122,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         
         ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
         if(assetToUpdate.trackingMethod == AssetTrackingMethod.shareBased) {
-          ref.invalidate(shareAssetDetailProvider(assetToUpdate.id));
+          ref.invalidate(shareAssetPerformanceProvider(assetToUpdate.id));
         } else {
           ref.invalidate(valueAssetDetailProvider(assetToUpdate.id));
         }
@@ -130,6 +130,9 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         // --- 新建逻辑 ---
         final newAsset = Asset()
           ..name = _nameController.text.trim()
+          // --- (*** 这是关键修复 ***) ---
+          ..code = _codeController.text.trim() // <-- 修复：添加了这一行
+          // --- (*** 修复结束 ***) ---
           ..trackingMethod = _selectedMethod
           ..subType = _selectedSubType
           ..currency = _selectedCurrency
@@ -142,7 +145,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           newAsset.priceUpdateDate = DateTime.now();
         }
 
-        // 1. 本地创建 (put with null supabaseId)
+        // 1. 本地创建
         await isar.writeTxn(() async {
           await isar.assets.put(newAsset);
         });
@@ -150,7 +153,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         // 2. 触发同步
         await syncService.saveAsset(newAsset);
         
-        // 3. 等待同步完成 (supabaseId is set)
+        // 3. 等待同步完成
         await _waitForAssetSync(newAsset.id, maxWaitSeconds: 5);
         
         // 4. 重新获取完全同步的资产
@@ -186,7 +189,6 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     }
   }
 
-  // 等待资产同步完成的辅助方法
   Future<void> _waitForAssetSync(int assetId, {int maxWaitSeconds = 5}) async {
     final isar = DatabaseService().isar;
     final startTime = DateTime.now();
@@ -204,7 +206,6 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     print('[UI] Asset sync timeout after ${maxWaitSeconds}s');
   }
 
-  // --- 新增：等待交易同步完成的辅助方法 ---
   Future<void> _waitForTransactionSync(int transactionId, {int maxWaitSeconds = 5}) async {
     final isar = DatabaseService().isar;
     final startTime = DateTime.now();
@@ -216,16 +217,13 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         return;
       }
       
-      // 每200ms检查一次
       await Future.delayed(const Duration(milliseconds: 200));
     }
     
     print('[UI] Transaction sync timeout (Id: $transactionId) after ${maxWaitSeconds}s');
   }
-  // --- 变更结束 ---
 
 
-  // 创建份额法记录
   Future<void> _createShareBasedRecord(Asset syncedAsset, SupabaseSyncService syncService, Isar isar) async {
     try {
       final existingSnapshots = await isar.positionSnapshots
@@ -233,8 +231,6 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           .assetSupabaseIdEqualTo(syncedAsset.supabaseId)
           .findAll();
           
-      print('[DEBUG] Existing snapshots for asset ${syncedAsset.supabaseId}: ${existingSnapshots.length}');
-      
       if (existingSnapshots.isNotEmpty) {
         print('[DEBUG] Snapshot already exists, skipping creation');
         return;
@@ -262,7 +258,6 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     }
   }
 
-  // --- 关键修复：修改 _createValueBasedRecords ---
   Future<void> _createValueBasedRecords(Asset syncedAsset, SupabaseSyncService syncService, Isar isar) async {
     final existingTransactions = await isar.transactions
         .filter()
@@ -270,9 +265,6 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         .findAll();
         
     print('[DEBUG] Existing transactions for asset ${syncedAsset.supabaseId}: ${existingTransactions.length}');
-    for (var tx in existingTransactions) {
-      print('[DEBUG] - Type: ${tx.type}, Amount: ${tx.amount}, Date: ${tx.date}, IsarId: ${tx.id}, SupabaseId: ${tx.supabaseId}');
-    }
     
     final initialInvestment = double.parse(_initialInvestmentController.text);
     
@@ -297,33 +289,24 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           ..assetSupabaseId = syncedAsset.supabaseId;
 
         try {
-          // 1. Put to Isar (with null supabaseId)
           await isar.writeTxn(() async {
             await isar.transactions.put(transaction);
           });
-          
-          // 2. Trigger sync
           await syncService.saveTransaction(transaction);
-          
-          // 3. 关键：等待同步完成，释放 null 索引名额
           await _waitForTransactionSync(transaction.id, maxWaitSeconds: 5); 
-          
           print('[UI] Investment transaction created successfully');
         } catch (e) {
           print('[UI] Failed to create investment transaction: $e');
-          // 如果第一条失败 (可能是因为有脏数据)，就不要继续了
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('投资记录创建失败: $e'))
             );
           }
-          return; // 退出函数
+          return; 
         }
       }
 
       // --- 处理第二条：UpdateValue Transaction ---
-      // (确保在第一条成功或已存在后再执行)
-      
       final existingUpdate = await isar.transactions
           .filter()
           .assetSupabaseIdEqualTo(syncedAsset.supabaseId)
@@ -343,17 +326,11 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           ..assetSupabaseId = syncedAsset.supabaseId;
 
         try {
-          // 1. Put to Isar (此时 null 名额是可用的)
           await isar.writeTxn(() async {
             await isar.transactions.put(updateValueTxn);
           });
-          
-          // 2. Trigger sync
           await syncService.saveTransaction(updateValueTxn);
-          
-          // 3. 等待同步 (非必须，但是个好习惯)
           await _waitForTransactionSync(updateValueTxn.id, maxWaitSeconds: 5); 
-          
           print('[UI] UpdateValue transaction created successfully');
         } catch (e) {
           print('[UI] Failed to create updateValue transaction: $e');
@@ -374,7 +351,6 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
       }
     }
   }
-  // --- 修复结束 ---
 
   @override
   Widget build(BuildContext context) {
