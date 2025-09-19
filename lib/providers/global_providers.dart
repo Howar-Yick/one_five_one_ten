@@ -51,8 +51,8 @@ final dashboardDataProvider =
   final calc = CalculatorService();
 
   // 总资产（CNY）
+  // globalPerf 这个 Map 已经包含了 totalValue, totalProfit, profitRate 等所有我们需要的数据
   final globalPerf = await calc.calculateGlobalPerformance();
-  final double totalValue = (globalPerf['totalValue'] ?? 0.0) as double;
 
   // 历史曲线（CNY）
   final List<FlSpot> historySpots = await calc.getGlobalValueHistory();
@@ -61,8 +61,9 @@ final dashboardDataProvider =
   final Map<AssetSubType, double> allocation =
       await calc.calculateAssetAllocation();
 
+  // 关键修改：使用 ...globalPerf 将所有性能指标注入返回的 Map
   return {
-    'totalValue': totalValue,
+    ...globalPerf, // <-- 这会添加 totalValue, totalProfit, profitRate, annualizedReturn 等
     'historySpots': historySpots,
     'allocation': allocation,
   };
