@@ -1,5 +1,5 @@
 // 文件: lib/pages/share_asset_detail_page.dart
-// (这是已修复所有已知 bug 和格式错误的最终完整文件)
+// (这是已移除 Providers 和 Transaction 逻辑，并修复所有错误的最终文件)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,17 +7,17 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
-import 'package:one_five_one_ten/models/transaction.dart';
+// import 'package:one_five_one_ten/models/transaction.dart'; // <-- 已移除 (不需要了)
 import 'package:one_five_one_ten/pages/snapshot_history_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
-import 'package:one_five_one_ten/providers/global_providers.dart'; // 导入 Sync Service (现在包含所有 provider)
+import 'package:one_five_one_ten/providers/global_providers.dart'; // (现在所有 Provider 都来自这里)
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
-import 'package:one_five_one_ten/pages/asset_transaction_history_page.dart';
+// import 'package:one_five_one_ten/pages/asset_transaction_history_page.dart'; // <-- 已移除 (不需要了)
 import 'package:isar/isar.dart';
 
-// (所有 Provider 定义都已正确移动到 global_providers.dart)
+// (*** 关键修复：顶部的所有 Provider 定义都已被【移除】并转移到 global_providers.dart ***)
 
 
 class ShareAssetDetailPage extends ConsumerWidget {
@@ -126,12 +126,12 @@ class _ShareAssetDetailView extends ConsumerWidget {
                     ),
                     const Divider(height: 24),
                     _buildMetricRow(
-                      context, // (这是之前版本缺失的 context，现在已添加)
+                      context, // (已修复：传递 context)
                       '最新价格:',
                       latestPriceString,
                     ),
                     _buildMetricRow(
-                      context, // (这是之前版本缺失的 context，现在已添加)
+                      context, // (已修复：传递 context)
                       '单位成本:',
                       avgCostString,
                     ),
@@ -145,10 +145,10 @@ class _ShareAssetDetailView extends ConsumerWidget {
             // 2. 中部卡片 (业绩)
             _buildPerformanceCard(context, performance, asset.currency),
             
-            // 3. 按钮
-            const SizedBox(height: 8),
-            _buildActionButtons(context, ref, asset),
-            const SizedBox(height: 8),
+            // --- (*** 3. 按钮已根据你的要求移除 ***) ---
+            // const SizedBox(height: 8),
+            // _buildActionButtons(context, ref, asset), // <-- 已移除
+            // const SizedBox(height: 8),
 
             // 4. 图表卡片
             chartAsync.when(
@@ -171,18 +171,12 @@ class _ShareAssetDetailView extends ConsumerWidget {
                   child: const Text('查看持仓快照历史'),
                   onPressed: () {
                     Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => SnapshotHistoryPage(assetId: asset.id), // (已修复)
+                      // (*** 导航错误已修复 ***)
+                      builder: (_) => SnapshotHistoryPage(assetId: asset.id), 
                     ));
                   },
                 ),
-                TextButton(
-                  child: const Text('查看交易历史'),
-                  onPressed: () {
-                    Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => AssetTransactionHistoryPage(assetId: asset.id), // (已修复)
-                    ));
-                  },
-                ),
+                // (*** “查看交易历史”按钮已根据你的要求移除 ***)
               ],
             )
           ],
@@ -193,185 +187,10 @@ class _ShareAssetDetailView extends ConsumerWidget {
     );
   }
 
-  // (ActionButtons 保持不变)
-  Widget _buildActionButtons(BuildContext context, WidgetRef ref, Asset asset) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        Expanded(
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.add_shopping_cart),
-            label: const Text('买入'),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade400),
-            onPressed: () => _showAddTransactionDialog(context, ref, asset, TransactionType.buy),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.sell_outlined),
-            label: const Text('卖出'),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade400),
-            onPressed: () => _showAddTransactionDialog(context, ref, asset, TransactionType.sell),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.card_giftcard),
-            label: const Text('分红'),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade400),
-            onPressed: () => _showAddTransactionDialog(context, ref, asset, TransactionType.dividend),
-          ),
-        ),
-      ],
-    );
-  }
+  // --- (*** _buildActionButtons 和 _showAddTransactionDialog 已被删除 ***) ---
 
-  // (Transaction Dialog 保持不变, 但已包含类型修复)
-  void _showAddTransactionDialog(BuildContext context, WidgetRef ref, Asset asset, TransactionType type) {
-    final sharesController = TextEditingController();
-    final priceController = TextEditingController();
-    final amountController = TextEditingController();
-    DateTime selectedDate = DateTime.now();
 
-    String title = '记录交易';
-    switch (type) {
-      case TransactionType.buy: title = '买入 ${asset.name}'; break;
-      case TransactionType.sell: title = '卖出 ${asset.name}'; break;
-      case TransactionType.dividend: title = '${asset.name} 分红'; break;
-      default: break;
-    }
-
-    void autoCalculate() {
-      final shares = double.tryParse(sharesController.text);
-      final price = double.tryParse(priceController.text);
-      if (shares != null && price != null) {
-        amountController.text = (shares * price).toStringAsFixed(2);
-      }
-    }
-    sharesController.addListener(autoCalculate);
-    priceController.addListener(autoCalculate);
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(builder: (context, setState) {
-          return AlertDialog(
-            title: Text(title),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (type != TransactionType.dividend) ...[
-                    TextField(
-                      controller: sharesController,
-                      decoration: const InputDecoration(labelText: '份额'),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                    TextField(
-                      controller: priceController,
-                      decoration: const InputDecoration(labelText: '价格'),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                  ],
-                  TextField(
-                    controller: amountController,
-                    decoration: InputDecoration(labelText: type == TransactionType.dividend ? '分红总额' : '总金额'),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    readOnly: type != TransactionType.dividend,
-                  ),
-                  Row(
-                    children: [
-                      const Text("日期:", style: TextStyle(fontSize: 16)),
-                      const Spacer(),
-                      TextButton(
-                        child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
-                        onPressed: () async {
-                          final pickedDate = await showDatePicker(
-                            context: context,
-                            initialDate: selectedDate,
-                            firstDate: DateTime(2000),
-                            lastDate: DateTime.now(),
-                          );
-                          if (pickedDate != null) {
-                            setState(() { selectedDate = pickedDate; });
-                          }
-                        },
-                      )
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
-              TextButton(
-                onPressed: () async {
-                  
-                  // (*** 语法修复：类型错误 ***)
-                  final shares = (type != TransactionType.dividend) ? double.tryParse(sharesController.text) : 0.0; // <-- 修复: 0.0 是 double
-                  
-                  final price = (type != TransactionType.dividend) ? double.tryParse(priceController.text) : null;
-                  final amount = double.tryParse(amountController.text);
-
-                  if (amount == null || amount <= 0) {
-                    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请输入有效金额')));
-                    return;
-                  }
-                  if (type != TransactionType.dividend && (shares == null || shares <= 0 || price == null)) {
-                    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请输入有效份额和价格')));
-                    return;
-                  }
-
-                  final newTxn = Transaction()
-                    ..type = type
-                    ..date = selectedDate
-                    ..amount = (type == TransactionType.buy) ? -amount : amount // 买入为负现金流，卖出和分红为正
-                    ..shares = (type == TransactionType.sell) ? -(shares!) : shares 
-                    ..price = price
-                    ..createdAt = DateTime.now()
-                    ..assetSupabaseId = asset.supabaseId;
-                    
-                  try {
-                    final syncService = ref.read(syncServiceProvider);
-                    final isar = DatabaseService().isar;
-
-                    await isar.writeTxn(() async {
-                      await isar.transactions.put(newTxn);
-                    });
-                    
-                    await syncService.saveTransaction(newTxn);
-
-                    // (*** 语法修复：调用 CalculatorService 中的函数 ***)
-                    final newSnapshot = await CalculatorService().recalculatePositionSnapshot(asset, newTxn);
-                    if (newSnapshot != null) {
-                      await isar.writeTxn(() async {
-                        await isar.positionSnapshots.put(newSnapshot);
-                      });
-                      await syncService.savePositionSnapshot(newSnapshot);
-                    }
-
-                    ref.invalidate(shareAssetPerformanceProvider(asset.id));
-                    ref.invalidate(dashboardDataProvider);
-
-                    if (dialogContext.mounted) Navigator.of(dialogContext).pop();
-                  
-                  } catch (e) {
-                    print('保存交易失败: $e');
-                    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败: $e')));
-                  }
-                },
-                child: const Text('保存'),
-              ),
-            ],
-          );
-        });
-      },
-    );
-  }
-
-  // (*** 这是修复了 context 错误的 _buildMetricRow 定义 ***)
+  // (Metric Row 辅助函数)
   Widget _buildMetricRow(BuildContext context, String title, String value, {Color? color}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -385,7 +204,7 @@ class _ShareAssetDetailView extends ConsumerWidget {
     );
   }
 
-  // (*** 这是修复了 context 错误的 _buildPerformanceCard ***)
+  // (Performance Card 函数 - 已修复 context 传递)
   Widget _buildPerformanceCard(
       BuildContext context, Map<String, dynamic> performance, String currencyCode) {
     final double totalProfit = (performance['totalProfit'] ?? 0.0) as double;
@@ -409,13 +228,13 @@ class _ShareAssetDetailView extends ConsumerWidget {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const Divider(height: 24),
             _buildMetricRow(
-              context, // <-- 修复：传递 context
+              context, // <-- 已修复
               '总收益:',
               '${formatCurrency(totalProfit, currencyCode)} (${percentFormat.format(profitRate)})',
                color: profitColor,
             ),
             _buildMetricRow(
-              context, // <-- 修复：传递 context
+              context, // <-- 已修复
               '年化收益率:',
               percentFormat.format(annualizedReturn),
               color: annualizedReturn > 0 
@@ -428,7 +247,7 @@ class _ShareAssetDetailView extends ConsumerWidget {
     );
   }
 
-  // (*** 这是修复了小数位数的 Chart Card ***)
+  // (Chart Card 函数 - 已修复小数位)
   Widget _buildChartCard(
       BuildContext context, List<FlSpot> spots, Asset asset) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -436,10 +255,10 @@ class _ShareAssetDetailView extends ConsumerWidget {
     final String chartTitle = (asset.subType == AssetSubType.mutualFund) ? '单位净值历史' : '价格历史 (日K收盘)';
     
     final yAxisFormat = (asset.subType == AssetSubType.mutualFund)
-      ? NumberFormat("0.0000") // 场外基金 4 位小数
+      ? NumberFormat("0.0000") // 4 位
       : (asset.subType == AssetSubType.etf 
-        ? NumberFormat("0.000") // 场内 3 位
-        : NumberFormat("0.00")); // 股票 2 位
+        ? NumberFormat("0.000") // 3 位
+        : NumberFormat("0.00")); // 2 位
     
     final tooltipFormat = yAxisFormat;
 
@@ -466,7 +285,7 @@ class _ShareAssetDetailView extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(chartTitle,
+            Text(chartTitle, 
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 24),
             SizedBox(
@@ -490,6 +309,7 @@ class _ShareAssetDetailView extends ConsumerWidget {
                     leftTitles: AxisTitles(sideTitles: SideTitles(
                       showTitles: true, 
                       reservedSize: 50, 
+                      // (已修复)
                       getTitlesWidget: (value, meta) => Text(
                           yAxisFormat.format(value),
                           style: const TextStyle(fontSize: 10)),
@@ -532,6 +352,7 @@ class _ShareAssetDetailView extends ConsumerWidget {
                           final date = DateFormat('yyyy-MM-dd')
                               .format(DateTime.fromMillisecondsSinceEpoch(originalSpot.x.toInt()));
                           
+                          // (已修复)
                           final valueStr = tooltipFormat.format(originalSpot.y); 
 
                           return LineTooltipItem(
