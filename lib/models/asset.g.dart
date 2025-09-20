@@ -22,55 +22,61 @@ const AssetSchema = CollectionSchema(
       name: r'accountSupabaseId',
       type: IsarType.string,
     ),
-    r'code': PropertySchema(
+    r'assetClass': PropertySchema(
       id: 1,
+      name: r'assetClass',
+      type: IsarType.string,
+      enumMap: _AssetassetClassEnumValueMap,
+    ),
+    r'code': PropertySchema(
+      id: 2,
       name: r'code',
       type: IsarType.string,
     ),
     r'createdAt': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
     r'currency': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'currency',
       type: IsarType.string,
     ),
     r'latestPrice': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'latestPrice',
       type: IsarType.double,
     ),
     r'name': PropertySchema(
-      id: 5,
+      id: 6,
       name: r'name',
       type: IsarType.string,
     ),
     r'priceUpdateDate': PropertySchema(
-      id: 6,
+      id: 7,
       name: r'priceUpdateDate',
       type: IsarType.dateTime,
     ),
     r'subType': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'subType',
       type: IsarType.string,
       enumMap: _AssetsubTypeEnumValueMap,
     ),
     r'supabaseId': PropertySchema(
-      id: 8,
+      id: 9,
       name: r'supabaseId',
       type: IsarType.string,
     ),
     r'trackingMethod': PropertySchema(
-      id: 9,
+      id: 10,
       name: r'trackingMethod',
       type: IsarType.string,
       enumMap: _AssettrackingMethodEnumValueMap,
     ),
     r'updatedAt': PropertySchema(
-      id: 10,
+      id: 11,
       name: r'updatedAt',
       type: IsarType.dateTime,
     )
@@ -102,6 +108,19 @@ const AssetSchema = CollectionSchema(
       properties: [
         IndexPropertySchema(
           name: r'currency',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'assetClass': IndexSchema(
+      id: 6480031158783963160,
+      name: r'assetClass',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'assetClass',
           type: IndexType.hash,
           caseSensitive: true,
         )
@@ -154,6 +173,7 @@ int _assetEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
+  bytesCount += 3 + object.assetClass.name.length * 3;
   bytesCount += 3 + object.code.length * 3;
   bytesCount += 3 + object.currency.length * 3;
   bytesCount += 3 + object.name.length * 3;
@@ -175,16 +195,17 @@ void _assetSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeString(offsets[0], object.accountSupabaseId);
-  writer.writeString(offsets[1], object.code);
-  writer.writeDateTime(offsets[2], object.createdAt);
-  writer.writeString(offsets[3], object.currency);
-  writer.writeDouble(offsets[4], object.latestPrice);
-  writer.writeString(offsets[5], object.name);
-  writer.writeDateTime(offsets[6], object.priceUpdateDate);
-  writer.writeString(offsets[7], object.subType.name);
-  writer.writeString(offsets[8], object.supabaseId);
-  writer.writeString(offsets[9], object.trackingMethod.name);
-  writer.writeDateTime(offsets[10], object.updatedAt);
+  writer.writeString(offsets[1], object.assetClass.name);
+  writer.writeString(offsets[2], object.code);
+  writer.writeDateTime(offsets[3], object.createdAt);
+  writer.writeString(offsets[4], object.currency);
+  writer.writeDouble(offsets[5], object.latestPrice);
+  writer.writeString(offsets[6], object.name);
+  writer.writeDateTime(offsets[7], object.priceUpdateDate);
+  writer.writeString(offsets[8], object.subType.name);
+  writer.writeString(offsets[9], object.supabaseId);
+  writer.writeString(offsets[10], object.trackingMethod.name);
+  writer.writeDateTime(offsets[11], object.updatedAt);
 }
 
 Asset _assetDeserialize(
@@ -195,21 +216,24 @@ Asset _assetDeserialize(
 ) {
   final object = Asset();
   object.accountSupabaseId = reader.readStringOrNull(offsets[0]);
-  object.code = reader.readString(offsets[1]);
-  object.createdAt = reader.readDateTime(offsets[2]);
-  object.currency = reader.readString(offsets[3]);
+  object.assetClass =
+      _AssetassetClassValueEnumMap[reader.readStringOrNull(offsets[1])] ??
+          AssetClass.equity;
+  object.code = reader.readString(offsets[2]);
+  object.createdAt = reader.readDateTime(offsets[3]);
+  object.currency = reader.readString(offsets[4]);
   object.id = id;
-  object.latestPrice = reader.readDouble(offsets[4]);
-  object.name = reader.readString(offsets[5]);
-  object.priceUpdateDate = reader.readDateTimeOrNull(offsets[6]);
+  object.latestPrice = reader.readDouble(offsets[5]);
+  object.name = reader.readString(offsets[6]);
+  object.priceUpdateDate = reader.readDateTimeOrNull(offsets[7]);
   object.subType =
-      _AssetsubTypeValueEnumMap[reader.readStringOrNull(offsets[7])] ??
+      _AssetsubTypeValueEnumMap[reader.readStringOrNull(offsets[8])] ??
           AssetSubType.stock;
-  object.supabaseId = reader.readStringOrNull(offsets[8]);
+  object.supabaseId = reader.readStringOrNull(offsets[9]);
   object.trackingMethod =
-      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[9])] ??
+      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[10])] ??
           AssetTrackingMethod.valueBased;
-  object.updatedAt = reader.readDateTimeOrNull(offsets[10]);
+  object.updatedAt = reader.readDateTimeOrNull(offsets[11]);
   return object;
 }
 
@@ -223,33 +247,50 @@ P _assetDeserializeProp<P>(
     case 0:
       return (reader.readStringOrNull(offset)) as P;
     case 1:
-      return (reader.readString(offset)) as P;
+      return (_AssetassetClassValueEnumMap[reader.readStringOrNull(offset)] ??
+          AssetClass.equity) as P;
     case 2:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 3:
-      return (reader.readString(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 4:
-      return (reader.readDouble(offset)) as P;
-    case 5:
       return (reader.readString(offset)) as P;
+    case 5:
+      return (reader.readDouble(offset)) as P;
     case 6:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 7:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 8:
       return (_AssetsubTypeValueEnumMap[reader.readStringOrNull(offset)] ??
           AssetSubType.stock) as P;
-    case 8:
-      return (reader.readStringOrNull(offset)) as P;
     case 9:
+      return (reader.readStringOrNull(offset)) as P;
+    case 10:
       return (_AssettrackingMethodValueEnumMap[
               reader.readStringOrNull(offset)] ??
           AssetTrackingMethod.valueBased) as P;
-    case 10:
+    case 11:
       return (reader.readDateTimeOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
 }
 
+const _AssetassetClassEnumValueMap = {
+  r'equity': r'equity',
+  r'fixedIncome': r'fixedIncome',
+  r'cashEquivalent': r'cashEquivalent',
+  r'alternative': r'alternative',
+  r'other': r'other',
+};
+const _AssetassetClassValueEnumMap = {
+  r'equity': AssetClass.equity,
+  r'fixedIncome': AssetClass.fixedIncome,
+  r'cashEquivalent': AssetClass.cashEquivalent,
+  r'alternative': AssetClass.alternative,
+  r'other': AssetClass.other,
+};
 const _AssetsubTypeEnumValueMap = {
   r'stock': r'stock',
   r'etf': r'etf',
@@ -601,6 +642,51 @@ extension AssetQueryWhere on QueryBuilder<Asset, Asset, QWhereClause> {
               indexName: r'currency',
               lower: [],
               upper: [currency],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterWhereClause> assetClassEqualTo(
+      AssetClass assetClass) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'assetClass',
+        value: [assetClass],
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterWhereClause> assetClassNotEqualTo(
+      AssetClass assetClass) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'assetClass',
+              lower: [],
+              upper: [assetClass],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'assetClass',
+              lower: [assetClass],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'assetClass',
+              lower: [assetClass],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'assetClass',
+              lower: [],
+              upper: [assetClass],
               includeUpper: false,
             ));
       }
@@ -974,6 +1060,136 @@ extension AssetQueryFilter on QueryBuilder<Asset, Asset, QFilterCondition> {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.greaterThan(
         property: r'accountSupabaseId',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> assetClassEqualTo(
+    AssetClass value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'assetClass',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> assetClassGreaterThan(
+    AssetClass value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'assetClass',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> assetClassLessThan(
+    AssetClass value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'assetClass',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> assetClassBetween(
+    AssetClass lower,
+    AssetClass upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'assetClass',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> assetClassStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'assetClass',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> assetClassEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'assetClass',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> assetClassContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'assetClass',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> assetClassMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'assetClass',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> assetClassIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'assetClass',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> assetClassIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'assetClass',
         value: '',
       ));
     });
@@ -2094,6 +2310,18 @@ extension AssetQuerySortBy on QueryBuilder<Asset, Asset, QSortBy> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortByAssetClass() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'assetClass', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortByAssetClassDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'assetClass', Sort.desc);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterSortBy> sortByCode() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'code', Sort.asc);
@@ -2225,6 +2453,18 @@ extension AssetQuerySortThenBy on QueryBuilder<Asset, Asset, QSortThenBy> {
   QueryBuilder<Asset, Asset, QAfterSortBy> thenByAccountSupabaseIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'accountSupabaseId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenByAssetClass() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'assetClass', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenByAssetClassDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'assetClass', Sort.desc);
     });
   }
 
@@ -2370,6 +2610,13 @@ extension AssetQueryWhereDistinct on QueryBuilder<Asset, Asset, QDistinct> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QDistinct> distinctByAssetClass(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'assetClass', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QDistinct> distinctByCode(
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -2448,6 +2695,12 @@ extension AssetQueryProperty on QueryBuilder<Asset, Asset, QQueryProperty> {
   QueryBuilder<Asset, String?, QQueryOperations> accountSupabaseIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'accountSupabaseId');
+    });
+  }
+
+  QueryBuilder<Asset, AssetClass, QQueryOperations> assetClassProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'assetClass');
     });
   }
 

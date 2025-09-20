@@ -61,20 +61,27 @@ final accountsProvider = StreamProvider<List<Account>>((ref) {
 });
 
 // ------------------------ 首页总览 ------------------------
-// ( ... 此区域代码保持不变 ...)
+// --- (*** 1. 这是修改后的 Provider ***) ---
 final dashboardDataProvider =
     FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
   final calc = CalculatorService();
   final globalPerf = await calc.calculateGlobalPerformance();
   final List<FlSpot> historySpots = await calc.getGlobalValueHistory();
-  final Map<AssetSubType, double> allocation =
-      await calc.calculateAssetAllocation();
+  
+  // 1.1 同时获取两种分配数据
+  final Map<AssetSubType, double> subTypeAllocation =
+      await calc.calculateAssetAllocation(); // (旧的)
+  final Map<AssetClass, double> classAllocation =
+      await calc.calculateAssetClassAllocation(); // (新的)
+      
   return {
     ...globalPerf, 
     'historySpots': historySpots,
-    'allocation': allocation,
+    'allocationSubType': subTypeAllocation, // <-- 1.2 新 Key 1
+    'allocationClass': classAllocation,   // <-- 1.3 新 Key 2
   };
 });
+// --- (*** 修改结束 ***) ---
 
 // ------------------------ 价格同步 ------------------------
 // ( ... 此区域代码保持不变 ...)
@@ -308,9 +315,9 @@ final shareAssetCombinedChartProvider =
     final double totalShares = activeSnapshot.totalShares;
     final double averageCost = activeSnapshot.averageCost;
     if (totalShares == 0) {
-       profitSpots.add(FlSpot(priceSpot.x, 0.0));
-       profitRateSpots.add(FlSpot(priceSpot.x, 0.0));
-       continue;
+        profitSpots.add(FlSpot(priceSpot.x, 0.0));
+        profitRateSpots.add(FlSpot(priceSpot.x, 0.0));
+        continue;
     }
     final double totalCost = totalShares * averageCost;
     final double marketValue = totalShares * price;
@@ -321,9 +328,9 @@ final shareAssetCombinedChartProvider =
   }
   void ensureTwoSpots(List<FlSpot> spots, [double defaultY = 0.0]) {
     if (spots.length == 1) {
-       final firstDate = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
-       final dayBefore = firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
-       spots.insert(0, FlSpot(dayBefore, defaultY));
+        final firstDate = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
+        final dayBefore = firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
+        spots.insert(0, FlSpot(dayBefore, defaultY));
     }
   }
   ensureTwoSpots(profitSpots);

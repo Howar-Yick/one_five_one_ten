@@ -5,16 +5,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/account.dart';
-import 'package:one_five_one_ten/models/asset.dart';
+// --- 变更：我们现在需要 AssetClass，它在 asset.dart 中 ---
+import 'package:one_five_one_ten/models/asset.dart'; 
+// --- 变更结束 ---
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
-import 'package:one_five_one_ten/pages/account_detail_page.dart'; 
+import 'package:one_five_one_ten/pages/account_detail_page.dart';
 import 'package:one_five_one_ten/pages/share_asset_detail_page.dart';
 import 'package:one_five_one_ten/pages/value_asset_detail_page.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 import 'package:isar/isar.dart';
+
+// --- 新增：AssetClass 的中文显示名称 ---
+const Map<AssetClass, String> assetClassDisplayNames = {
+  AssetClass.equity: '权益类',
+  AssetClass.fixedIncome: '固定收益类',
+  AssetClass.cashEquivalent: '现金及等价物',
+  AssetClass.alternative: '另类投资',
+  AssetClass.other: '其他',
+};
+// --- 新增结束 ---
+
 
 class AddEditAssetPage extends ConsumerStatefulWidget {
   final int accountId;
@@ -29,6 +42,10 @@ class AddEditAssetPage extends ConsumerStatefulWidget {
 class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   AssetTrackingMethod _selectedMethod = AssetTrackingMethod.shareBased;
   AssetSubType _selectedSubType = AssetSubType.stock;
+  // --- 新增：AssetClass 状态变量 ---
+  AssetClass _selectedAssetClass = AssetClass.other; 
+  // --- 新增结束 ---
+
   final _formKey = GlobalKey<FormState>();
 
   final _nameController = TextEditingController();
@@ -38,11 +55,11 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   final _initialInvestmentController = TextEditingController();
   final _latestPriceController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
-  
-  String _selectedCurrency = 'CNY'; 
-  Account? _parentAccount; 
+
+  String _selectedCurrency = 'CNY';
+  Account? _parentAccount;
   Asset? _editingAsset;
-  bool _isLoading = true; 
+  bool _isLoading = true;
 
   bool get _isEditing => widget.assetId != null;
 
@@ -53,7 +70,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   }
 
   Future<void> _loadInitialData() async {
-    final isar = DatabaseService().isar; 
+    final isar = DatabaseService().isar;
     _parentAccount = await isar.accounts.get(widget.accountId);
 
     if (_isEditing) {
@@ -64,9 +81,13 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         _selectedMethod = _editingAsset!.trackingMethod;
         _selectedSubType = _editingAsset!.subType;
         _selectedCurrency = _editingAsset!.currency;
+        // --- 变更：加载已保存的 AssetClass ---
+        _selectedAssetClass = _editingAsset!.assetClass; 
+        // --- 变更结束 ---
       }
     } else {
       _selectedCurrency = _parentAccount?.currency ?? 'CNY';
+      // (新建时，_selectedAssetClass 默认为 AssetClass.other)
     }
 
     if (!['CNY', 'USD', 'HKD'].contains(_selectedCurrency)) {
@@ -94,16 +115,15 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   Future<void> _saveAsset() async {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
-    
+
     try {
-      final parentAccount = _parentAccount!; 
-      final syncService = ref.read(syncServiceProvider); 
+      final parentAccount = _parentAccount!;
+      final syncService = ref.read(syncServiceProvider);
 
       if (parentAccount.supabaseId == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('错误：父账户尚未同步，请稍后重试。'))
-          );
+              const SnackBar(content: Text('错误：父账户尚未同步，请稍后重试。')));
         }
         return;
       }
@@ -114,14 +134,17 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         // --- 更新逻辑 ---
         final assetToUpdate = _editingAsset!;
         assetToUpdate.name = _nameController.text.trim();
-        assetToUpdate.code = _codeController.text.trim(); // (更新时保存代码是正常的)
+        assetToUpdate.code = _codeController.text.trim(); 
         assetToUpdate.subType = _selectedSubType;
         assetToUpdate.currency = _selectedCurrency;
-        
+        // --- 变更：保存 AssetClass ---
+        assetToUpdate.assetClass = _selectedAssetClass; 
+        // --- 变更结束 ---
+
         await syncService.saveAsset(assetToUpdate);
-        
+
         ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
-        if(assetToUpdate.trackingMethod == AssetTrackingMethod.shareBased) {
+        if (assetToUpdate.trackingMethod == AssetTrackingMethod.shareBased) {
           ref.invalidate(shareAssetPerformanceProvider(assetToUpdate.id));
         } else {
           ref.invalidate(valueAssetDetailProvider(assetToUpdate.id));
@@ -130,14 +153,15 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         // --- 新建逻辑 ---
         final newAsset = Asset()
           ..name = _nameController.text.trim()
-          // --- (*** 这是关键修复 ***) ---
-          ..code = _codeController.text.trim() // <-- 修复：添加了这一行
-          // --- (*** 修复结束 ***) ---
+          ..code = _codeController.text.trim() 
           ..trackingMethod = _selectedMethod
           ..subType = _selectedSubType
           ..currency = _selectedCurrency
-          ..createdAt = DateTime.now() 
-          ..accountSupabaseId = parentAccount.supabaseId; 
+          ..createdAt = DateTime.now()
+          ..accountSupabaseId = parentAccount.supabaseId
+          // --- 变更：保存 AssetClass ---
+          ..assetClass = _selectedAssetClass; 
+          // --- 变更结束 ---
 
         final priceText = _latestPriceController.text.trim();
         if (priceText.isNotEmpty) {
@@ -149,19 +173,20 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         await isar.writeTxn(() async {
           await isar.assets.put(newAsset);
         });
-        
+
         // 2. 触发同步
         await syncService.saveAsset(newAsset);
-        
+
         // 3. 等待同步完成
         await _waitForAssetSync(newAsset.id, maxWaitSeconds: 5);
-        
+
         // 4. 重新获取完全同步的资产
         final syncedAsset = await isar.assets.get(newAsset.id);
-        
+
         if (syncedAsset?.supabaseId != null) {
-          print('[UI] Asset fully synced with supabaseId: ${syncedAsset!.supabaseId}');
-          
+          print(
+              '[UI] Asset fully synced with supabaseId: ${syncedAsset!.supabaseId}');
+
           if (_selectedMethod == AssetTrackingMethod.shareBased) {
             await _createShareBasedRecord(syncedAsset, syncService, isar);
           } else {
@@ -170,25 +195,24 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('资产同步超时，请手动添加初始记录'))
-            );
+                const SnackBar(content: Text('资产同步超时，请手动添加初始记录')));
           }
         }
       }
-      
-      ref.invalidate(dashboardDataProvider); 
+
+      ref.invalidate(dashboardDataProvider);
       if (mounted) Navigator.of(context).pop();
 
     } catch (e) {
       print('保存资产失败: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败: $e'))
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('保存失败: $e')));
       }
     }
   }
 
+  // ... ( _waitForAssetSync, _waitForTransactionSync, _createShareBasedRecord, _createValueBasedRecords 保持不变 ) ...
   Future<void> _waitForAssetSync(int assetId, {int maxWaitSeconds = 5}) async {
     final isar = DatabaseService().isar;
     final startTime = DateTime.now();
@@ -352,6 +376,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -361,163 +386,277 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           IconButton(
             icon: const Icon(Icons.save),
             tooltip: '保存',
-            onPressed: _isLoading ? null : _saveAsset, 
+            onPressed: _isLoading ? null : _saveAsset,
           ),
         ],
       ),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator()) 
-        : Form(
-            key: _formKey,
-            child: ListView(
-              padding: const EdgeInsets.all(16.0),
-              children: [
-                if (!_isEditing)
-                  SegmentedButton<AssetTrackingMethod>(
-                    segments: const [
-                      ButtonSegment(value: AssetTrackingMethod.shareBased, label: Text('份额法'), icon: Icon(Icons.pie_chart)),
-                      ButtonSegment(value: AssetTrackingMethod.valueBased, label: Text('价值法'), icon: Icon(Icons.account_balance_wallet)),
-                    ],
-                    selected: {_selectedMethod},
-                    onSelectionChanged: (newSelection) {
-                      setState(() { _selectedMethod = newSelection.first; });
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.all(16.0),
+                children: [
+                  if (!_isEditing)
+                    SegmentedButton<AssetTrackingMethod>(
+                      segments: const [
+                        ButtonSegment(
+                            value: AssetTrackingMethod.shareBased,
+                            label: Text('份额法'),
+                            icon: Icon(Icons.pie_chart)),
+                        ButtonSegment(
+                            value: AssetTrackingMethod.valueBased,
+                            label: Text('价值法'),
+                            icon: Icon(Icons.account_balance_wallet)),
+                      ],
+                      selected: {_selectedMethod},
+                      onSelectionChanged: (newSelection) {
+                        setState(() {
+                          _selectedMethod = newSelection.first;
+                        });
+                      },
+                    ),
+                  const SizedBox(height: 24),
+                  
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: const InputDecoration(
+                        labelText: '资产名称', border: OutlineInputBorder()),
+                    validator: (value) =>
+                        (value == null || value.isEmpty) ? '请输入资产名称' : null,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // --- 新增：AssetClass 下拉菜单 ---
+                  DropdownButtonFormField<AssetClass>(
+                    value: _selectedAssetClass,
+                    decoration: const InputDecoration(
+                      labelText: '资产大类',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: AssetClass.values.map((AssetClass assetClass) {
+                      return DropdownMenuItem<AssetClass>(
+                        value: assetClass,
+                        child: Text(assetClassDisplayNames[assetClass] ?? assetClass.name),
+                      );
+                    }).toList(),
+                    onChanged: (AssetClass? newValue) {
+                      if (newValue != null) {
+                        setState(() {
+                          _selectedAssetClass = newValue;
+                        });
+                      }
                     },
                   ),
-                const SizedBox(height: 24),
-                TextFormField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(labelText: '资产名称', border: OutlineInputBorder()),
-                  validator: (value) => (value == null || value.isEmpty) ? '请输入资产名称' : null,
-                ),
-                const SizedBox(height: 16),
-                
-                if (_selectedMethod == AssetTrackingMethod.shareBased)
-                  ..._buildShareBasedForm()
-                else
-                  ..._buildValueBasedForm(),
-                
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('资产币种:', style: TextStyle(fontSize: 16)),
-                    DropdownButton<String>(
-                      value: _selectedCurrency,
-                      items: ['CNY', 'USD', 'HKD'].map((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                      onChanged: (newValue) {
-                        if (newValue != null) {
-                          setState(() {
-                            _selectedCurrency = newValue;
-                          });
-                        }
-                      },
-                    ),
-                  ],
-                ),
-                
-                if (!_isEditing) ...[
+                  // --- 新增结束 ---
+
                   const SizedBox(height: 16),
-                  const Divider(),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.calendar_today),
-                    title: const Text('初始记录日期'),
-                    trailing: TextButton(
-                      child: Text(DateFormat('yyyy-MM-dd').format(_selectedDate)),
-                      onPressed: () async {
-                        final pickedDate = await showDatePicker(
-                          context: context,
-                          initialDate: _selectedDate,
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime.now(),
-                        );
-                        if (pickedDate != null) {
-                          setState(() { _selectedDate = pickedDate; });
-                        }
-                      },
-                    ),
+
+                  if (_selectedMethod == AssetTrackingMethod.shareBased)
+                    ..._buildShareBasedForm()
+                  else
+                    ..._buildValueBasedForm(),
+
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('资产币种:', style: TextStyle(fontSize: 16)),
+                      DropdownButton<String>(
+                        value: _selectedCurrency,
+                        items: ['CNY', 'USD', 'HKD'].map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value),
+                          );
+                        }).toList(),
+                        onChanged: (newValue) {
+                          if (newValue != null) {
+                            setState(() {
+                              _selectedCurrency = newValue;
+                            });
+                          }
+                        },
+                      ),
+                    ],
                   ),
-                ]
-              ],
+
+                  if (!_isEditing) ...[
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.calendar_today),
+                      title: const Text('初始记录日期'),
+                      trailing: TextButton(
+                        child: Text(
+                            DateFormat('yyyy-MM-dd').format(_selectedDate)),
+                        onPressed: () async {
+                          final pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: _selectedDate,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime.now(),
+                          );
+                          if (pickedDate != null) {
+                            setState(() {
+                              _selectedDate = pickedDate;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ]
+                ],
+              ),
             ),
-          ),
     );
   }
 
+  // --- (*** 这是修复后的函数 ***) ---
   List<Widget> _buildShareBasedForm() {
+    
+    // --- 修复：将所有逻辑判断移至 return 语句之前 ---
+    
+    // 逻辑 1: 如果不是权益类 (比如选了固收)，并且是新建模式，自动把 subType 设为 other
+    if (_selectedAssetClass != AssetClass.equity && !_isEditing) {
+      _selectedSubType = AssetSubType.other;
+    }
+
+    // 逻辑 2: (这是我之前添加的 "智能表单" 逻辑)
+    if (_selectedAssetClass == AssetClass.fixedIncome ||
+        _selectedAssetClass == AssetClass.cashEquivalent ||
+        _selectedAssetClass == AssetClass.alternative ||
+        _selectedAssetClass == AssetClass.other) {
+          
+      if (_isEditing) {
+        _selectedSubType = AssetSubType.other;
+      }
+
+      // 如果是价值法，直接返回空，不显示此表单
+      if (_selectedMethod == AssetTrackingMethod.valueBased) {
+        return [];
+      }
+      
+      // 如果是份额法，但不是权益类 (比如黄金ETF)，
+      // 仍然需要显示代码、份额、成本等...
+      // 但我们不应该在这里 return []，而是让下面的 return 语句来处理。
+      // 所以这里的逻辑可以简化：
+      // 我们只需要确保 _selectedSubType 被正确设置即可。
+    }
+
+    // --- 修复结束 ---
+
+
+    // return 语句现在只包含 Widgets
     return [
-      const Text('资产类型', style: TextStyle(fontSize: 16, color: Colors.grey)),
-      const SizedBox(height: 8),
-      Wrap(
-        spacing: 8.0,
-        children: [
-          ChoiceChip(
-            label: const Text('股票'),
-            selected: _selectedSubType == AssetSubType.stock,
-            onSelected: (selected) {
-              if (selected) setState(() => _selectedSubType = AssetSubType.stock);
-            },
-          ),
-          ChoiceChip(
-            label: const Text('场内基金(ETF)'),
-            selected: _selectedSubType == AssetSubType.etf,
-            onSelected: (selected) {
-              if (selected) setState(() => _selectedSubType = AssetSubType.etf);
-            },
-          ),
-          ChoiceChip(
-            label: const Text('场外基金'),
-            selected: _selectedSubType == AssetSubType.mutualFund,
-            onSelected: (selected) {
-              if (selected) setState(() => _selectedSubType = AssetSubType.mutualFund);
-            },
-          ),
-        ],
-      ),
-      const SizedBox(height: 16),
+      if (_selectedAssetClass == AssetClass.equity) ...[
+        // 只在权益类时显示 SubType
+        const Text('资产类型', style: TextStyle(fontSize: 16, color: Colors.grey)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8.0,
+          children: [
+            ChoiceChip(
+              label: const Text('股票'),
+              selected: _selectedSubType == AssetSubType.stock,
+              onSelected: (selected) {
+                if (selected)
+                  setState(() => _selectedSubType = AssetSubType.stock);
+              },
+            ),
+            ChoiceChip(
+              label: const Text('场内基金(ETF)'),
+              selected: _selectedSubType == AssetSubType.etf,
+              onSelected: (selected) {
+                if (selected)
+                  setState(() => _selectedSubType = AssetSubType.etf);
+              },
+            ),
+            ChoiceChip(
+              label: const Text('场外基金'),
+              selected: _selectedSubType == AssetSubType.mutualFund,
+              onSelected: (selected) {
+                if (selected)
+                  setState(() => _selectedSubType = AssetSubType.mutualFund);
+              },
+            ),
+            // --- (*** 这是本次修复 ***) ---
+            ChoiceChip(
+              label: const Text('其他'),
+              selected: _selectedSubType == AssetSubType.other,
+              onSelected: (selected) {
+                if (selected)
+                  setState(() => _selectedSubType = AssetSubType.other);
+              },
+            ),
+            // --- (*** 修复结束 ***) ---
+          ],
+        ),
+        const SizedBox(height: 16),
+      ],
+      // --- 修复：移除了错误的 "else if" 逻辑块 ---
+
       TextFormField(
         controller: _codeController,
-        decoration: const InputDecoration(labelText: '资产代码', hintText: '例如: 600519', border: OutlineInputBorder()),
+        decoration: const InputDecoration(
+            labelText: '资产代码',
+            hintText: '例如: 600519 或 510300',
+            border: OutlineInputBorder()),
       ),
       if (!_isEditing) ...[
         const SizedBox(height: 16),
         TextFormField(
           controller: _sharesController,
-          decoration: const InputDecoration(labelText: '总份额', border: OutlineInputBorder()),
+          decoration:
+              const InputDecoration(labelText: '总份额', border: OutlineInputBorder()),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) => (value == null || value.isEmpty || double.tryParse(value) == null) ? '请输入有效的数字' : null,
+          validator: (value) => (value == null ||
+                  value.isEmpty ||
+                  double.tryParse(value) == null)
+              ? '请输入有效的数字'
+              : null,
         ),
         const SizedBox(height: 16),
         TextFormField(
           controller: _costController,
-          decoration: const InputDecoration(labelText: '单位成本', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+              labelText: '单位成本', border: OutlineInputBorder()),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) => (value == null || value.isEmpty || double.tryParse(value) == null) ? '请输入有效的数字' : null,
+          validator: (value) => (value == null ||
+                  value.isEmpty ||
+          double.tryParse(value) == null)
+              ? '请输入有效的数字'
+              : null,
         ),
         const SizedBox(height: 16),
         TextFormField(
           controller: _latestPriceController,
-          decoration: const InputDecoration(labelText: '最新价格 (可选)', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+              labelText: '最新价格 (可选)', border: OutlineInputBorder()),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
         ),
       ]
     ];
   }
+  // --- (*** 修复结束 ***) ---
 
   List<Widget> _buildValueBasedForm() {
-    if (!_isEditing) _selectedSubType = AssetSubType.other;
+    if (!_isEditing) {
+      _selectedSubType = AssetSubType.other;
+    }
     return [
       if (!_isEditing)
         TextFormField(
           controller: _initialInvestmentController,
-          decoration: const InputDecoration(labelText: '初始投入金额', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+              labelText: '初始投入金额', border: OutlineInputBorder()),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) => (value == null || value.isEmpty || double.tryParse(value) == null) ? '请输入有效的数字' : null,
+          validator: (value) => (value == null ||
+                  value.isEmpty ||
+                  double.tryParse(value) == null)
+              ? '请输入有效的数字'
+              : null,
         ),
     ];
   }
