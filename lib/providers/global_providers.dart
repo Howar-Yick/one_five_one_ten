@@ -12,8 +12,10 @@ import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/price_sync_service.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 
-// (*** 关键修复：导入 PositionSnapshot 模型 ***)
+// (*** 关键修复：导入所有需要的模型 ***)
 import 'package:one_five_one_ten/models/position_snapshot.dart'; 
+import 'package:one_five_one_ten/models/account_transaction.dart';
+import 'package:one_five_one_ten/models/transaction.dart'; // (虽然 calculator 没用，但以防万一)
 // (*** 修复结束 ***)
 
 
@@ -23,26 +25,22 @@ import 'package:one_five_one_ten/models/position_snapshot.dart';
 
 // ------------------------ 核心服务 Providers ------------------------
 
-/// 数据库服务 Provider
 final databaseServiceProvider = Provider<DatabaseService>((ref) {
   return DatabaseService();
 });
 
-/// 全局 Supabase 同步服务 Provider
 final syncServiceProvider = Provider<SupabaseSyncService>((ref) {
-  // 创建 SupabaseSyncService 的单个实例，以便在整个应用中重复使用
   return SupabaseSyncService();
 });
 
 // ------------------------ 账户列表 ------------------------
 
-/// 账户列表（供 AccountsPage 使用）
 final accountsProvider = StreamProvider<List<Account>>((ref) {
   final isar = ref.watch(databaseServiceProvider).isar;
   return isar.accounts.where().sortByName().watch(fireImmediately: true);
 });
 
-// ------------------------ 首页总览（总资产/历史曲线/资产配置） ------------------------
+// ------------------------ 首页总览 ------------------------
 
 final dashboardDataProvider =
     FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
@@ -110,9 +108,7 @@ class PriceSyncController extends StateNotifier<PriceSyncState> {
           if (newPrice != null && newPrice != asset.latestPrice) {
             asset.latestPrice = newPrice;
             asset.priceUpdateDate = DateTime.now();
-
             await syncService.saveAsset(asset);
-
             print('[PriceSyncController] 同步成功 ${asset.name}: $newPrice');
             return true; 
           } else if (newPrice == null) {
@@ -150,23 +146,103 @@ final priceSyncControllerProvider =
 });
 
 
-// --- (*** 新增：从 share_asset_detail_page 移动过来的 Providers ***) ---
+// --- (*** 1. 新增：从 account_detail_page 移动过来的 Providers ***) ---
 
-// ------------------------ 份额法资产详情页 Providers ------------------------
+final accountDetailProvider =
+    FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
+  final isar = ref.watch(databaseServiceProvider).isar;
+  return isar.accounts.get(accountId);
+});
 
-// 1. 获取资产对象 (Stream, 实时更新)
+final accountPerformanceProvider =
+    FutureProvider.autoDispose.family<Map<String, dynamic>, int>(
+        (ref, accountId) async {
+  final account = await ref.watch(accountDetailProvider(accountId).future);
+  if (account == null) {
+    throw '未找到账户';
+  }
+  return CalculatorService().calculateAccountPerformance(account);
+});
+
+final trackedAssetsWithPerformanceProvider =
+    StreamProvider.autoDispose.family<List<Map<String, dynamic>>, int>((ref, accountId) async* { 
+  
+  final isar = ref.watch(databaseServiceProvider).isar;
+  final calculator = CalculatorService();
+
+  final account = await ref.watch(accountDetailProvider(accountId).future);
+  if (account == null || account.supabaseId == null) {
+    yield []; 
+    return;
+  }
+  
+  final accountSupabaseId = account.supabaseId!;
+
+  final assetStream = isar.assets
+      .where()
+      .filter()
+      .accountSupabaseIdEqualTo(accountSupabaseId)
+      .watch(fireImmediately: true);
+
+  await for (var assets in assetStream) {
+    final List<Map<String, dynamic>> results = [];
+    for (final asset in assets) {
+      Map<String, dynamic> performanceData;
+      if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
+        performanceData = await calculator.calculateShareAssetPerformance(asset);
+      } else {
+        performanceData = await calculator.calculateValueAssetPerformance(asset);
+      }
+      results.add({
+        'asset': asset,
+        'performance': performanceData,
+      });
+    }
+    yield results; 
+  }
+});
+
+final accountHistoryProvider = 
+    FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, Account>(
+        (ref, account) {
+  ref.watch(accountPerformanceProvider(account.id));
+  return CalculatorService().getAccountHistoryCharts(account);
+});
+
+// --- (*** 2. 新增：从 transaction_history_page 移动过来的 Provider ***) ---
+
+final transactionHistoryProvider =
+    StreamProvider.autoDispose.family<List<AccountTransaction>, int>((ref, accountId) async* { 
+  
+  final isar = ref.watch(databaseServiceProvider).isar;
+  final account = await isar.accounts.get(accountId);
+  if (account == null || account.supabaseId == null) {
+    yield [];
+    return;
+  }
+
+  final accountSupabaseId = account.supabaseId!;
+
+  final transactionStream = isar.accountTransactions
+      .filter()
+      .accountSupabaseIdEqualTo(accountSupabaseId)
+      .sortByDateDesc() 
+      .watch(fireImmediately: true);
+
+  yield* transactionStream; 
+});
+
+// --- (*** 3. 新增：从 share_asset_detail_page 移动过来的 Providers ***) ---
+
 final shareAssetDetailProvider =
     StreamProvider.autoDispose.family<Asset?, int>((ref, assetId) {
   final isar = ref.watch(databaseServiceProvider).isar;
-  // 监听 Asset 对象本身的变化 (例如价格更新)
   return isar.assets.watchObject(assetId, fireImmediately: true);
 });
 
-// 2. 获取资产的性能数据 (Future, 依赖 1)
 final shareAssetPerformanceProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, int>(
         (ref, assetId) async {
-  // 依赖 1，确保在 asset 更新时，性能数据也会重新计算
   final asset = await ref.watch(shareAssetDetailProvider(assetId).future);
   if (asset == null) {
     throw Exception('未找到资产');
@@ -174,7 +250,6 @@ final shareAssetPerformanceProvider =
   return CalculatorService().calculateShareAssetPerformance(asset);
 });
 
-// 3. 获取资产的历史净值/价格曲线 (Future, 依赖 1)
 final assetHistoryChartProvider =
     FutureProvider.autoDispose.family<List<FlSpot>, int>((ref, assetId) async {
   final asset = await ref.watch(shareAssetDetailProvider(assetId).future);
@@ -189,7 +264,6 @@ final assetHistoryChartProvider =
   return [];
 });
 
-// 4. 获取资产的快照历史 (Stream, 依赖 1)
 final snapshotHistoryProvider = StreamProvider.autoDispose.family<List<PositionSnapshot>, int>((ref, assetId) async* { 
   final isar = ref.watch(databaseServiceProvider).isar;
   
@@ -201,7 +275,6 @@ final snapshotHistoryProvider = StreamProvider.autoDispose.family<List<PositionS
   
   final assetSupabaseId = asset.supabaseId!;
 
-  // (*** 关键修复：使用 isar.positionSnapshots (因为我们已在顶部导入) ***)
   final snapshotStream = isar.positionSnapshots
       .filter()
       .assetSupabaseIdEqualTo(assetSupabaseId)

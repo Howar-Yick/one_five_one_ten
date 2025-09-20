@@ -1,5 +1,5 @@
 // 文件: lib/pages/account_detail_page.dart
-// (这是已添加资产排序功能的完整文件)
+// (这是已移除 Provider 并修复了所有语法错误的完整文件)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,77 +22,27 @@ import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 
 
-// --- (Provider 保持不变) ---
-final accountDetailProvider =
-    FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
-  final isar = DatabaseService().isar;
-  return isar.accounts.get(accountId);
-});
-
-final accountPerformanceProvider =
-    FutureProvider.autoDispose.family<Map<String, dynamic>, int>(
-        (ref, accountId) async {
-  final account = await ref.watch(accountDetailProvider(accountId).future);
-  if (account == null) {
-    throw '未找到账户';
-  }
-  return CalculatorService().calculateAccountPerformance(account);
-});
-
-final trackedAssetsWithPerformanceProvider =
-    StreamProvider.autoDispose.family<List<Map<String, dynamic>>, int>((ref, accountId) async* { 
-  
-  final isar = DatabaseService().isar;
-  final calculator = CalculatorService();
-
-  final account = await ref.watch(accountDetailProvider(accountId).future);
-  if (account == null || account.supabaseId == null) {
-    yield []; 
-    return;
-  }
-  
-  final accountSupabaseId = account.supabaseId!;
-
-  final assetStream = isar.assets
-      .where()
-      .filter()
-      .accountSupabaseIdEqualTo(accountSupabaseId)
-      .watch(fireImmediately: true);
-
-  await for (var assets in assetStream) {
-    final List<Map<String, dynamic>> results = [];
-    for (final asset in assets) {
-      Map<String, dynamic> performanceData;
-      if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
-        performanceData = await calculator.calculateShareAssetPerformance(asset);
-      } else {
-        performanceData = await calculator.calculateValueAssetPerformance(asset);
-      }
-      results.add({
-        'asset': asset,
-        'performance': performanceData,
-      });
-    }
-    yield results; 
-  }
-});
-
-final accountHistoryProvider = FutureProvider.autoDispose.family<List<FlSpot>, Account>((ref, account) {
-  ref.watch(accountPerformanceProvider(account.id));
-  return CalculatorService().getAccountValueHistory(account);
-});
-
-// --- (*** 新增：排序标准枚举 ***) ---
+// --- (*** 排序标准枚举 ***) ---
 enum AssetSortCriteria {
-  marketValue,    // 持仓金额
-  totalProfit,    // 收益金额
-  profitRate,     // 收益率
-  annualizedReturn, // 年化
+  marketValue,    
+  totalProfit,    
+  profitRate,     
+  annualizedReturn, 
 }
-// --- (*** 新增结束 ***) ---
+
+// --- (*** 1. 关键修复：添加缺失的枚举定义 ***) ---
+enum AccountChartType {
+  totalValue,
+  totalProfit,
+  profitRate,
+}
+// --- (*** 修复结束 ***) ---
 
 
-// --- (*** 1. 关键修改：转换为 ConsumerStatefulWidget ***) ---
+// (*** 关键修复：顶部的所有 Provider 定义都已被【移除】 ***)
+
+
+// (转换为 ConsumerStatefulWidget)
 class AccountDetailPage extends ConsumerStatefulWidget {
   final int accountId;
   const AccountDetailPage({super.key, required this.accountId});
@@ -101,17 +51,17 @@ class AccountDetailPage extends ConsumerStatefulWidget {
   ConsumerState<AccountDetailPage> createState() => _AccountDetailPageState();
 }
 
-// --- (*** 2. 新增 State 类 ***) ---
+// (State 类)
 class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
 
-  // --- (*** 3. 新增状态变量 ***) ---
-  AssetSortCriteria _sortCriteria = AssetSortCriteria.marketValue; // 默认按持仓金额排序
-  bool _sortAscending = false; // 默认降序（从高到低）
-  // --- (*** 新增结束 ***) ---
+  // (状态变量)
+  AssetSortCriteria _sortCriteria = AssetSortCriteria.marketValue; 
+  bool _sortAscending = false; 
+  AccountChartType _selectedChartType = AccountChartType.totalValue;
 
   @override
   Widget build(BuildContext context) {
-    // (*** 4. 修改：所有 ref.watch 和 widget.accountId 都在 State 类中访问 ***)
+    // (*** 现在 ref.watch 调用的是 global_providers.dart 中的定义 ***)
     final asyncAccount = ref.watch(accountDetailProvider(widget.accountId));
     final asyncPerformance = ref.watch(accountPerformanceProvider(widget.accountId));
     final syncState = ref.watch(priceSyncControllerProvider);
@@ -152,14 +102,13 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                 ref.read(priceSyncControllerProvider.notifier).syncAllPrices();
                 ref.invalidate(accountPerformanceProvider(widget.accountId));
                 ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
-                await Future.delayed(const Duration(milliseconds: 500));
+                await ref.read(accountHistoryProvider(account).future);
                },
             child: ListView(
               padding: const EdgeInsets.all(16.0),
               children: [
                 _buildMacroView(context, ref, account, performance),
                 const SizedBox(height: 24),
-                // (*** 5. 修改：调用 _buildMicroView 时不再需要传 context/ref ***)
                 _buildMicroView(widget.accountId, account), 
               ],
             ),
@@ -171,7 +120,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     );
   }
 
-  // (*** 6. 修改：所有辅助函数现在都是 _AccountDetailPageState 的成员 ***)
   
   // ( _buildMacroView, _showInvestWithdrawDialog, _showUpdateValueDialog 保持不变 )
   Widget _buildMacroView(BuildContext context, WidgetRef ref, Account account,
@@ -445,7 +393,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                   onPressed: () async {
                        try {
                         final value = double.tryParse(valueController.text);
-                        if (value == null) { // 允许 0
+                        if (value == null) { 
                            ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('请输入有效的价值')),
                           );
@@ -497,53 +445,99 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
       },
     );
   }
-
-  // --- (*** 7. 关键修改：_buildMicroView 现在是 State 的一部分 ***) ---
+  
   Widget _buildMicroView(int accountId, Account account) {
-    // (*** 8. 修改：现在从 State 访问 ref ***)
     final asyncAssets = ref.watch(trackedAssetsWithPerformanceProvider(accountId));
     
     return Column(
       children: [
         ref.watch(accountHistoryProvider(account)).when( 
-          data: (spots) {
+          data: (chartDataMap) { 
+            
+            List<FlSpot> spots;
+            String chartTitle;
+            bool isPercentage = false; 
+
+            switch (_selectedChartType) {
+              case AccountChartType.totalProfit:
+                spots = chartDataMap['totalProfit'] ?? [];
+                chartTitle = '累计收益趋势';
+                break;
+              case AccountChartType.profitRate:
+                spots = chartDataMap['profitRate'] ?? [];
+                chartTitle = '收益率趋势';
+                isPercentage = true;
+                break;
+              case AccountChartType.totalValue:
+              default:
+                spots = chartDataMap['totalValue'] ?? [];
+                chartTitle = '账户净值趋势';
+                break;
+            }
+
             if (spots.length < 2) return const SizedBox.shrink();
+            
             return Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('账户净值趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(chartTitle, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        
+                        // --- (*** 2. 关键修复：修正 SegmentedButton 语法 ***) ---
+                        return SegmentedButton<AccountChartType>(
+                          segments: const [
+                            ButtonSegment(value: AccountChartType.totalValue, label: Text('净值'), icon: Icon(Icons.show_chart)),
+                            ButtonSegment(value: AccountChartType.totalProfit, label: Text('收益'), icon: Icon(Icons.trending_up)),
+                            ButtonSegment(value: AccountChartType.profitRate, label: Text('收益率'), icon: Icon(Icons.percent)),
+                          ],
+                          selected: {_selectedChartType},
+                          onSelectionChanged: (newSelection) {
+                            setState(() {
+                              _selectedChartType = newSelection.first;
+                            });
+                          },
+                          // (*** 修复：将 showSelectedIcon 移到正确的位置 ***)
+                          showSelectedIcon: constraints.maxWidth >= 360,
+                          // (*** 修复：移除无效的 style: 属性 ***)
+                          // style: constraints.maxWidth < 360 
+                          //   ? SegmentedButton.styleFrom(showSelectedIcon: false) // <-- 这是错误的
+                          //   : null,
+                        );
+                        // --- (*** 修复结束 ***) ---
+                      }
+                    ),
                     const SizedBox(height: 24),
-                    _buildHistoryChart(context, spots, account), 
+                    
+                    _buildHistoryChart(context, spots, account, isPercentage), 
                   ],
                 ),
               ),
             );
           },
-          loading: () => const SizedBox.shrink(),
-          error: (e,s) => const SizedBox.shrink(),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e,s) => Text('图表加载失败: $e'),
         ),
         
         const SizedBox(height: 24),
 
-        // --- (*** 9. 关键修改：添加排序按钮 ***) ---
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text('持仓资产', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             Row(
               children: [
-                // (*** 新增的排序按钮 ***)
                 PopupMenuButton<AssetSortCriteria>(
                   onSelected: (criteria) {
                     setState(() {
                       if (_sortCriteria == criteria) {
-                        // 如果点击的是当前标准，则反转排序方向
                         _sortAscending = !_sortAscending;
                       } else {
-                        // 否则，切换到新标准并默认为降序
                         _sortCriteria = criteria;
                         _sortAscending = false;
                       }
@@ -558,7 +552,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                     _buildSortMenuItem(AssetSortCriteria.annualizedReturn, '按年化收益率'),
                   ],
                 ),
-                // (*** 现有的添加按钮 ***)
                 IconButton(
                   icon: const Icon(Icons.add),
                   tooltip: '添加持仓资产',
@@ -578,21 +571,18 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
             )
           ],
         ),
-        // --- (*** 修改结束 ***) ---
         
         const Divider(height: 20),
         asyncAssets.when(
           data: (assetsData) {
             
-            // --- (*** 10. 关键修改：应用排序 ***) ---
             final sortedAssets = _sortAssetList(assetsData, _sortCriteria, _sortAscending);
-            // --- (*** 修改结束 ***) ---
             
-            if (sortedAssets.isEmpty) { // (使用 sortedAssets)
+            if (sortedAssets.isEmpty) { 
               return const Card(child: ListTile(title: Text('暂无持仓资产')));
             }
             return Column(
-              children: sortedAssets.map((assetData) => _buildAssetCard(context, ref, assetData, accountId)).toList(), // (使用 sortedAssets)
+              children: sortedAssets.map((assetData) => _buildAssetCard(context, ref, assetData, accountId)).toList(), 
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -602,7 +592,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     );
   }
   
-  // (*** 11. 新增：排序菜单项的辅助函数 ***)
   PopupMenuItem<AssetSortCriteria> _buildSortMenuItem(AssetSortCriteria criteria, String text) {
     bool isSelected = _sortCriteria == criteria;
     return PopupMenuItem(
@@ -618,7 +607,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     );
   }
 
-  // (*** 12. 新增：获取排序值的辅助函数 ***)
   double _getSortableValue(Map<String, dynamic> assetData, AssetSortCriteria criteria) {
     final performance = assetData['performance'] as Map<String, dynamic>;
     final asset = assetData['asset'] as Asset;
@@ -637,35 +625,31 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     }
   }
 
-  // (*** 13. 新增：主排序逻辑函数 ***)
   List<Map<String, dynamic>> _sortAssetList(List<Map<String, dynamic>> list, AssetSortCriteria criteria, bool ascending) {
-    // 创建一个可修改的副本以进行排序
     final sortedList = List<Map<String, dynamic>>.from(list);
     
     sortedList.sort((a, b) {
       final valA = _getSortableValue(a, criteria);
       final valB = _getSortableValue(b, criteria);
       
-      // 处理 NaN (无效数字，例如 0/0)
       if (valA.isNaN && valB.isNaN) return 0;
-      if (valA.isNaN) return 1; // 将 NaN 值排到最后
-      if (valB.isNaN) return -1; // 将 NaN 值排到最后
+      if (valA.isNaN) return 1; 
+      if (valB.isNaN) return -1; 
 
       final comparison = valA.compareTo(valB);
-      return ascending ? comparison : -comparison; // -comparison 实现降序
+      return ascending ? comparison : -comparison; 
     });
     
     return sortedList;
   }
 
-  // (*** 14. 修改：_buildAssetCard 现在是 State 的一部分 ***)
   Widget _buildAssetCard(BuildContext context, WidgetRef ref, Map<String, dynamic> assetData, int accountId) {
     final Asset asset = assetData['asset'];
     final Map<String, dynamic> performance = assetData['performance'];
     
     final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
 
-    final double totalValue = _getSortableValue(assetData, AssetSortCriteria.marketValue); // (复用我们的新函数)
+    final double totalValue = _getSortableValue(assetData, AssetSortCriteria.marketValue); 
     
     final double totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final double profitRate = (performance['profitRate'] ?? 0.0) as double;
@@ -681,7 +665,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
           : Icons.account_balance_wallet_outlined),
         title: Text('${asset.name} (${asset.currency})', style: const TextStyle(fontWeight: FontWeight.bold)),
         
-        // (*** 这是修复后的 Subtitle，已包含 asset.code ***)
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -718,7 +701,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
             )
           ],
         ),
-        // --- (*** Subtitle 修复结束 ***) ---
 
         trailing: const Icon(Icons.arrow_forward_ios),
         
@@ -741,8 +723,8 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     );
   }
 
-  // (*** 15. 修改：_showDeleteAssetConfirmationDialog 现在是 State 的一部分 ***)
   void _showDeleteAssetConfirmationDialog(BuildContext context, WidgetRef ref, Asset asset, int accountId) {
+    // ( ... 此函数保持不变 ...)
     showDialog<bool>(
       context: context,
       builder: (dialogContext) {
@@ -794,9 +776,15 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     });
   }
 
-  // (*** 16. 修改：_buildHistoryChart 现在是 State 的一部分 ***)
-  Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots, Account account) {
-    final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: getCurrencySymbol(account.currency));
+  Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots, Account account, bool isPercentage) {
+    
+    final NumberFormat yAxisFormat;
+    if (isPercentage) {
+      yAxisFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 1;
+    } else {
+      yAxisFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: getCurrencySymbol(account.currency));
+    }
+    
     final colorScheme = Theme.of(context).colorScheme;
     
     final List<FlSpot> indexedSpots = [];
@@ -831,7 +819,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
             ),
           ],
           titlesData: FlTitlesData(
-            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 50, getTitlesWidget: (value, meta) => Text(currencyFormat.format(value), style: const TextStyle(fontSize: 10)))),
+            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 50, getTitlesWidget: (value, meta) => Text(yAxisFormat.format(value), style: const TextStyle(fontSize: 10)))),
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             bottomTitles: AxisTitles(
@@ -868,10 +856,16 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
 
                   final FlSpot originalSpot = spots[index];
                   final date = DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(originalSpot.x.toInt()));
-                  final value = formatCurrency(originalSpot.y, account.currency); 
+                  
+                  final String valueStr;
+                  if (isPercentage) {
+                    valueStr = (NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2).format(originalSpot.y);
+                  } else {
+                    valueStr = formatCurrency(originalSpot.y, account.currency);
+                  }
                   
                   return LineTooltipItem(
-                    '$date\n$value',
+                    '$date\n$valueStr', 
                     const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                   );
                 }).where((item) => item != null).cast<LineTooltipItem>().toList(); 
@@ -883,7 +877,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     );
   }
 
-  // (*** 17. 修改：_buildMetricRow 现在是 State 的一部分 ***)
   Widget _buildMetricRow(BuildContext context, String title, String value,
       {Color? color}) {
     return Padding(
