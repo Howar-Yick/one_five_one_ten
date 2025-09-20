@@ -1,5 +1,5 @@
 // 文件: lib/pages/account_detail_page.dart
-// (这是已移除 Provider 并修复了所有语法错误的完整文件)
+// (这是已添加图表切换功能的完整文件)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,21 +22,21 @@ import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 
 
-// --- (*** 排序标准枚举 ***) ---
+// (*** 排序标准枚举 ***)
 enum AssetSortCriteria {
-  marketValue,    
-  totalProfit,    
-  profitRate,     
-  annualizedReturn, 
+  marketValue,    // 持仓金额
+  totalProfit,    // 收益金额
+  profitRate,     // 收益率
+  annualizedReturn, // 年化
 }
 
-// --- (*** 1. 关键修复：添加缺失的枚举定义 ***) ---
+// (*** 1. 关键修复：添加缺失的枚举定义 ***)
 enum AccountChartType {
   totalValue,
   totalProfit,
   profitRate,
 }
-// --- (*** 修复结束 ***) ---
+// (*** 修复结束 ***)
 
 
 // (*** 关键修复：顶部的所有 Provider 定义都已被【移除】 ***)
@@ -102,6 +102,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                 ref.read(priceSyncControllerProvider.notifier).syncAllPrices();
                 ref.invalidate(accountPerformanceProvider(widget.accountId));
                 ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
+                // (*** 修复：刷新时也重新加载图表数据 ***)
                 await ref.read(accountHistoryProvider(account).future);
                },
             child: ListView(
@@ -212,6 +213,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
 
   void _showInvestWithdrawDialog(
       BuildContext context, WidgetRef ref, Account account) {
+    // ( ... 此函数保持不变 ...)
     final amountController = TextEditingController();
     final List<bool> isSelected = [true, false];
     DateTime selectedDate = DateTime.now();
@@ -341,6 +343,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
 
   void _showUpdateValueDialog(
       BuildContext context, WidgetRef ref, Account account) {
+    // ( ... 此函数保持不变 ...)
     final valueController = TextEditingController();
     DateTime selectedDate = DateTime.now();
 
@@ -451,8 +454,9 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     
     return Column(
       children: [
+        // (*** 关键修改：图表卡片 ***)
         ref.watch(accountHistoryProvider(account)).when( 
-          data: (chartDataMap) { 
+          data: (chartDataMap) { // (现在接收 Map)
             
             List<FlSpot> spots;
             String chartTitle;
@@ -504,10 +508,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                           },
                           // (*** 修复：将 showSelectedIcon 移到正确的位置 ***)
                           showSelectedIcon: constraints.maxWidth >= 360,
-                          // (*** 修复：移除无效的 style: 属性 ***)
-                          // style: constraints.maxWidth < 360 
-                          //   ? SegmentedButton.styleFrom(showSelectedIcon: false) // <-- 这是错误的
-                          //   : null,
                         );
                         // --- (*** 修复结束 ***) ---
                       }
@@ -526,6 +526,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
         
         const SizedBox(height: 24),
 
+        // (排序功能 UI)
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
