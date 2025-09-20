@@ -1,10 +1,9 @@
 // 文件: lib/providers/global_providers.dart
-// (这是已修复“份额法图表起始日期”逻辑的完整文件)
+// (这是已添加价值法 Providers 并修复了所有依赖的完整文件)
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:isar/isar.dart';
-import 'dart:math'; // (导入 Math)
 
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/asset.dart';
@@ -14,11 +13,35 @@ import 'package:one_five_one_ten/services/price_sync_service.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart'; 
 import 'package:one_five_one_ten/models/account_transaction.dart';
-// import 'package:one_five_one_ten/models/transaction.dart'; // (不需要了)
+import 'package:one_five_one_ten/models/transaction.dart'; // (*** 1. 新增导入 ***)
 
 
 /// 说明：
 /// 集中放置需要被多个页面跨页使用的顶层 Provider，避免页面之间互相 import 导致的循环依赖。
+
+// (*** 2. 新增：全局枚举 ***)
+// (从 account_detail_page 移入)
+enum AssetSortCriteria {
+  marketValue,
+  totalProfit,
+  profitRate,
+  annualizedReturn,
+}
+
+// (从 account_detail_page 移入，现在对所有页面可用)
+enum AccountChartType {
+  totalValue,
+  totalProfit,
+  profitRate,
+}
+
+// (从 share_asset_detail_page 移入)
+enum ShareAssetChartType {
+  price,
+  totalProfit,
+  profitRate,
+}
+// (*** 新增结束 ***)
 
 
 // ------------------------ 核心服务 Providers ------------------------
@@ -26,7 +49,6 @@ import 'package:one_five_one_ten/models/account_transaction.dart';
 final databaseServiceProvider = Provider<DatabaseService>((ref) {
   return DatabaseService();
 });
-
 final syncServiceProvider = Provider<SupabaseSyncService>((ref) {
   return SupabaseSyncService();
 });
@@ -64,6 +86,7 @@ class PriceSyncController extends StateNotifier<PriceSyncState> {
   final Ref _ref;
   PriceSyncController(this._ref) : super(PriceSyncState.idle);
   Future<void> syncAllPrices() async {
+    // ... (此函数保持不变)
     if (state == PriceSyncState.loading) return;
     state = PriceSyncState.loading;
     try {
@@ -199,21 +222,12 @@ final transactionHistoryProvider =
 });
 
 // ------------------------ 份额法资产详情页 Providers ------------------------
-
-// (枚举定义保持不变)
-enum ShareAssetChartType {
-  price,
-  totalProfit,
-  profitRate,
-}
-
-// (shareAssetDetailProvider, shareAssetPerformanceProvider, assetHistoryChartProvider, snapshotHistoryProvider 保持不变)
+// ( ... 此区域代码保持不变 ...)
 final shareAssetDetailProvider =
     StreamProvider.autoDispose.family<Asset?, int>((ref, assetId) {
   final isar = ref.watch(databaseServiceProvider).isar;
   return isar.assets.watchObject(assetId, fireImmediately: true);
 });
-
 final shareAssetPerformanceProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, int>(
         (ref, assetId) async {
@@ -223,12 +237,10 @@ final shareAssetPerformanceProvider =
   }
   return CalculatorService().calculateShareAssetPerformance(asset);
 });
-
 final assetHistoryChartProvider =
     FutureProvider.autoDispose.family<List<FlSpot>, int>((ref, assetId) async {
   final asset = await ref.watch(shareAssetDetailProvider(assetId).future);
   if (asset == null || asset.code.isEmpty) return [];
-
   final priceService = ref.read(priceSyncServiceProvider); 
   if (asset.subType == AssetSubType.mutualFund) {
     return priceService.syncNavHistory(asset.code);
@@ -237,124 +249,126 @@ final assetHistoryChartProvider =
   }
   return [];
 });
-
 final snapshotHistoryProvider = StreamProvider.autoDispose.family<List<PositionSnapshot>, int>((ref, assetId) async* { 
   final isar = ref.watch(databaseServiceProvider).isar;
-  
   final asset = await ref.watch(shareAssetDetailProvider(assetId).future);
   if (asset == null || asset.supabaseId == null) {
     yield [];
     return;
   }
-  
   final assetSupabaseId = asset.supabaseId!;
-
   final snapshotStream = isar.positionSnapshots
       .filter()
       .assetSupabaseIdEqualTo(assetSupabaseId)
       .sortByDateDesc() 
       .watch(fireImmediately: true);
-
   yield* snapshotStream; 
 });
-
-
-// (*** 关键修改：shareAssetCombinedChartProvider ***)
 final shareAssetCombinedChartProvider =
     FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>(
         (ref, assetId) async {
-  
-  // 1. 并发获取两个数据源
   final priceHistoryFuture = ref.watch(assetHistoryChartProvider(assetId).future);
   final snapshotHistoryFuture = ref.watch(snapshotHistoryProvider(assetId).future);
-
   final priceHistory = await priceHistoryFuture;
   final snapshots = await snapshotHistoryFuture;
-  
-  // (*** 2. 关键修复：处理空快照的情况 ***)
   if (snapshots.isEmpty || priceHistory.isEmpty) {
-    // 如果没有快照，我们无法计算收益，但仍然可以显示价格历史
     return {'price': priceHistory, 'totalProfit': [], 'profitRate': []};
   }
-
-  // 3. 将快照列表（当前是降序）反转为升序
   final sortedSnapshots = snapshots.reversed.toList();
-  
-  // (*** 4. 关键修复：获取第一个快照的日期，并以此过滤价格历史 ***)
   final firstSnapshotDate = sortedSnapshots.first.date;
   final firstSnapshotEpoch = DateTime(firstSnapshotDate.year, firstSnapshotDate.month, firstSnapshotDate.day)
       .millisecondsSinceEpoch.toDouble();
-
-  // (*** 只处理第一个快照日期之后的价格 ***)
   final relevantPriceHistory = priceHistory.where((spot) => spot.x >= firstSnapshotEpoch).toList();
-
   if (relevantPriceHistory.isEmpty) {
-    // 如果价格历史都在快照之前（不太可能，但作为保险）
     return {'price': [], 'totalProfit': [], 'profitRate': []};
   }
-  // (*** 修复结束 ***)
-
-
   final List<FlSpot> profitSpots = [];
   final List<FlSpot> profitRateSpots = [];
-
   PositionSnapshot? activeSnapshot;
   int snapshotIndex = 0;
-
-  // 5. 遍历【相关】的价格历史
-  for (final priceSpot in relevantPriceHistory) { // (*** 修改：使用 relevantPriceHistory ***)
-    final currentDate = DateTime.fromMillisecondsSinceEpoch(priceSpot.x.toInt());
-    
-    while (snapshotIndex < sortedSnapshots.length && 
-           !sortedSnapshots[snapshotIndex].date.isAfter(currentDate)) {
-      activeSnapshot = sortedSnapshots[snapshotIndex];
-      snapshotIndex++;
+  for (final priceSpot in relevantPriceHistory) { 
+    final currentDateEpoch = priceSpot.x;
+    final currentDate = DateTime.fromMillisecondsSinceEpoch(currentDateEpoch.toInt()); 
+    while (snapshotIndex < sortedSnapshots.length) {
+      final snapshotDate = sortedSnapshots[snapshotIndex].date;
+      final snapshotDateOnly = DateTime(snapshotDate.year, snapshotDate.month, snapshotDate.day);
+      if (!snapshotDateOnly.isAfter(currentDate)) { 
+        activeSnapshot = sortedSnapshots[snapshotIndex];
+        snapshotIndex++;
+      } else {
+        break;
+      }
     }
-
-    // (*** 6. 关键修复：既然我们已经过滤了价格，activeSnapshot 理论上不应为 null ***)
     if (activeSnapshot == null) {
-      // (如果真的发生了，跳过这个点)
-      continue;
+      profitSpots.add(FlSpot(priceSpot.x, 0.0));
+      profitRateSpots.add(FlSpot(priceSpot.x, 0.0));
+      continue; 
     } 
-    
     final double price = priceSpot.y;
     final double totalShares = activeSnapshot.totalShares;
     final double averageCost = activeSnapshot.averageCost;
-    
     if (totalShares == 0) {
        profitSpots.add(FlSpot(priceSpot.x, 0.0));
        profitRateSpots.add(FlSpot(priceSpot.x, 0.0));
        continue;
     }
-
     final double totalCost = totalShares * averageCost;
     final double marketValue = totalShares * price;
-    
     final double totalProfit = marketValue - totalCost;
     final double profitRate = (totalCost == 0 || totalCost.isNaN) ? 0.0 : totalProfit / totalCost;
-    
     profitSpots.add(FlSpot(priceSpot.x, totalProfit));
     profitRateSpots.add(FlSpot(priceSpot.x, profitRate));
   }
-  
-  // 8. 确保图表至少有两个点（如果它们只有一个点）
-  if (profitSpots.length == 1) {
-     final firstDate = DateTime.fromMillisecondsSinceEpoch(profitSpots.first.x.toInt());
-     final dayBefore = firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
-     profitSpots.insert(0, FlSpot(dayBefore, 0.0));
-     profitRateSpots.insert(0, FlSpot(dayBefore, 0.0));
+  void ensureTwoSpots(List<FlSpot> spots, [double defaultY = 0.0]) {
+    if (spots.length == 1) {
+       final firstDate = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
+       final dayBefore = firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
+       spots.insert(0, FlSpot(dayBefore, defaultY));
+    }
   }
-  // (*** 同样处理价格图表 ***)
-  if (relevantPriceHistory.length == 1) {
-     final firstDate = DateTime.fromMillisecondsSinceEpoch(relevantPriceHistory.first.x.toInt());
-     final dayBefore = firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
-     relevantPriceHistory.insert(0, FlSpot(dayBefore, relevantPriceHistory.first.y)); // (使用第一个点的价格作为前一天的价格)
-  }
-
+  ensureTwoSpots(profitSpots);
+  ensureTwoSpots(profitRateSpots);
+  ensureTwoSpots(relevantPriceHistory, relevantPriceHistory.isNotEmpty ? relevantPriceHistory.first.y : 0.0);
   return {
-    'price': relevantPriceHistory, // (*** 修改：返回过滤后的价格列表 ***)
+    'price': relevantPriceHistory, 
     'totalProfit': profitSpots,
     'profitRate': profitRateSpots,
   };
 });
-// (*** 修改结束 ***)
+
+// --- (*** 4. 新增：价值法资产的 Provider ***) ---
+
+// (从 value_asset_detail_page 移入)
+final valueAssetDetailProvider =
+    StreamProvider.autoDispose.family<Asset?, int>((ref, assetId) {
+  final isar = ref.watch(databaseServiceProvider).isar;
+  return isar.assets.watchObject(assetId, fireImmediately: true);
+});
+
+// (从 value_asset_detail_page 移入)
+final valueAssetPerformanceProvider =
+    FutureProvider.autoDispose.family<Map<String, dynamic>, int>(
+        (ref, assetId) async {
+  // (*** 关键：依赖 DetailProvider 来自动刷新 ***)
+  final asset = await ref.watch(valueAssetDetailProvider(assetId).future);
+  if (asset == null) {
+    throw Exception('未找到资产');
+  }
+  return CalculatorService().calculateValueAssetPerformance(asset);
+});
+
+// (*** 新增：价值法的三种图表 Provider ***)
+final valueAssetHistoryChartsProvider =
+    FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>(
+        (ref, assetId) async {
+  // (*** 关键：依赖 PerformanceProvider 来触发刷新 ***)
+  ref.watch(valueAssetPerformanceProvider(assetId)); 
+  
+  final asset = await ref.watch(valueAssetDetailProvider(assetId).future);
+  if (asset == null) {
+    return {'totalValue': [], 'totalProfit': [], 'profitRate': []};
+  }
+  // (调用我们刚在 CalculatorService 中创建的新函数)
+  return CalculatorService().getValueAssetHistoryCharts(asset);
+});
+// --- (*** 新增结束 ***) ---

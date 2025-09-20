@@ -245,67 +245,81 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
   // --- (*** 5. 这是大改的 _buildAllocationCard ***) ---
   // --- (*** 修复了布局溢出问题 ***) ---
- Widget _buildAllocationCard(
-   BuildContext context, Map<AssetSubType, double> allocation) {
+  Widget _buildAllocationCard(
+      BuildContext context, Map<AssetSubType, double> allocation) {
     
-  final double totalValue =
-    allocation.values.fold(0.0, (prev, element) => prev + element);
-  
-  final Map<AssetSubType, Color> colorMap = {
-   AssetSubType.stock: Colors.blue.shade400,
-   AssetSubType.etf: Colors.green.shade400,
-   AssetSubType.mutualFund: Colors.orange.shade400,
-   AssetSubType.other: Colors.purple.shade400,
-  };
+    final double totalValue =
+        allocation.values.fold(0.0, (prev, element) => prev + element);
+    
+    final Map<AssetSubType, Color> colorMap = {
+      AssetSubType.stock: Colors.blue.shade400,
+      AssetSubType.etf: Colors.green.shade400,
+      AssetSubType.mutualFund: Colors.orange.shade400,
+      AssetSubType.other: Colors.purple.shade400,
+    };
 
-  // (动态生成切片列表的逻辑保持不变)
-  final List<PieChartSectionData> sections = [];
-  final allocationEntries = allocation.entries.toList(); 
+    // --- (*** 1. 关键修复：修改 sections 的生成逻辑 ***) ---
+    final List<PieChartSectionData> sections = [];
+    final allocationEntries = allocation.entries.toList(); 
 
-  for (int i = 0; i < allocationEntries.length; i++) {
-   final entry = allocationEntries[i];
-   final subType = entry.key;
-   final value = entry.value;
+    for (int i = 0; i < allocationEntries.length; i++) {
+      final entry = allocationEntries[i];
+      final subType = entry.key;
+      final value = entry.value;
 
-   final bool isTouched = (i == _touchedPieIndex); 
-   final double radius = isTouched ? 90.0 : 80.0; 
-   final double fontSize = isTouched ? 16.0 : 14.0; 
-   final percentage = (value / totalValue) * 100;
+      final bool isTouched = (i == _touchedPieIndex); // 检查是否被悬停
+      final double radius = isTouched ? 90.0 : 80.0; // 悬停时半径更大
+      final double fontSize = isTouched ? 16.0 : 14.0; // 悬停时字体更大
+      final percentage = (value / totalValue) * 100;
 
-   sections.add(
-    PieChartSectionData(
-     color: colorMap[subType] ?? Colors.grey,
-     value: value,
-     title: '${percentage.toStringAsFixed(1)}%',
-     radius: radius, 
-     titleStyle: TextStyle( 
-       fontSize: fontSize, 
-       fontWeight: FontWeight.bold, 
-       color: Colors.white),
-    ),
-   );
-  }
+      // (*** 这是新的标题逻辑 ***)
+      final String title;
+      if (isTouched) {
+        // 如果被悬停，显示分类名称和百分比
+        final String name = _formatAllocationName(subType);
+        title = '$name\n${percentage.toStringAsFixed(1)}%';
+      } else {
+        // 否则，只显示百分比
+        title = '${percentage.toStringAsFixed(1)}%';
+      }
+      // (*** 新逻辑结束 ***)
 
-    // --- (*** 这是布局修复 ***) ---
-    // 我们不再使用 Center(Row(...))，因为它在窄屏上会导致溢出。
-    // 我们改为使用 垂直堆叠 布局。
-  return Card(
-   child: Padding(
-    padding: const EdgeInsets.all(16.0),
-    child: Column(
-     crossAxisAlignment: CrossAxisAlignment.start, // 保持标题在左侧
-     children: [
-      const Text('资产配置',
-        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-      const SizedBox(height: 24), // 增大标题和图表间距
+      sections.add(
+        PieChartSectionData(
+          color: colorMap[subType] ?? Colors.grey,
+          value: value,
+          title: title, // <-- (*** 2. 使用这个新的动态 title ***)
+          radius: radius, 
+          titleStyle: TextStyle( 
+              fontSize: fontSize, 
+              fontWeight: FontWeight.bold, 
+              color: Colors.white),
+        ),
+      );
+    }
+    // --- (*** 修复结束 ***) ---
+
+
+    // (这是我们上次修复的垂直堆叠布局)
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('资产配置',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 24), 
 
             // --- 控件 1: 饼图 ---
             SizedBox(
-              height: 200, // 给予图表一个固定的高度
-              width: double.infinity, // 让它撑满卡片宽度
+              height: 200, 
+              width: double.infinity, 
               child: PieChart(
                 PieChartData(
-                  pieTouchData: PieTouchData( // (悬停逻辑保持不变)
+                  // --- (*** 3. 关键修复：移除所有错误的 tooltipData ***) ---
+                  // (*** 只保留 touchCallback ***)
+                  pieTouchData: PieTouchData( 
                     touchCallback: (FlTouchEvent event, pieTouchResponse) {
                       setState(() {
                         if (!event.isInterestedForInteractions ||
@@ -314,13 +328,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                           _touchedPieIndex = -1; // 鼠标移出
                           return;
                         }
+                        // 鼠标悬停，记录索引
                         _touchedPieIndex = pieTouchResponse
                             .touchedSection!.touchedSectionIndex;
                       });
                     },
                   ),
+                  // --- (*** 修复结束 ***) ---
                   sections: sections, 
-                  centerSpaceRadius: 60, // 半径改大一点，做成环形图
+                  centerSpaceRadius: 60, 
                   sectionsSpace: 2,
                 ),
               ),
@@ -329,36 +345,33 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             const SizedBox(height: 24), // 图表和图例之间的间距
 
             // --- 控件 2: 图例 ---
-            // (我们不再需要 Row/Center/SizedBox，只需直接构建图例列)
-            Column(
-              mainAxisSize: MainAxisSize.min, // 让图例列表自然包裹内容
-              crossAxisAlignment: CrossAxisAlignment.start,
+            Wrap(
+              alignment: WrapAlignment.center, 
+              spacing: 16.0, 
+              runSpacing: 8.0,   
               children: allocation.entries.map((entry) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4.0),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 16,
-                        height: 16,
-                        color: colorMap[entry.key] ?? Colors.grey,
-                      ),
-                      const SizedBox(width: 8),
-                      Text( // (移除了 Expanded)
-                        _formatAllocationName(entry.key),
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ],
-                  ),
+                return Row(
+                  mainAxisSize: MainAxisSize.min, 
+                  children: [
+                    Container(
+                      width: 16,
+                      height: 16,
+                      color: colorMap[entry.key] ?? Colors.grey,
+                    ),
+                    const SizedBox(width: 8),
+                    Text( 
+                      _formatAllocationName(entry.key),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ],
                 );
               }).toList(),
-            ), // <-- 图例 Column 结束
-     ],
-    ),
-   ),
-  );
-    // --- (*** 修复结束 ***) ---
- }
+            ), // <-- Wrap 结束
+          ],
+        ),
+      ),
+    );
+  }
 
  // (Metric Row 辅助函数保持不变)
  Widget _buildMetricRow(BuildContext context, String title, String value,
