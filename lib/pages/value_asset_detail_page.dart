@@ -1,5 +1,5 @@
 // 文件: lib/pages/value_asset_detail_page.dart
-// (这是已添加图表切换功能的完整文件)
+// (这是已修复 "getter 'account' isn't defined" Bug 的完整文件)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +14,10 @@ import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 import 'package:one_five_one_ten/pages/asset_transaction_history_page.dart';
 import 'package:isar/isar.dart';
+
+// (*** 1. 关键修复：添加以下两个导入 ***)
+import 'package:one_five_one_ten/models/account.dart';
+import 'package:one_five_one_ten/pages/add_edit_asset_page.dart';
 
 // (*** 关键修复：顶部的所有 Provider 定义都已被【移除】并转移到 global_providers.dart ***)
 
@@ -53,7 +57,52 @@ class _ValueAssetDetailPageState extends ConsumerState<ValueAssetDetailPage> {
         return Scaffold(
           appBar: AppBar(
             title: Text(asset.name),
-            // (这里的 Edit 按钮逻辑与 share_asset_detail_page 不同，保持原样)
+            
+            // (*** 2. 关键修复：替换为这个 actions 块 ***)
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.edit),
+                tooltip: '编辑资产',
+                // (*** 修复 1: 转换为 async ***)
+                onPressed: () async {
+                  
+                  // (*** 修复 2: 获取 Isar 实例 ***)
+                  final isar = DatabaseService().isar;
+
+                  // (*** 修复 3: 使用 accountSupabaseId 异步查询父账户 ***)
+                  final account = await isar.accounts
+                      .filter()
+                      .supabaseIdEqualTo(asset.accountSupabaseId)
+                      .findFirst();
+
+                  // (*** 修复 4: 检查账户是否存在 ***)
+                  if (account == null) {
+                    // (*** 修复 5: 在异步函数中安全地显示 SnackBar ***)
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('无法找到父账户，数据可能未同步。')),
+                      );
+                    }
+                    return;
+                  }
+
+                  // (*** 修复 6: 在异步函数中安全地导航 ***)
+                  if (context.mounted) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AddEditAssetPage(
+                          accountId: account.id, // (父账户的 Isar ID)
+                          assetId: asset.id,     // (当前资产的 Isar ID)
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ],
+            // (*** 修复结束 ***)
+
           ),
           body: RefreshIndicator(
             onRefresh: () async {
