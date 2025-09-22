@@ -312,17 +312,37 @@ final shareAssetCombinedChartProvider =
       continue; 
     } 
     final double price = priceSpot.y;
-    final double totalShares = activeSnapshot.totalShares;
-    final double averageCost = activeSnapshot.averageCost;
-    if (totalShares == 0) {
-        profitSpots.add(FlSpot(priceSpot.x, 0.0));
-        profitRateSpots.add(FlSpot(priceSpot.x, 0.0));
-        continue;
+    double totalShares = activeSnapshot.totalShares;
+    double averageCost = activeSnapshot.averageCost;
+    if (!totalShares.isFinite || totalShares <= 0) {
+      profitSpots.add(FlSpot(priceSpot.x, 0.0));
+      profitRateSpots.add(FlSpot(priceSpot.x, 0.0));
+      continue;
     }
-    final double totalCost = totalShares * averageCost;
-    final double marketValue = totalShares * price;
-    final double totalProfit = marketValue - totalCost;
-    final double profitRate = (totalCost == 0 || totalCost.isNaN) ? 0.0 : totalProfit / totalCost;
+    if (!averageCost.isFinite) {
+      averageCost = 0.0;
+    }
+    double totalCost = totalShares * averageCost;
+    if (!totalCost.isFinite) {
+      totalCost = 0.0;
+    }
+    double marketValue = totalShares * price;
+    if (!marketValue.isFinite) {
+      marketValue = 0.0;
+    }
+    double totalProfit = marketValue - totalCost;
+    if (!totalProfit.isFinite) {
+      totalProfit = 0.0;
+    }
+    double profitRate;
+    if (totalCost == 0 || !totalCost.isFinite) {
+      profitRate = 0.0;
+    } else {
+      profitRate = totalProfit / totalCost;
+      if (!profitRate.isFinite) {
+        profitRate = 0.0;
+      }
+    }
     profitSpots.add(FlSpot(priceSpot.x, totalProfit));
     profitRateSpots.add(FlSpot(priceSpot.x, profitRate));
   }

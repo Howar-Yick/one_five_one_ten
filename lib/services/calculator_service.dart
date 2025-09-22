@@ -157,31 +157,69 @@ class CalculatorService {
       };
     }
     final latestSnapshot = snapshots.last;
-    final totalShares = latestSnapshot.totalShares;
-    final averageCost = latestSnapshot.averageCost;
-    final totalCost = totalShares * averageCost;
-    final latestPrice = asset.latestPrice == 0 ? averageCost : asset.latestPrice; 
-    final marketValue = totalShares * latestPrice;
-    final totalProfit = marketValue - totalCost;
-    final profitRate = totalCost == 0 ? 0 : totalProfit / totalCost;
+
+    double totalShares = latestSnapshot.totalShares;
+    double averageCost = latestSnapshot.averageCost;
+    if (!totalShares.isFinite) {
+      totalShares = 0.0;
+    }
+    if (!averageCost.isFinite) {
+      averageCost = 0.0;
+    }
+
+    final bool hasPosition = totalShares > 0;
+
+    double totalCost = hasPosition ? totalShares * averageCost : 0.0;
+    if (!totalCost.isFinite) {
+      totalCost = 0.0;
+    }
+
+    double latestPrice = asset.latestPrice;
+    if (!latestPrice.isFinite || latestPrice == 0) {
+      latestPrice = hasPosition ? averageCost : 0.0;
+    }
+
+    double marketValue = totalShares * latestPrice;
+    if (!marketValue.isFinite) {
+      marketValue = 0.0;
+    }
+
+    double totalProfit = marketValue - totalCost;
+    if (!totalProfit.isFinite) {
+      totalProfit = 0.0;
+    }
+
+    double profitRate;
+    if (totalCost == 0 || !totalCost.isFinite) {
+      profitRate = 0.0;
+    } else {
+      profitRate = totalProfit / totalCost;
+      if (!profitRate.isFinite) {
+        profitRate = 0.0;
+      }
+    }
     double annualizedReturn = 0.0;
     if (snapshots.length >= 1) {
       final dates = <DateTime>[];
       final cashflows = <double>[];
       dates.add(snapshots.first.date);
-      cashflows.add(-(snapshots.first.totalShares * snapshots.first.averageCost));
+      final firstCost = snapshots.first.totalShares * snapshots.first.averageCost;
+      cashflows.add(firstCost.isFinite ? -firstCost : 0.0);
       for (int i = 1; i < snapshots.length; i++) {
         final prevCost = snapshots[i - 1].totalShares * snapshots[i - 1].averageCost;
         final currentCost = snapshots[i].totalShares * snapshots[i].averageCost;
+        if (!prevCost.isFinite || !currentCost.isFinite) {
+          continue;
+        }
         final costChange = currentCost - prevCost;
-        if (costChange.abs() > 0.01) {
+        if (costChange.isFinite && costChange.abs() > 0.01) {
           dates.add(snapshots[i].date);
           cashflows.add(-costChange);
         }
       }
       final lastDate = snapshots.last.date;
       dates.add(DateTime.now().isAfter(lastDate) ? DateTime.now() : lastDate.add(const Duration(days: 1)));
-      cashflows.add(marketValue);
+      cashflows.add(marketValue.isFinite ? marketValue : 0.0);
       try {
         if (cashflows.any((cf) => cf > 0) && cashflows.any((cf) => cf < 0)) {
           annualizedReturn = xirr(dates, cashflows);
@@ -189,6 +227,9 @@ class CalculatorService {
       } catch (e) {
         //
       }
+    }
+    if (!annualizedReturn.isFinite) {
+      annualizedReturn = 0.0;
     }
     return {
       'marketValue': marketValue,
