@@ -1,6 +1,5 @@
 // 文件: lib/services/calculator_service.dart
-// (*** 这是已更新价值法图表逻辑的完整文件 ***)
-// (*** 关键修改：getValueAssetHistoryCharts 已更新，以美化图表起点 ***)
+// (*** 关键修改：已将图表美化逻辑同时应用于 getAccountHistoryCharts ***)
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:isar/isar.dart';
@@ -67,7 +66,7 @@ class CalculatorService {
     final double netInvestment = historyPoints.last.netInvestment;
     final double totalInvested = historyPoints.last.totalInvested;
     final double totalProfit = currentValue - netInvestment;
-    final double profitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested; // (这个文件版本中, int 0 似乎是可接受的)
+    final double profitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested;
     double annualizedReturn = 0.0;
     final xirrCashflows = <double>[];
     final xirrDates = <DateTime>[];
@@ -141,6 +140,28 @@ class CalculatorService {
     }
     return dailyPoints.values.toList();
   }
+
+  // (*** 1. 关键修改：将辅助函数移到此处，变为类私有方法，供所有图表函数共用 ***)
+  void _ensureChartHasStart(List<FlSpot> spots) {
+    if (spots.isEmpty) {
+      // 如果过滤后列表为空 (例如从未有过收益), 则不绘制
+      return; 
+    }
+
+    if (spots.length == 1) {
+      // 只有一个数据点，在它前面加一个0点
+      final firstDate = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
+      final dayBefore = firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
+      spots.insert(0, FlSpot(dayBefore, 0.0));
+    } else if (spots.first.y.abs() > 0.0001) { 
+      // 有多个数据点，但第一个点不是0，在它前面加一个0点
+      // (这会让收益/收益率曲线从0开始，而不是从第一个非零值“凭空”开始)
+      final firstDate = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
+      final dayBefore = firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
+      spots.insert(0, FlSpot(dayBefore, 0.0));
+    }
+  }
+  // (*** 修改结束 ***)
 
   // ( calculateShareAssetPerformance 保持不变 - 你提供的版本已修复)
   Future<Map<String, dynamic>> calculateShareAssetPerformance(Asset asset) async {
@@ -319,7 +340,7 @@ class CalculatorService {
     // (*** 修改结束 ***)
 
     final double totalProfit = currentValue - netInvestment;
-    final double profitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested; // (这个文件版本中, int 0 似乎是可接受的)
+    final double profitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested;
     
     double annualizedReturn = 0.0;
     final cashflows = <double>[];
@@ -397,10 +418,10 @@ class CalculatorService {
     final List<FlSpot> profitSpots = [];
     final List<FlSpot> profitRateSpots = [];
     
-    // (*** 1. 关键修改：添加标志位，用于过滤曲线前方的0值 ***)
+    // (*** 添加标志位，用于过滤曲线前方的0值 ***)
     bool hasProfitStarted = false;
     bool hasProfitRateStarted = false;
-
+    
     for (var p in points) {
       final dateEpoch = p.date.millisecondsSinceEpoch.toDouble();
       
@@ -408,8 +429,7 @@ class CalculatorService {
       valueSpots.add(FlSpot(dateEpoch, p.value));
       
       final double totalProfit = p.value - p.netInvestment;
-      // (*** 2. 关键修改：仅当收益开始后才添加 ***)
-      // 我们使用一个小的阈值 (0.001) 来判断是否 "非零"
+      // (*** 仅当收益开始后才添加 ***)
       if (totalProfit.abs() > 0.001 || hasProfitStarted) {
         hasProfitStarted = true;
         profitSpots.add(FlSpot(dateEpoch, totalProfit));
@@ -418,40 +438,17 @@ class CalculatorService {
       final double profitRate = (p.totalInvested == 0 || p.totalInvested.isNaN) 
             ? 0.0 
             : totalProfit / p.totalInvested;
-      // (*** 3. 关键修改：仅当收益率开始后才添加 ***)
-      // 我们使用一个小的阈值 (0.0001) 来判断是否 "非零"
+      // (*** 仅当收益率开始后才添加 ***)
       if (profitRate.abs() > 0.0001 || hasProfitRateStarted) {
         hasProfitRateStarted = true;
         profitRateSpots.add(FlSpot(dateEpoch, profitRate));
       }
     }
     
-    // (*** 4. 关键修改：使用新的辅助函数确保所有图表都有起点 ***)
-    // 此辅助函数会为列表单独添加一个0点作为起点
-    void _ensureChartHasStart(List<FlSpot> spots) {
-      if (spots.isEmpty) {
-        // 如果过滤后列表为空 (例如从未有过收益), 则不绘制
-        return; 
-      }
-
-      if (spots.length == 1) {
-        // 只有一个数据点，在它前面加一个0点
-        final firstDate = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
-        final dayBefore = firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
-        spots.insert(0, FlSpot(dayBefore, 0.0));
-      } else if (spots.first.y.abs() > 0.0001) { 
-        // 有多个数据点，但第一个点不是0，在它前面加一个0点
-        // (这会让收益/收益率曲线从0开始，而不是从第一个非零值“凭空”开始)
-        final firstDate = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
-        final dayBefore = firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
-        spots.insert(0, FlSpot(dayBefore, 0.0));
-      }
-    }
-
+    // (*** 5. 关键修改：调用重构后的类私有方法 ***)
     _ensureChartHasStart(valueSpots);
     _ensureChartHasStart(profitSpots);
     _ensureChartHasStart(profitRateSpots);
-    // (*** 原来的 'if (valueSpots.length == 1)' 逻辑已被替换 ***)
     
     return {
       'totalValue': valueSpots,
@@ -459,9 +456,8 @@ class CalculatorService {
       'profitRate': profitRateSpots,
     };
   }
-  // (*** 修改结束 ***)
   
-  // ( getAccountHistoryCharts 保持不变 )
+  // (*** 2. 关键修改：getAccountHistoryCharts 也应用相同的图表美化逻辑 ***)
   Future<Map<String, List<FlSpot>>> getAccountHistoryCharts(Account account) async {
     if (account.supabaseId == null) {
         return {'totalValue': [], 'totalProfit': [], 'profitRate': []};
@@ -489,32 +485,50 @@ class CalculatorService {
       points.last.value = currentTotalValue;
       points.last.netInvestment = currentNetInvestment;
     }
+    
     final List<FlSpot> valueSpots = [];
     final List<FlSpot> profitSpots = [];
     final List<FlSpot> profitRateSpots = [];
+    
+    // (*** 添加标志位 ***)
+    bool hasProfitStarted = false;
+    bool hasProfitRateStarted = false;
+    
     for (var p in points) {
       final dateEpoch = p.date.millisecondsSinceEpoch.toDouble();
+      
+      // 净值曲线 (Total Value) - 始终添加
       valueSpots.add(FlSpot(dateEpoch, p.value));
+      
       final double totalProfit = p.value - p.netInvestment;
-      profitSpots.add(FlSpot(dateEpoch, totalProfit));
+      // (*** 仅当收益开始后才添加 ***)
+      if (totalProfit.abs() > 0.001 || hasProfitStarted) {
+        hasProfitStarted = true;
+        profitSpots.add(FlSpot(dateEpoch, totalProfit));
+      }
+      
       final double profitRate = (p.totalInvested == 0 || p.totalInvested.isNaN) 
             ? 0.0 
             : totalProfit / p.totalInvested;
-      profitRateSpots.add(FlSpot(dateEpoch, profitRate));
+      // (*** 仅当收益率开始后才添加 ***)
+      if (profitRate.abs() > 0.0001 || hasProfitRateStarted) {
+        hasProfitRateStarted = true;
+        profitRateSpots.add(FlSpot(dateEpoch, profitRate));
+      }
     }
-    if (valueSpots.length == 1) {
-      final firstDate = DateTime.fromMillisecondsSinceEpoch(valueSpots.first.x.toInt());
-      final dayBefore = firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
-      valueSpots.insert(0, FlSpot(dayBefore, 0.0));
-      profitSpots.insert(0, FlSpot(dayBefore, 0.0));
-      profitRateSpots.insert(0, FlSpot(dayBefore, 0.0));
-    }
+    
+    // (*** 调用重构后的类私有方法 ***)
+    _ensureChartHasStart(valueSpots);
+    _ensureChartHasStart(profitSpots);
+    _ensureChartHasStart(profitRateSpots);
+    
     return {
       'totalValue': valueSpots,
       'totalProfit': profitSpots,
       'profitRate': profitRateSpots,
     };
   }
+  // (*** 修改结束 ***)
 
   // ( calculateAssetAllocation 保持不变, 这是按 SubType 的 )
   Future<Map<AssetSubType, double>> calculateAssetAllocation() async {
@@ -603,7 +617,7 @@ class CalculatorService {
       }
     }
     final double totalProfit = totalValueCNY - totalNetInvestmentCNY;
-    final double totalProfitRate = totalInvestedCNY == 0 ? 0 : totalProfit / totalInvestedCNY; // (这个文件版本中, int 0 似乎是可接受的)
+    final double totalProfitRate = totalInvestedCNY == 0 ? 0 : totalProfit / totalInvestedCNY;
     double globalAnnualizedReturn = 0.0;
     if (globalCashflows.isNotEmpty && totalValueCNY != 0) {
       globalCashflows.add(totalValueCNY);
