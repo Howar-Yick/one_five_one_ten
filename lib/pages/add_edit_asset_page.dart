@@ -1,5 +1,5 @@
 // 文件: lib/pages/add_edit_asset_page.dart
-// (这是已修复所有已知 Bug 的纯净完整文件)
+// (*** 关键修复：重构了 AssetClass 和 AssetSubType 的联动逻辑 ***)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,6 +23,17 @@ const Map<AssetClass, String> assetClassDisplayNames = {
   AssetClass.alternative: '另类投资',
   AssetClass.other: '其他',
 };
+
+// (*** 1. 关键修改：为 SubType 也添加 DisplayNames ***)
+const Map<AssetSubType, String> assetSubTypeDisplayNames = {
+  AssetSubType.stock: '股票',
+  AssetSubType.etf: '场内基金(ETF)',
+  AssetSubType.mutualFund: '场外基金',
+  AssetSubType.wealthManagement: '理财', // (新增)
+  AssetSubType.other: '其他',
+};
+// (*** 修改结束 ***)
+
 
 class AddEditAssetPage extends ConsumerStatefulWidget {
   final int accountId;
@@ -55,6 +66,28 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   bool _isLoading = true;
 
   bool get _isEditing => widget.assetId != null;
+  
+  // (*** 2. 关键修改：用于判断 AssetClass 下拉菜单是否应锁定 ***)
+  bool get _isAssetClassSelectionLocked {
+    // 价值法时，允许切换 理财/其他，大类会跟随
+    if (_selectedMethod == AssetTrackingMethod.valueBased) {
+      return true; // 大类跟随 SubType 变动，用户不能手动选
+    }
+    
+    // 份额法时
+    switch (_selectedSubType) {
+      case AssetSubType.stock:
+        return true; // 股票一定D是权益
+      case AssetSubType.etf:
+      case AssetSubType.mutualFund:
+        return false; // *** 核心修复：基金类允许用户自由选择大类 ***
+      case AssetSubType.other:
+      default:
+        return false; // 其他也允许自由选择
+    }
+  }
+  // (*** 修改结束 ***)
+
 
   @override
   void initState() {
@@ -78,8 +111,8 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
       }
     } else {
       _selectedCurrency = _parentAccount?.currency ?? 'CNY';
-      // 新建时，根据默认的 SubType (stock) 推断 AssetClass
-      _selectedAssetClass = _deduceAssetClass(_selectedSubType);
+      // (*** 3. 关键修改：新建时不再调用 _deduceAssetClass ***)
+      // (默认值已在声明时设置好：shareBased, stock, equity)
     }
 
     if (!['CNY', 'USD', 'HKD'].contains(_selectedCurrency)) {
@@ -93,18 +126,8 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     }
   }
 
-  // 辅助函数，用于根据 SubType 推断 AssetClass
-  AssetClass _deduceAssetClass(AssetSubType subType) {
-    switch (subType) {
-      case AssetSubType.stock:
-      case AssetSubType.etf:
-      case AssetSubType.mutualFund:
-        return AssetClass.equity;
-      case AssetSubType.other:
-      default:
-        return AssetClass.other;
-    }
-  }
+  // (*** 4. 关键修改：移除 _deduceAssetClass 辅助函数 ***)
+  // (*** (函数已移除) ***)
 
   @override
   void dispose() {
@@ -342,7 +365,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
       
       // (后台执行)
       syncService.savePositionSnapshot(snapshot).catchError((e) {
-         print('[BG Sync] PositionSnapshot 同步失败: $e');
+          print('[BG Sync] PositionSnapshot 同步失败: $e');
       });
       print('[UI] PositionSnapshot created successfully');
     } catch (e) {
@@ -385,7 +408,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           });
           // (后台执行)
           syncService.saveTransaction(transaction).catchError((e) {
-             print('[BG Sync] 投资记录同步失败: $e');
+              print('[BG Sync] 投资记录同步失败: $e');
           }); 
           print('[UI] Investment transaction created successfully');
         } catch (e) {
@@ -419,7 +442,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           });
           // (后台执行)
           syncService.saveTransaction(updateValueTxn).catchError((e) {
-             print('[BG Sync] 总值记录同步失败: $e');
+              print('[BG Sync] 总值记录同步失败: $e');
           });
           print('[UI] UpdateValue transaction created successfully');
         } catch (e) {
@@ -466,19 +489,18 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
                             icon: Icon(Icons.account_balance_wallet)),
                       ],
                       selected: {_selectedMethod},
-                      // (*** 关键修复 (setState BUG)：修改这个 onSelectionChanged 函数 ***)
+                      // (*** 5. 关键修改：更新此处的 onSelectionChanged 逻辑 ***)
                       onSelectionChanged: (newSelection) {
                         setState(() {
                           _selectedMethod = newSelection.first;
-                          // (*** 自动逻辑：如果切换到价值法，自动将子类型设为 "其他" ***)
+                          // (*** 自动逻辑：根据跟踪方法设置默认的类型和类别 ***)
                           if (_selectedMethod == AssetTrackingMethod.valueBased) {
-                            _selectedSubType = AssetSubType.other;
-                            // (*** 并且将资产大类也设为 "其他" ***)
-                            _selectedAssetClass = AssetClass.other;
+                            _selectedSubType = AssetSubType.wealthManagement;
+                            _selectedAssetClass = AssetClass.fixedIncome;
                           } else {
                             // (切换回份额法时，默认为权益-股票)
-                             _selectedAssetClass = AssetClass.equity;
-                             _selectedSubType = AssetSubType.stock;
+                            _selectedSubType = AssetSubType.stock;
+                            _selectedAssetClass = AssetClass.equity;
                           }
                         });
                       },
@@ -494,12 +516,27 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // --- (这是你要找的 Widget) ---
+                  // --- (*** 6. 关键修改：重构 资产大类 和 资产类型 的顺序和逻辑 ***)
+                  
+                  // (*** 资产类型 (SubType) 现在根据 跟踪方法(Method) 来显示 ***)
+                  if (_selectedMethod == AssetTrackingMethod.shareBased)
+                    ..._buildShareBasedForm() // 份额法表单 (包含自己的 SubType 选择)
+                  else
+                    ..._buildValueBasedForm(), // 价值法表单 (包含自己的 SubType 选择)
+
+                  const SizedBox(height: 16),
+                  
+                  // (*** 资产大类 (AssetClass) 现在是独立的 ***)
                   DropdownButtonFormField<AssetClass>(
                     value: _selectedAssetClass,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: '资产大类',
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
+                      // (*** 根据 _isAssetClassSelectionLocked 禁用/启用 ***)
+                      filled: _isAssetClassSelectionLocked,
+                      fillColor: _isAssetClassSelectionLocked 
+                          ? Colors.grey.withOpacity(0.1) 
+                          : null,
                     ),
                     items: AssetClass.values.map((AssetClass assetClass) {
                       return DropdownMenuItem<AssetClass>(
@@ -508,33 +545,20 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
                       );
                     }).toList(),
                     
-                    // (*** 关键修复 (setState BUG)：修改这个 onChanged 函数 ***)
-                    onChanged: (AssetClass? newValue) {
-                      if (newValue != null) {
-                        setState(() {
-                          _selectedAssetClass = newValue;
-                          
-                          // (*** 自动逻辑：如果选择的不是权益类，自动将子类型设为 "其他" ***)
-                          if (_selectedAssetClass != AssetClass.equity) {
-                            _selectedSubType = AssetSubType.other;
-                          } else {
-                            // (*** 如果切回权益类，默认选中 "股票" ***)
-                             _selectedSubType = AssetSubType.stock;
+                    // (*** 7. 关键修改：onChanged 逻辑已简化 ***)
+                    // (*** 如果锁定了，onChanged 为 null，下拉菜单自动禁用 ***)
+                    onChanged: _isAssetClassSelectionLocked 
+                      ? null 
+                      : (AssetClass? newValue) {
+                          if (newValue != null) {
+                            setState(() {
+                              _selectedAssetClass = newValue;
+                              // (*** 错误重置逻辑已移除 ***)
+                            });
                           }
-                        });
-                      }
-                    },
-                    // (*** 修复结束 ***)
-
+                        },
                   ),
-                  // --- 新增结束 ---
-
-                  const SizedBox(height: 16),
-
-                  if (_selectedMethod == AssetTrackingMethod.shareBased)
-                    ..._buildShareBasedForm()
-                  else
-                    ..._buildValueBasedForm(),
+                  // (*** 修改结束 ***)
 
                   const SizedBox(height: 16),
                   Row(
@@ -592,59 +616,67 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     );
   }
 
-  // (*** 关键修复：这是修改后的 _buildShareBasedForm ***)
+  // (*** 8. 关键修改：这是修改后的 _buildShareBasedForm ***)
   List<Widget> _buildShareBasedForm() {
-
-    // (*** 关键修复：移除了所有在此处设置状态的逻辑 ***)
-    
-    // return 语句现在只包含 Widgets
     return [
-      // (*** 关键修复：仅在 权益类(Equity) 时显示 SubType 选择器 ***)
-      if (_selectedAssetClass == AssetClass.equity) ...[
-        // 只在权益类时显示 SubType
-        const Text('资产类型', style: TextStyle(fontSize: 16, color: Colors.grey)),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8.0,
-          children: [
-            ChoiceChip(
-              label: const Text('股票'),
-              selected: _selectedSubType == AssetSubType.stock,
-              onSelected: (selected) {
-                if (selected)
-                  setState(() => _selectedSubType = AssetSubType.stock);
-              },
-            ),
-            ChoiceChip(
-              label: const Text('场内基金(ETF)'),
-              selected: _selectedSubType == AssetSubType.etf,
-              onSelected: (selected) {
-                if (selected)
-                  setState(() => _selectedSubType = AssetSubType.etf);
-              },
-            ),
-            ChoiceChip(
-              label: const Text('场外基金'),
-              selected: _selectedSubType == AssetSubType.mutualFund,
-              onSelected: (selected) {
-                if (selected)
-                  setState(() => _selectedSubType = AssetSubType.mutualFund);
-              },
-            ),
-            ChoiceChip(
-              label: const Text('其他'),
-              selected: _selectedSubType == AssetSubType.other,
-              onSelected: (selected) {
-                if (selected)
-                  setState(() => _selectedSubType = AssetSubType.other);
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-      ],
+      // (*** 错误逻辑 `if (_selectedAssetClass == AssetClass.equity)` 已移除 ***)
+      
+      // (*** 这个表单现在始终显示 "资产类型" ***)
+      const Text('资产类型', style: TextStyle(fontSize: 16, color: Colors.grey)),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8.0,
+        children: [
+          ChoiceChip(
+            label: Text(assetSubTypeDisplayNames[AssetSubType.stock]!),
+            selected: _selectedSubType == AssetSubType.stock,
+            onSelected: (selected) {
+              if (selected)
+                setState(() { 
+                  _selectedSubType = AssetSubType.stock;
+                  _selectedAssetClass = AssetClass.equity; // (自动选择大类)
+                });
+            },
+          ),
+          ChoiceChip(
+            label: Text(assetSubTypeDisplayNames[AssetSubType.etf]!),
+            selected: _selectedSubType == AssetSubType.etf,
+            onSelected: (selected) {
+              if (selected)
+                setState(() { 
+                  _selectedSubType = AssetSubType.etf;
+                  // (*** 基金类不自动选择大类，允许用户自己选 ***)
+                  // (*** 这就是你的 债券基金/黄金基金 解决方案 ***)
+                });
+            },
+          ),
+          ChoiceChip(
+            label: Text(assetSubTypeDisplayNames[AssetSubType.mutualFund]!),
+            selected: _selectedSubType == AssetSubType.mutualFund,
+            onSelected: (selected) {
+              if (selected)
+                setState(() { 
+                  _selectedSubType = AssetSubType.mutualFund;
+                  // (*** 基金类不自动选择大类，允许用户自己选 ***)
+                });
+            },
+          ),
+          ChoiceChip(
+            label: Text(assetSubTypeDisplayNames[AssetSubType.other]!),
+            selected: _selectedSubType == AssetSubType.other,
+            onSelected: (selected) {
+              if (selected)
+                setState(() { 
+                  _selectedSubType = AssetSubType.other;
+                  _selectedAssetClass = AssetClass.other; // (自动选择大类)
+                });
+            },
+          ),
+        ],
+      ),
+      const SizedBox(height: 16),
 
-      // (*** 这些字段对所有 "份额法" 资产都显示 ***)
+      // (这些字段对所有 "份额法" 资产都显示)
       TextFormField(
         controller: _codeController,
         decoration: const InputDecoration(
@@ -689,12 +721,43 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   }
   // (*** 修复结束 ***)
 
-  // (*** 关键修复：这是修改后的 _buildValueBasedForm ***)
+  // (*** 9. 关键修改：这是修改后的 _buildValueBasedForm ***)
   List<Widget> _buildValueBasedForm() {
-    // (*** 关键修复：移除了所有在此处设置状态的逻辑 ***)
-    // (*** 状态设置已移至 SegmentedButton 的 onSelectionChanged 中 ***)
-    
     return [
+      // (*** 新增 "资产类型" (SubType) 的选择器 ***)
+      const Text('资产类型', style: TextStyle(fontSize: 16, color: Colors.grey)),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8.0,
+        children: [
+          ChoiceChip(
+            label: Text(assetSubTypeDisplayNames[AssetSubType.wealthManagement]!),
+            selected: _selectedSubType == AssetSubType.wealthManagement,
+            onSelected: (selected) {
+              if (selected)
+                setState(() {
+                  _selectedSubType = AssetSubType.wealthManagement;
+                  _selectedAssetClass = AssetClass.fixedIncome; // (自动选择大类)
+                });
+            },
+          ),
+          ChoiceChip(
+            label: Text(assetSubTypeDisplayNames[AssetSubType.other]!),
+            selected: _selectedSubType == AssetSubType.other,
+            onSelected: (selected) {
+              if (selected)
+                setState(() {
+                  _selectedSubType = AssetSubType.other;
+                  _selectedAssetClass = AssetClass.other; // (自动选择大类)
+                });
+            },
+          ),
+        ],
+      ),
+      // (*** 新增结束 ***)
+      
+      const SizedBox(height: 16),
+      
       if (!_isEditing)
         TextFormField(
           controller: _initialInvestmentController,

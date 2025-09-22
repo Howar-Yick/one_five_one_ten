@@ -1,5 +1,5 @@
 // 文件: lib/pages/dashboard_page.dart
-// (这是最终修复了饼图布局溢出问题的完整代码)
+// (*** 关键修复：添加了对 AssetSubType.wealthManagement 的处理 ***)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,7 +12,7 @@ import 'package:one_five_one_ten/utils/currency_formatter.dart';
 // --- (*** 1. 新增：饼图切换的枚举 ***) ---
 enum AllocationChartType {
   assetClass, // 按资产大类
-  subType,    // 按资产类型
+  subType,      // 按资产类型
 }
 // --- (*** 新增结束 ***) ---
 
@@ -297,19 +297,22 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  // (*** 这是你原有的 SubType 饼图，保持不变 ***)
+  // (*** 这是你原有的 SubType 饼图 ***)
   Widget _buildAllocationCard(
       BuildContext context, Map<AssetSubType, double> allocation) {
     
     final double totalValue =
         allocation.values.fold(0.0, (prev, element) => prev + element);
     
+    // (*** 1. 关键修复：为 '理财' 添加颜色 ***)
     final Map<AssetSubType, Color> colorMap = {
       AssetSubType.stock: Colors.blue.shade400,
       AssetSubType.etf: Colors.green.shade400,
       AssetSubType.mutualFund: Colors.orange.shade400,
+      AssetSubType.wealthManagement: Colors.teal.shade400, // (新增的颜色)
       AssetSubType.other: Colors.purple.shade400,
     };
+    // (*** 修复结束 ***)
 
     final List<PieChartSectionData> sections = [];
     final allocationEntries = allocation.entries.toList(); 
@@ -555,8 +558,9 @@ DateTime _getSpotDate(List<FlSpot> spots, int index) {
   return DateTime.fromMillisecondsSinceEpoch(spots[index].x.toInt());
 }
 
-// (这是你原有的 SubType 名称函数，保持不变)
+// (这是你原有的 SubType 名称函数)
 String _formatAllocationName(AssetSubType subType) {
+  // (*** 2. 关键修复：修复 switch 语句 ***)
   switch (subType) {
     case AssetSubType.stock:
       return '股票';
@@ -564,9 +568,14 @@ String _formatAllocationName(AssetSubType subType) {
       return '场内基金 (ETF)';
     case AssetSubType.mutualFund:
       return '场外基金';
+    case AssetSubType.wealthManagement: // (新增的 case)
+      return '理财';
     case AssetSubType.other:
       return '其他资产 (价值法)';
+    default: // (新增 default 以确保安全)
+      return subType.name;
   }
+  // (*** 修复结束 ***)
 }
 
 // --- (*** 8. 新增：用于 AssetClass 名称的函数 ***) ---

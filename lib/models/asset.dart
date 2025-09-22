@@ -28,6 +28,9 @@ enum AssetSubType {
   stock,
   etf,
   mutualFund,
+  // (*** 1. 关键修改：新增 "理财" ***)
+  wealthManagement,
+  // (*** 修改结束 ***)
   other,
 }
 
