@@ -1,37 +1,34 @@
 // 文件: lib/models/asset.dart
-import 'package:isar/isar.dart';
-// 我们不再需要从这里导入 Account, PositionSnapshot 或 Transaction
-// import 'package:one_five_one_ten/models/account.dart';
-// import 'package:one_five_one_ten/models/position_snapshot.dart';
-// import 'package:one_five_one_ten/models/transaction.dart';
+// (*** 已移除 'deposit'，按你的要求简化 ***)
 
+import 'package:isar/isar.dart';
 part 'asset.g.dart';
 
-// --- 新增：资产大类 ---
+// --- 资产大类 (这个枚举保持不变) ---
 enum AssetClass {
-  equity, // 权益类 (如: 股票, 股票型基金)
-  fixedIncome, // 固定收益类 (如: 债券, 债券基金, 银行理财, 存款)
-  cashEquivalent, // 现金及等价物 (如: 货币基金, 活期存款)
-  alternative, // 另类投资 (如: 黄金, REITS)
-  other, // 其他 (默认或未分类)
+  equity, // 权益类
+  fixedIncome, // 固定收益类
+  cashEquivalent, // 现金及等价物
+  alternative, // 另类投资
+  other, // 其他
 }
-// --- 新增结束 ---
 
-
-// Enums 保持不变
+// 跟踪方法 (保持不变)
 enum AssetTrackingMethod {
   valueBased,
   shareBased,
 }
 
+// --- 资产类型 (SubType) ---
 enum AssetSubType {
-  stock,
-  etf,
-  mutualFund,
-  // (*** 1. 关键修改：新增 "理财" ***)
-  wealthManagement,
-  // (*** 修改结束 ***)
-  other,
+  stock, // 股票
+  etf, // 场内基金
+  mutualFund, // 场外基金
+  wealthManagement, // 理财
+  
+  // (*** 'deposit' 已按要求移除 ***)
+
+  other, // 其他
 }
 
 @collection
@@ -52,37 +49,22 @@ class Asset {
   @Enumerated(EnumType.name)
   late AssetSubType subType;
 
-  // --- 新增：资产大类字段 ---
-  @Index() // 增加索引以便快速查询和分组
-  @Enumerated(EnumType.name)
-  AssetClass assetClass = AssetClass.other; // 资产大类，默认为 "other"
-  // --- 新增结束 ---
-
-  // --- 关键变更：替换 IsarLink 为 SupabaseId 引用 ---
   @Index()
-  String? accountSupabaseId; // <-- 保留这个 (这定义了关系)
-  // --- 变更结束 ---
+  @Enumerated(EnumType.name)
+  AssetClass assetClass = AssetClass.other; 
 
-  // --- 新增：Supabase 同步字段 ---
+  @Index()
+  String? accountSupabaseId; 
+
   @Index(type: IndexType.value, unique: true, caseSensitive: false)
-  String? supabaseId; // 此 Asset 自己的 Supabase UUID
+  String? supabaseId; 
 
   late DateTime createdAt;
   DateTime? updatedAt;
-  // --- 新增结束 ---
-
-  // --- 已移除 ---
-  // @Backlink(to: ...)
-  // final snapshots = IsarLinks<PositionSnapshot>(); // <-- 移除
-  // @Backlink(to: ...)
-  // final transactions = IsarLinks<Transaction>(); // <-- 移除
-  // --- 移除结束 ---
-
-  // --- 新增：空的构造函数 (Isar 需要) ---
+  
   Asset();
 
-  // --- Supabase 序列化/反序列化方法 (保持不变) ---
-
+  // (fromSupabaseJson 和 toSupabaseJson 函数保持不变)
   factory Asset.fromSupabaseJson(Map<String, dynamic> json) {
     final asset = Asset();
     asset.supabaseId = json['id'];
@@ -104,14 +86,9 @@ class Asset {
         .byName(json['tracking_method'] ?? 'valueBased');
     asset.subType =
         AssetSubType.values.byName(json['sub_type'] ?? 'other');
-
-    // --- 变更：读取新增字段 ---
-    // 默认为 'other'，以兼容数据库中可能还没有此字段的旧数据
     asset.assetClass =
         AssetClass.values.byName(json['asset_class'] ?? 'other');
-    // --- 变更结束 ---
-
-    asset.accountSupabaseId = json['account_id']; // 关联 Account 的 UUID
+    asset.accountSupabaseId = json['account_id'];
     return asset;
   }
 
@@ -124,14 +101,9 @@ class Asset {
       'currency': currency,
       'tracking_method': trackingMethod.name,
       'sub_type': subType.name,
-      
-      // --- 变更：同步新增字段 ---
       'asset_class': assetClass.name,
-      // --- 变更结束 ---
-
-      'account_id': accountSupabaseId, // 同步关系链接
+      'account_id': accountSupabaseId,
       'created_at': createdAt.toIso8601String(),
     };
   }
-// --- 新增结束 ---
 }

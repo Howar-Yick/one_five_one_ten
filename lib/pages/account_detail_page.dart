@@ -1,5 +1,5 @@
 // 文件: lib/pages/account_detail_page.dart
-// (这是已添加图表切换功能的完整文件)
+// (*** 关键修改：修复了 "排序" 按钮隐形的问题 ***)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,6 +70,31 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
       appBar: AppBar(
         title: Text(asyncAccount.asData?.value?.name ?? '加载中...'),
         actions: [
+          
+          // (*** 1. 关键修改："排序" 按钮移到此处 ***)
+          PopupMenuButton<AssetSortCriteria>(
+            onSelected: (criteria) {
+              setState(() {
+                if (_sortCriteria == criteria) {
+                  _sortAscending = !_sortAscending;
+                } else {
+                  _sortCriteria = criteria;
+                  _sortAscending = false;
+                }
+              });
+            },
+            // (*** 关键修复：移除了 icon 上的 'color' 属性 ***)
+            icon: const Icon(Icons.sort), // (让它使用 AppBar 的默认图标颜色)
+            tooltip: '排序',
+            itemBuilder: (context) => [
+              _buildSortMenuItem(AssetSortCriteria.marketValue, '按持仓金额'),
+              _buildSortMenuItem(AssetSortCriteria.totalProfit, '按收益金额'),
+              _buildSortMenuItem(AssetSortCriteria.profitRate, '按收益率'),
+              _buildSortMenuItem(AssetSortCriteria.annualizedReturn, '按年化收益率'),
+            ],
+          ),
+          // (*** 修改结束 ***)
+
           if (syncState == PriceSyncState.loading)
             const Padding(
               padding: EdgeInsets.all(16.0),
@@ -98,13 +123,13 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
           }
           final account = asyncAccount.asData!.value!;
           return RefreshIndicator(
-               onRefresh: () async {
+              onRefresh: () async {
                 ref.read(priceSyncControllerProvider.notifier).syncAllPrices();
                 ref.invalidate(accountPerformanceProvider(widget.accountId));
                 ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
                 // (*** 修复：刷新时也重新加载图表数据 ***)
                 await ref.read(accountHistoryProvider(account).future);
-               },
+              },
             child: ListView(
               padding: const EdgeInsets.all(16.0),
               children: [
@@ -118,6 +143,26 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) => Center(child: Text('发生错误: $err')),
       ),
+      
+      // (*** 2. 关键修改："添加资产" 按钮移到此处 ***)
+      floatingActionButton: FloatingActionButton.extended(
+        icon: const Icon(Icons.add),
+        label: const Text('添加资产'),
+        tooltip: '添加持仓资产',
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => AddEditAssetPage(accountId: widget.accountId), 
+            ),
+          ).then((_) {
+            ref.invalidate(accountDetailProvider(widget.accountId));
+            ref.invalidate(accountPerformanceProvider(widget.accountId));
+            ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId)); 
+          });
+        },
+      ),
+      // (*** 修改结束 ***)
+
     );
   }
 
@@ -394,50 +439,50 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                     child: const Text('取消')),
                 TextButton(
                   onPressed: () async {
-                       try {
-                        final value = double.tryParse(valueController.text);
-                        if (value == null) { 
-                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('请输入有效的价值')),
-                          );
-                          return;
-                        }
+                            try {
+                              final value = double.tryParse(valueController.text);
+                              if (value == null) { 
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('请输入有效的价值')),
+                                );
+                                return;
+                              }
 
-                        final syncService = ref.read(syncServiceProvider);
+                              final syncService = ref.read(syncServiceProvider);
 
-                        final newTxn = AccountTransaction()
-                          ..amount = value
-                          ..date = selectedDate
-                          ..createdAt = DateTime.now() 
-                          ..type = TransactionType.updateValue
-                          ..accountSupabaseId = account.supabaseId; 
-                        
-                        final isar = DatabaseService().isar;
-                         await isar.writeTxn(() async {
-                          await isar.accountTransactions.put(newTxn);
-                        });
+                              final newTxn = AccountTransaction()
+                                ..amount = value
+                                ..date = selectedDate
+                                ..createdAt = DateTime.now() 
+                                ..type = TransactionType.updateValue
+                                ..accountSupabaseId = account.supabaseId; 
+                              
+                              final isar = DatabaseService().isar;
+                               await isar.writeTxn(() async {
+                                await isar.accountTransactions.put(newTxn);
+                              });
 
-                        await syncService.saveAccountTransaction(newTxn);
-                        
-                        ref.invalidate(accountPerformanceProvider(account.id));
-                        ref.invalidate(dashboardDataProvider);
+                              await syncService.saveAccountTransaction(newTxn);
+                              
+                              ref.invalidate(accountPerformanceProvider(account.id));
+                              ref.invalidate(dashboardDataProvider);
 
-                        if (dialogContext.mounted) {
-                          Navigator.of(dialogContext).pop();
-                            Navigator.of(context).push(
-                             MaterialPageRoute(
-                                builder: (_) => TransactionHistoryPage(accountId: account.id),
-                             ),
-                           );
-                        }
-                      } catch (e) {
-                        print('更新总值失败: $e');
-                        if (dialogContext.mounted) {
-                          ScaffoldMessenger.of(dialogContext).showSnackBar(
-                            SnackBar(content: Text('操作失败: $e')),
-                          );
-                        }
-                      }
+                              if (dialogContext.mounted) {
+                                Navigator.of(dialogContext).pop();
+                                  Navigator.of(context).push(
+                                   MaterialPageRoute(
+                                      builder: (_) => TransactionHistoryPage(accountId: account.id),
+                                   ),
+                                  );
+                              }
+                            } catch (e) {
+                              print('更新总值失败: $e');
+                              if (dialogContext.mounted) {
+                                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                  SnackBar(content: Text('操作失败: $e')),
+                                );
+                              }
+                            }
                   },
                   child: const Text('保存'),
                 ),
@@ -526,52 +571,12 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
         
         const SizedBox(height: 24),
 
-        // (排序功能 UI)
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('持仓资产', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            Row(
-              children: [
-                PopupMenuButton<AssetSortCriteria>(
-                  onSelected: (criteria) {
-                    setState(() {
-                      if (_sortCriteria == criteria) {
-                        _sortAscending = !_sortAscending;
-                      } else {
-                        _sortCriteria = criteria;
-                        _sortAscending = false;
-                      }
-                    });
-                  },
-                  icon: Icon(Icons.sort, color: Theme.of(context).colorScheme.primary),
-                  tooltip: '排序',
-                  itemBuilder: (context) => [
-                    _buildSortMenuItem(AssetSortCriteria.marketValue, '按持仓金额'),
-                    _buildSortMenuItem(AssetSortCriteria.totalProfit, '按收益金额'),
-                    _buildSortMenuItem(AssetSortCriteria.profitRate, '按收益率'),
-                    _buildSortMenuItem(AssetSortCriteria.annualizedReturn, '按年化收益率'),
-                  ],
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  tooltip: '添加持仓资产',
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => AddEditAssetPage(accountId: accountId), 
-                      ),
-                    ).then((_) {
-                      ref.invalidate(accountDetailProvider(accountId));
-                      ref.invalidate(accountPerformanceProvider(accountId));
-                      ref.invalidate(trackedAssetsWithPerformanceProvider(accountId)); 
-                    });
-                  },
-                ),
-              ],
-            )
-          ],
+        // (*** 3. 关键修改："排序" 和 "添加" 按钮已从此 Row 中移除 ***)
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text('持仓资产', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         ),
+        // (*** 修改结束 ***)
         
         const Divider(height: 20),
         asyncAssets.when(
@@ -756,9 +761,9 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                           .assetSupabaseIdEqualTo(asset.supabaseId)
                           .findAll();
           final snaps = await isar.positionSnapshots.where()
-                                .filter()
-                                .assetSupabaseIdEqualTo(asset.supabaseId)
-                                .findAll();
+                                  .filter()
+                                  .assetSupabaseIdEqualTo(asset.supabaseId)
+                                  .findAll();
           
           for (final tx in txs) { await syncService.deleteTransaction(tx); }
           for (final snap in snaps) { await syncService.deletePositionSnapshot(snap); }
@@ -852,7 +857,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                   final int index = touchedSpot.x.round();
                   
                   if (index < 0 || index >= spots.length) {
-                       return null;
+                          return null;
                   }
 
                   final FlSpot originalSpot = spots[index];
