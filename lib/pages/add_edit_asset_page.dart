@@ -1,5 +1,5 @@
 // 文件: lib/pages/add_edit_asset_page.dart
-// (*** 已移除 '存款' 选项，按你的要求简化 ***)
+// (*** 关键修复：修复了创建和编辑资产时的状态管理和保存逻辑 ***)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,13 +9,11 @@ import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
-import 'package:one_five_one_ten/pages/account_detail_page.dart';
-import 'package:one_five_one_ten/pages/share_asset_detail_page.dart';
-import 'package:one_five_one_ten/pages/value_asset_detail_page.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 import 'package:isar/isar.dart';
 
+// (常量定义保持不变)
 const Map<AssetClass, String> assetClassDisplayNames = {
   AssetClass.equity: '权益类',
   AssetClass.fixedIncome: '固定收益类',
@@ -24,16 +22,13 @@ const Map<AssetClass, String> assetClassDisplayNames = {
   AssetClass.other: '其他',
 };
 
-// (*** 1. 关键修改：移除 '存款' ***)
 const Map<AssetSubType, String> assetSubTypeDisplayNames = {
   AssetSubType.stock: '股票',
   AssetSubType.etf: '场内基金(ETF)',
   AssetSubType.mutualFund: '场外基金',
   AssetSubType.wealthManagement: '理财',
-  // ( 'deposit' 已移除 )
   AssetSubType.other: '其他',
 };
-// (*** 修改结束 ***)
 
 
 class AddEditAssetPage extends ConsumerStatefulWidget {
@@ -49,7 +44,7 @@ class AddEditAssetPage extends ConsumerStatefulWidget {
 class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   AssetTrackingMethod _selectedMethod = AssetTrackingMethod.shareBased;
   AssetSubType _selectedSubType = AssetSubType.stock;
-  AssetClass _selectedAssetClass = AssetClass.equity; // 默认为权益
+  AssetClass _selectedAssetClass = AssetClass.equity;
 
   final _formKey = GlobalKey<FormState>();
 
@@ -68,25 +63,18 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
 
   bool get _isEditing => widget.assetId != null;
   
-  // ( "资产大类" 锁定逻辑保持不变 )
   bool get _isAssetClassSelectionLocked {
     if (_selectedMethod == AssetTrackingMethod.valueBased) {
-      // 价值法：理财、其他 都不锁定，允许用户自选
       return false; 
     }
     
-    // 份额法：
     switch (_selectedSubType) {
       case AssetSubType.stock:
-        return true; // 股票 100% 是权益，锁定！
+        return true; 
       
-      // 基金、其他 都不锁定，允许用户选择
       case AssetSubType.etf:
       case AssetSubType.mutualFund:
       case AssetSubType.other:
-      // (*** 2. 关键修改：移除 'deposit' case ***)
-      // case AssetSubType.deposit:
-      case AssetSubType.wealthManagement: // (理财也可以是份额法，例如某些券商产品)
       default:
         return false; 
     }
@@ -115,6 +103,8 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
       }
     } else {
       _selectedCurrency = _parentAccount?.currency ?? 'CNY';
+      // (创建新资产时，根据默认方法设置默认类型)
+      _updateDefaultsForMethod(_selectedMethod);
     }
 
     if (!['CNY', 'USD', 'HKD'].contains(_selectedCurrency)) {
@@ -139,8 +129,18 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     super.dispose();
   }
 
-  // ( _saveAsset, _syncNewAssetInBackground, _waitForAssetSync, _waitForTransactionSync, _createShareBasedRecord, _createValueBasedRecords ... )
-  // ( ... 这些函数都保持不变，为简洁起见，省略 ...)
+  // (*** 1. 关键修复：提取方法切换的逻辑 ***)
+  void _updateDefaultsForMethod(AssetTrackingMethod method) {
+    if (method == AssetTrackingMethod.valueBased) {
+      _selectedSubType = AssetSubType.wealthManagement; 
+      _selectedAssetClass = AssetClass.fixedIncome; 
+    } else {
+      _selectedSubType = AssetSubType.stock;
+      _selectedAssetClass = AssetClass.equity;
+    }
+  }
+
+  // (*** 2. 关键修复：修复 _saveAsset 函数 ***)
   Future<void> _saveAsset() async {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
@@ -156,6 +156,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     final initialInvestmentText = _initialInvestmentController.text.trim();
     final latestPriceText = _latestPriceController.text.trim();
     
+    // (从状态中获取当前值)
     final currentSelectedDate = _selectedDate;
     final currentSelectedMethod = _selectedMethod;
     final currentSelectedSubType = _selectedSubType;
@@ -176,10 +177,14 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         final assetToUpdate = _editingAsset!;
         assetToUpdate.name = name;
         assetToUpdate.code = code;
-        assetToUpdate.subType = currentSelectedSubType;
         assetToUpdate.currency = currentSelectedCurrency;
         assetToUpdate.assetClass = currentSelectedAssetClass;
         
+        // (*** 2.1 关键修复：同时保存跟踪方法和子类型 ***)
+        assetToUpdate.trackingMethod = currentSelectedMethod; 
+        assetToUpdate.subType = currentSelectedSubType;
+        // (*** 修复结束 ***)
+
         await isar.writeTxn(() async {
           await isar.assets.put(assetToUpdate);
         });
@@ -188,18 +193,18 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           print('[BG Sync] 资产更新同步失败: $e');
         });
         
+        // (使所有相关详情页失效)
         ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
-        if(assetToUpdate.trackingMethod == AssetTrackingMethod.shareBased) {
-          ref.invalidate(shareAssetPerformanceProvider(assetToUpdate.id));
-        } else {
-          ref.invalidate(valueAssetDetailProvider(assetToUpdate.id));
-        }
+        ref.invalidate(shareAssetPerformanceProvider(assetToUpdate.id));
+        ref.invalidate(valueAssetDetailProvider(assetToUpdate.id));
+
       } else {
+        // (创建新资产的逻辑)
         final newAsset = Asset()
           ..name = name
           ..code = code
-          ..trackingMethod = currentSelectedMethod
-          ..subType = currentSelectedSubType
+          ..trackingMethod = currentSelectedMethod // (来自 state)
+          ..subType = currentSelectedSubType       // (来自 state)
           ..currency = currentSelectedCurrency
           ..createdAt = DateTime.now() 
           ..accountSupabaseId = parentAccount.supabaseId
@@ -237,6 +242,10 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
       }
     }
   }
+  // (*** 修复结束 ***)
+
+  // ( ... _syncNewAssetInBackground, _waitForAssetSync, _waitForTransactionSync ... )
+  // ( ... _createShareBasedRecord, _createValueBasedRecords 均保持不变 ...)
   Future<void> _syncNewAssetInBackground(
     Asset newAsset, 
     SupabaseSyncService syncService, 
@@ -424,33 +433,31 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
               child: ListView(
                 padding: const EdgeInsets.all(16.0),
                 children: [
-                  if (!_isEditing)
-                    SegmentedButton<AssetTrackingMethod>(
-                      segments: const [
-                        ButtonSegment(
-                            value: AssetTrackingMethod.shareBased,
-                            label: Text('份额法'),
-                            icon: Icon(Icons.pie_chart)),
-                        ButtonSegment(
-                            value: AssetTrackingMethod.valueBased,
-                            label: Text('价值法'),
-                            icon: Icon(Icons.account_balance_wallet)),
-                      ],
-                      selected: {_selectedMethod},
-                      onSelectionChanged: (newSelection) {
-                        setState(() {
-                          _selectedMethod = newSelection.first;
-                          if (_selectedMethod == AssetTrackingMethod.valueBased) {
-                            _selectedSubType = AssetSubType.wealthManagement; 
-                            _selectedAssetClass = AssetClass.fixedIncome; 
-                          } else {
-                            _selectedSubType = AssetSubType.stock;
-                            _selectedAssetClass = AssetClass.equity;
-                          }
-                        });
-                      },
-                    ),
+                  // (*** 3. 关键修复：移除 'if (!_isEditing)' ***)
+                  // (现在编辑时也可以切换跟踪方法)
+                  SegmentedButton<AssetTrackingMethod>(
+                    segments: const [
+                      ButtonSegment(
+                          value: AssetTrackingMethod.shareBased,
+                          label: Text('份额法'),
+                          icon: Icon(Icons.pie_chart)),
+                      ButtonSegment(
+                          value: AssetTrackingMethod.valueBased,
+                          label: Text('价值法'),
+                          icon: Icon(Icons.account_balance_wallet)),
+                    ],
+                    selected: {_selectedMethod},
+                    onSelectionChanged: (newSelection) {
+                      setState(() {
+                        _selectedMethod = newSelection.first;
+                        // (*** 4. 关键修复：切换时重置 subType 和 class ***)
+                        _updateDefaultsForMethod(_selectedMethod);
+                        // (*** 修复结束 ***)
+                      });
+                    },
+                  ),
                   const SizedBox(height: 24),
+                  // (*** 修复结束 ***)
                   
                   TextFormField(
                     controller: _nameController,
@@ -552,7 +559,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     );
   }
 
-  // ( _buildShareBasedForm 保持不变 )
+  // (*** 5. 关键修复：从份额法表单中移除理财 ***)
   List<Widget> _buildShareBasedForm() {
     return [
       const Text('资产类型', style: TextStyle(fontSize: 16, color: Colors.grey)),
@@ -564,46 +571,51 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
             label: Text(assetSubTypeDisplayNames[AssetSubType.stock]!),
             selected: _selectedSubType == AssetSubType.stock,
             onSelected: (selected) {
-              if (selected)
+              // (*** 6. 关键修复：使用 radio-like 逻辑 ***)
+              if (selected) { 
                 setState(() { 
                   _selectedSubType = AssetSubType.stock;
-                  _selectedAssetClass = AssetClass.equity; // (自动选择并锁定)
+                  _selectedAssetClass = AssetClass.equity; 
                 });
+              }
             },
           ),
           ChoiceChip(
             label: Text(assetSubTypeDisplayNames[AssetSubType.etf]!),
             selected: _selectedSubType == AssetSubType.etf,
             onSelected: (selected) {
-              if (selected)
+              if (selected) {
                 setState(() { 
                   _selectedSubType = AssetSubType.etf;
-                  // (基金类不自动选择大类)
+                  // (ETF/基金 不自动选择大类)
                 });
+              }
             },
           ),
           ChoiceChip(
             label: Text(assetSubTypeDisplayNames[AssetSubType.mutualFund]!),
             selected: _selectedSubType == AssetSubType.mutualFund,
             onSelected: (selected) {
-              if (selected)
+              if (selected) {
                 setState(() { 
                   _selectedSubType = AssetSubType.mutualFund;
-                  // (基金类不自动选择大类)
                 });
+              }
             },
           ),
           ChoiceChip(
             label: Text(assetSubTypeDisplayNames[AssetSubType.other]!),
             selected: _selectedSubType == AssetSubType.other,
             onSelected: (selected) {
-              if (selected)
+              if (selected) {
                 setState(() { 
                   _selectedSubType = AssetSubType.other;
-                  _selectedAssetClass = AssetClass.other; // (自动选择)
+                  _selectedAssetClass = AssetClass.other; 
                 });
+              }
             },
           ),
+          // (*** 理财 ChoiceChip 已从这里移除 ***)
         ],
       ),
       const SizedBox(height: 16),
@@ -651,7 +663,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     ];
   }
 
-  // (*** 3. 关键修改：这是修改后的 _buildValueBasedForm ***)
+  // (*** 7. 关键修复：修复价值法表单的 onSelected 逻辑 ***)
   List<Widget> _buildValueBasedForm() {
     return [
       const Text('资产类型', style: TextStyle(fontSize: 16, color: Colors.grey)),
@@ -663,28 +675,28 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
             label: Text(assetSubTypeDisplayNames[AssetSubType.wealthManagement]!),
             selected: _selectedSubType == AssetSubType.wealthManagement,
             onSelected: (selected) {
-              if (selected)
+              if (selected) { 
                 setState(() {
                   _selectedSubType = AssetSubType.wealthManagement;
-                  _selectedAssetClass = AssetClass.fixedIncome; // (自动推荐 "固收")
+                  _selectedAssetClass = AssetClass.fixedIncome; 
                 });
+              }
             },
           ),
-          // (*** '存款' 的 ChoiceChip 已按要求移除 ***)
           ChoiceChip(
             label: Text(assetSubTypeDisplayNames[AssetSubType.other]!),
             selected: _selectedSubType == AssetSubType.other,
             onSelected: (selected) {
-              if (selected)
+              if (selected) { 
                 setState(() {
                   _selectedSubType = AssetSubType.other;
-                  _selectedAssetClass = AssetClass.other; // (自动推荐 "其他")
+                  _selectedAssetClass = AssetClass.other; 
                 });
+              }
             },
           ),
         ],
       ),
-      // (*** 修改结束 ***)
       
       const SizedBox(height: 16),
       
@@ -692,7 +704,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         TextFormField(
           controller: _initialInvestmentController,
           decoration: const InputDecoration(
-              labelText: '初始投入金额 / 当前价值', border: OutlineInputBorder()), // (更新了 Label)
+              labelText: '初始投入金额 / 当前价值', border: OutlineInputBorder()), 
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           validator: (value) => (value == null ||
                   value.isEmpty ||

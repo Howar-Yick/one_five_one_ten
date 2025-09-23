@@ -1,22 +1,22 @@
 // 文件: lib/pages/dashboard_page.dart
-// (*** 关键修复：添加了对 AssetSubType.wealthManagement 的处理 ***)
+// (*** 关键修复：添加了对 AssetSubType.wealthManagement 的处理，并提供兜底颜色/名称映射 ***)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:intl/intl.dart'; 
+import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
 
-// --- (*** 1. 新增：饼图切换的枚举 ***) ---
+/// --- (*** 1. 新增：饼图切换的枚举 ***) ---
 enum AllocationChartType {
   assetClass, // 按资产大类
-  subType,      // 按资产类型
+  subType, // 按资产类型
 }
-// --- (*** 新增结束 ***) ---
+/// --- (*** 新增结束 ***) ---
 
-// --- (*** 2. 新增：AssetClass 的中文名称和颜色 ***) ---
+/// --- (*** 2. AssetClass 的中文名称和颜色 ***) ---
 const Map<AssetClass, String> assetClassDisplayNames = {
   AssetClass.equity: '权益类',
   AssetClass.fixedIncome: '固定收益类',
@@ -24,17 +24,16 @@ const Map<AssetClass, String> assetClassDisplayNames = {
   AssetClass.alternative: '另类投资',
   AssetClass.other: '其他',
 };
+
 const Map<AssetClass, Color> assetClassColorMap = {
-  AssetClass.equity: Colors.blue,
-  AssetClass.fixedIncome: Colors.green,
-  AssetClass.cashEquivalent: Colors.orange,
-  AssetClass.alternative: Colors.purple,
-  AssetClass.other: Colors.grey,
+  AssetClass.equity: Color(0xFF4DA3FF),
+  AssetClass.fixedIncome: Color(0xFF3CB371),
+  AssetClass.cashEquivalent: Color(0xFFB39DDB),
+  AssetClass.alternative: Color(0xFFFFC107),
+  AssetClass.other: Color(0xFF90A4AE),
 };
-// --- (*** 新增结束 ***) ---
+/// --- (*** 新增结束 ***) ---
 
-
-// (保持 ConsumerStatefulWidget 不变，悬停状态依然需要它)
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
 
@@ -43,12 +42,11 @@ class DashboardPage extends ConsumerStatefulWidget {
 }
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
-  
-  // (保持状态变量不变)
   int _touchedPieIndex = -1;
-  // --- (*** 3. 新增：切换按钮的状态 ***) ---
+
+  /// --- (*** 3. 新增：切换按钮的状态 ***) ---
   AllocationChartType _selectedChartType = AllocationChartType.assetClass; // 默认显示“按大类”
-  // --- (*** 新增结束 ***) ---
+  /// --- (*** 新增结束 ***) ---
 
   @override
   Widget build(BuildContext context) {
@@ -60,32 +58,42 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       ),
       body: dashboardDataAsync.when(
         data: (dashboardData) {
-          final historySpots = (dashboardData['historySpots'] ?? []) as List<FlSpot>;
-          
-          // --- (*** 4. 修改：获取两种 allocation 数据 ***) ---
-          final allocationSubType = (dashboardData['allocationSubType'] ?? {}) as Map<AssetSubType, double>;
-          final allocationClass = (dashboardData['allocationClass'] ?? {}) as Map<AssetClass, double>;
-          // --- (*** 修改结束 ***) ---
+          final historySpots =
+              (dashboardData['historySpots'] ?? []) as List<FlSpot>;
+
+          /// --- (*** 4. 修改：获取两种 allocation 数据 ***) ---
+          final allocationSubType =
+              (dashboardData['allocationSubType'] ?? {}) as Map<AssetSubType, double>;
+          final allocationClass =
+              (dashboardData['allocationClass'] ?? {}) as Map<AssetClass, double>;
+          /// --- (*** 修改结束 ***) ---
 
           return RefreshIndicator(
             onRefresh: () async {
-              ref.invalidate(dashboardDataProvider); 
+              ref.invalidate(dashboardDataProvider);
             },
             child: ListView(
               padding: const EdgeInsets.all(16.0),
               children: [
-                _buildHeaderCard(context, dashboardData), 
-                
-                if (historySpots.length >= 2)
-                  _buildChartCard(context, historySpots),
-                
-                // --- (*** 5. 新增：切换按钮 ***) ---
+                _buildHeaderCard(context, dashboardData),
+
+                if (historySpots.length >= 2) _buildChartCard(context, historySpots),
+
+                /// --- (*** 5. 新增：切换按钮 ***) ---
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: SegmentedButton<AllocationChartType>(
                     segments: const [
-                      ButtonSegment(value: AllocationChartType.assetClass, label: Text('按资产大类'), icon: Icon(Icons.class_)),
-                      ButtonSegment(value: AllocationChartType.subType, label: Text('按资产类型'), icon: Icon(Icons.category)),
+                      ButtonSegment(
+                        value: AllocationChartType.assetClass,
+                        label: Text('按资产大类'),
+                        icon: Icon(Icons.class_),
+                      ),
+                      ButtonSegment(
+                        value: AllocationChartType.subType,
+                        label: Text('按资产类型'),
+                        icon: Icon(Icons.category),
+                      ),
                     ],
                     selected: {_selectedChartType},
                     onSelectionChanged: (newSelection) {
@@ -96,14 +104,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                     },
                   ),
                 ),
-                // --- (*** 新增结束 ***) ---
-                  
-                // --- (*** 6. 修改：条件化显示饼图 ***) ---
-                if (allocationClass.isNotEmpty && _selectedChartType == AllocationChartType.assetClass)
-                  _buildAssetClassAllocationCard(context, allocationClass) // <-- 调用新函数
-                else if (allocationSubType.isNotEmpty && _selectedChartType == AllocationChartType.subType)
-                  _buildAllocationCard(context, allocationSubType), // <-- 调用旧函数
-                // --- (*** 修改结束 ***) ---
+                /// --- (*** 新增结束 ***) ---
+
+                /// --- (*** 6. 修改：条件化显示饼图 ***) ---
+                if (_selectedChartType == AllocationChartType.assetClass)
+                  _buildAssetClassAllocationCard(context, allocationClass)
+                else
+                  _buildAllocationCard(context, allocationSubType),
+                /// --- (*** 修改结束 ***) ---
               ],
             ),
           );
@@ -112,16 +120,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         error: (err, stack) => Center(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Text('加载仪表盘失败: $err\n$stack'), // (添加 stack 帮助调试)
+            child: Text('加载仪表盘失败: $err\n$stack'),
           ),
         ),
       ),
     );
   }
 
-  // (Header Card 保持不变)
+  // ===================== 顶部总览卡片 =====================
   Widget _buildHeaderCard(BuildContext context, Map<String, dynamic> performance) {
-    // ... (此函数的所有代码保持不变，为简洁起见省略) ...
     final currencyFormat = NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
     final percentFormat =
         NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
@@ -129,13 +136,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final double totalValue = (performance['totalValue'] ?? 0.0) as double;
     final double totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final double profitRate = (performance['profitRate'] ?? 0.0) as double;
-    final double annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
+    final double annualizedReturn =
+        (performance['annualizedReturn'] ?? 0.0) as double;
     final double netInvestment = (performance['netInvestment'] ?? 0.0) as double;
 
     Color profitColor =
         totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade400;
     if (totalProfit == 0) {
-      profitColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
+      profitColor =
+          Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
     }
 
     return Card(
@@ -180,12 +189,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-
-  // (Chart Card 保持不变)
+  // ===================== 折线图 =====================
   Widget _buildChartCard(BuildContext context, List<FlSpot> spots) {
-    // ... (此函数的所有代码保持不变，为简洁起见省略) ...
     final colorScheme = Theme.of(context).colorScheme;
-    final currencyFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: '¥');
+    final currencyFormat =
+        NumberFormat.compactCurrency(locale: 'zh_CN', symbol: '¥');
 
     final List<FlSpot> indexedSpots = [];
     for (int i = 0; i < spots.length; i++) {
@@ -232,14 +240,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         showTitles: true,
                         reservedSize: 50,
                         getTitlesWidget: (value, meta) => Text(
-                            currencyFormat.format(value),
-                            style: const TextStyle(fontSize: 10)),
+                          currencyFormat.format(value),
+                          style: const TextStyle(fontSize: 10),
+                        ),
                       ),
                     ),
-                    rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
+                    rightTitles:
+                        const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles:
+                        const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
@@ -281,8 +290,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                           return LineTooltipItem(
                             '${DateFormat('yyyy-MM-dd').format(date)}\n${formatCurrency(value, 'CNY')}',
                             const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold),
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                           );
                         }).whereType<LineTooltipItem>().toList();
                       },
@@ -297,165 +307,77 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  // (*** 这是你原有的 SubType 饼图 ***)
+  // ===================== 饼图（按子类型） =====================
   Widget _buildAllocationCard(
-      BuildContext context, Map<AssetSubType, double> allocation) {
-    
-    final double totalValue =
-        allocation.values.fold(0.0, (prev, element) => prev + element);
-    
-    // (*** 1. 关键修复：为 '理财' 添加颜色 ***)
-    final Map<AssetSubType, Color> colorMap = {
-      AssetSubType.stock: Colors.blue.shade400,
-      AssetSubType.etf: Colors.green.shade400,
-      AssetSubType.mutualFund: Colors.orange.shade400,
-      AssetSubType.wealthManagement: Colors.teal.shade400, // (新增的颜色)
-      AssetSubType.other: Colors.purple.shade400,
-    };
-    // (*** 修复结束 ***)
-
-    final List<PieChartSectionData> sections = [];
-    final allocationEntries = allocation.entries.toList(); 
-
-    for (int i = 0; i < allocationEntries.length; i++) {
-      final entry = allocationEntries[i];
-      final subType = entry.key;
-      final value = entry.value;
-
-      final bool isTouched = (i == _touchedPieIndex); // 检查是否被悬停
-      final double radius = isTouched ? 90.0 : 80.0; // 悬停时半径更大
-      final double fontSize = isTouched ? 16.0 : 14.0; // 悬停时字体更大
-      final percentage = (totalValue == 0) ? 0.0 : (value / totalValue) * 100; // (修复除零)
-
-      final String title;
-      if (isTouched) {
-        final String name = _formatAllocationName(subType);
-        title = '$name\n${percentage.toStringAsFixed(1)}%';
-      } else {
-        title = '${percentage.toStringAsFixed(1)}%';
-      }
-
-      sections.add(
-        PieChartSectionData(
-          color: colorMap[subType] ?? Colors.grey,
-          value: value,
-          title: title, 
-          radius: radius, 
-          titleStyle: TextStyle( 
-              fontSize: fontSize, 
-              fontWeight: FontWeight.bold, 
-              color: Colors.white),
+    BuildContext context,
+    Map<AssetSubType, double> allocation,
+  ) {
+    if (allocation.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Text('资产配置 (按类型)',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              SizedBox(height: 12),
+              Text('暂无可展示的数据'),
+            ],
+          ),
         ),
       );
     }
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('资产配置 (按类型)', // (我给标题加了后缀)
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 24), 
-
-            SizedBox(
-              height: 240, 
-              width: double.infinity, 
-              child: PieChart(
-                PieChartData(
-                  pieTouchData: PieTouchData( 
-                    touchCallback: (FlTouchEvent event, pieTouchResponse) {
-                      setState(() {
-                        if (!event.isInterestedForInteractions ||
-                            pieTouchResponse == null ||
-                            pieTouchResponse.touchedSection == null) {
-                          _touchedPieIndex = -1; // 鼠标移出
-                          return;
-                        }
-                        _touchedPieIndex = pieTouchResponse
-                            .touchedSection!.touchedSectionIndex;
-                      });
-                    },
-                  ),
-                  sections: sections, 
-                  centerSpaceRadius: 60, 
-                  sectionsSpace: 2,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 24), // 图表和图例之间的间距
-
-            Wrap(
-              alignment: WrapAlignment.center, 
-              spacing: 16.0, 
-              runSpacing: 8.0, 
-              children: allocation.entries.map((entry) {
-                return Row(
-                  mainAxisSize: MainAxisSize.min, 
-                  children: [
-                    Container(
-                      width: 16,
-                      height: 16,
-                      color: colorMap[entry.key] ?? Colors.grey,
-                    ),
-                    const SizedBox(width: 8),
-                    Text( 
-                      _formatAllocationName(entry.key),
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ],
-                );
-              }).toList(),
-            ), // <-- Wrap 结束
-          ],
-        ),
-      ),
-    );
-  }
-
-  // --- (*** 7. 新增：用于 AssetClass 饼图的函数 ***) ---
-  Widget _buildAssetClassAllocationCard(
-      BuildContext context, Map<AssetClass, double> allocation) {
-    
     final double totalValue =
-        allocation.values.fold(0.0, (prev, element) => prev + element);
-    
-    // (使用我们文件顶部定义的 AssetClass 颜色)
-    final Map<AssetClass, Color> colorMap = assetClassColorMap;
+        allocation.values.fold(0.0, (prev, e) => prev + (e.isFinite ? e : 0.0));
+
+    // 1) 完整颜色映射（含理财）——与你之前模型一致（etf/mutualFund）
+    final Map<AssetSubType, Color> fixedColors = {
+      AssetSubType.stock: const Color(0xFF4DA3FF),
+      AssetSubType.etf: const Color(0xFF3CB371),
+      AssetSubType.mutualFund: const Color(0xFFFFA726),
+      AssetSubType.wealthManagement: const Color(0xFF7E57C2), // ★ 关键：理财
+      AssetSubType.other: const Color(0xFF90A4AE),
+      // 若你的模型还有 crypto/cash/domesticEtf/overseasFund，请在下面名称函数中兜底
+    };
+
+    // 2) 兜底配色：任何未知枚举都有稳定色
+    Color fallbackColor(AssetSubType t) {
+      final h = t.hashCode & 0xFFFFFF;
+      // 简单 HSL → RGB（固定亮度/饱和度）
+      final hue = (h % 360).toDouble();
+      final hsl = HSLColor.fromAHSL(1, hue, 0.55, 0.55);
+      return hsl.toColor();
+    }
+
+    final entries = allocation.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
 
     final List<PieChartSectionData> sections = [];
-    final allocationEntries = allocation.entries.toList(); 
-
-    for (int i = 0; i < allocationEntries.length; i++) {
-      final entry = allocationEntries[i];
-      final assetClass = entry.key; // (变量重命名)
-      final value = entry.value;
+    for (int i = 0; i < entries.length; i++) {
+      final subType = entries[i].key;
+      final value = entries[i].value.isFinite ? entries[i].value : 0.0;
 
       final bool isTouched = (i == _touchedPieIndex);
       final double radius = isTouched ? 90.0 : 80.0;
       final double fontSize = isTouched ? 16.0 : 14.0;
-      final percentage = (totalValue == 0) ? 0.0 : (value / totalValue) * 100; // (修复除零)
+      final percent = totalValue == 0 ? 0.0 : (value / totalValue) * 100.0;
 
-      final String title;
-      if (isTouched) {
-        final String name = _formatAssetClassName(assetClass); // (调用新函数)
-        title = '$name\n${percentage.toStringAsFixed(1)}%';
-      } else {
-        title = '${percentage.toStringAsFixed(1)}%';
-      }
+      final name = _formatAllocationName(subType);
+      final title = isTouched ? '$name\n${percent.toStringAsFixed(1)}%' : '${percent.toStringAsFixed(1)}%';
 
       sections.add(
         PieChartSectionData(
-          color: colorMap[assetClass] ?? Colors.grey, // (使用新 colorMap)
+          color: fixedColors[subType] ?? fallbackColor(subType),
           value: value,
-          title: title, 
-          radius: radius, 
-          titleStyle: TextStyle( 
-              fontSize: fontSize, 
-              fontWeight: FontWeight.bold, 
-              color: Colors.white),
+          title: title,
+          radius: radius,
+          titleStyle: TextStyle(
+            fontSize: fontSize,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
       );
     }
@@ -466,22 +388,21 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('资产配置 (按大类)', // (新标题)
+            const Text('资产配置 (按类型)',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 24), 
-
+            const SizedBox(height: 24),
             SizedBox(
-              height: 240, 
-              width: double.infinity, 
+              height: 240,
+              width: double.infinity,
               child: PieChart(
                 PieChartData(
-                  pieTouchData: PieTouchData( 
-                    touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                  pieTouchData: PieTouchData(
+                    touchCallback: (event, pieTouchResponse) {
                       setState(() {
                         if (!event.isInterestedForInteractions ||
                             pieTouchResponse == null ||
                             pieTouchResponse.touchedSection == null) {
-                          _touchedPieIndex = -1; 
+                          _touchedPieIndex = -1;
                           return;
                         }
                         _touchedPieIndex = pieTouchResponse
@@ -489,45 +410,167 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       });
                     },
                   ),
-                  sections: sections, 
-                  centerSpaceRadius: 60, 
+                  sections: sections,
+                  centerSpaceRadius: 60,
                   sectionsSpace: 2,
                 ),
               ),
             ),
+            const SizedBox(height: 24),
 
-            const SizedBox(height: 24), 
-
+            // 图例（含金额，便于核对）
             Wrap(
-              alignment: WrapAlignment.center, 
-              spacing: 16.0, 
-              runSpacing: 8.0, 
-              children: allocation.entries.map((entry) {
+              alignment: WrapAlignment.center,
+              spacing: 16.0,
+              runSpacing: 8.0,
+              children: entries.map((e) {
+                final color = fixedColors[e.key] ?? fallbackColor(e.key);
+                final name = _formatAllocationName(e.key);
                 return Row(
-                  mainAxisSize: MainAxisSize.min, 
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      width: 16,
-                      height: 16,
-                      color: colorMap[entry.key] ?? Colors.grey,
-                    ),
+                    Container(width: 16, height: 16, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
                     const SizedBox(width: 8),
-                    Text( 
-                      _formatAssetClassName(entry.key), // (调用新函数)
-                      style: const TextStyle(fontSize: 14),
+                    Text(
+                      '$name  ${formatCurrency(e.value, "CNY")}',
+                      style: const TextStyle(fontSize: 12),
                     ),
                   ],
                 );
               }).toList(),
-            ), 
+            ),
           ],
         ),
       ),
     );
   }
-  // --- (*** 新增结束 ***) ---
 
-  // (Metric Row 辅助函数保持不变)
+  // ===================== 饼图（按资产大类） =====================
+  Widget _buildAssetClassAllocationCard(
+    BuildContext context,
+    Map<AssetClass, double> allocation,
+  ) {
+    if (allocation.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Text('资产配置 (按大类)',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              SizedBox(height: 12),
+              Text('暂无可展示的数据'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final double totalValue =
+        allocation.values.fold(0.0, (prev, e) => prev + (e.isFinite ? e : 0.0));
+
+    Color fallbackColor(AssetClass c) {
+      final h = c.hashCode & 0xFFFFFF;
+      final hue = (h % 360).toDouble();
+      final hsl = HSLColor.fromAHSL(1, hue, 0.55, 0.55);
+      return hsl.toColor();
+    }
+
+    final entries = allocation.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final List<PieChartSectionData> sections = [];
+    for (int i = 0; i < entries.length; i++) {
+      final klass = entries[i].key;
+      final value = entries[i].value.isFinite ? entries[i].value : 0.0;
+
+      final bool isTouched = (i == _touchedPieIndex);
+      final double radius = isTouched ? 90.0 : 80.0;
+      final double fontSize = isTouched ? 16.0 : 14.0;
+      final percent = totalValue == 0 ? 0.0 : (value / totalValue) * 100.0;
+
+      final name = _formatAssetClassName(klass);
+      final title = isTouched ? '$name\n${percent.toStringAsFixed(1)}%' : '${percent.toStringAsFixed(1)}%';
+
+      sections.add(
+        PieChartSectionData(
+          color: assetClassColorMap[klass] ?? fallbackColor(klass),
+          value: value,
+          title: title,
+          radius: radius,
+          titleStyle: TextStyle(
+            fontSize: fontSize,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('资产配置 (按大类)',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 24),
+            SizedBox(
+              height: 240,
+              width: double.infinity,
+              child: PieChart(
+                PieChartData(
+                  pieTouchData: PieTouchData(
+                    touchCallback: (event, pieTouchResponse) {
+                      setState(() {
+                        if (!event.isInterestedForInteractions ||
+                            pieTouchResponse == null ||
+                            pieTouchResponse.touchedSection == null) {
+                          _touchedPieIndex = -1;
+                          return;
+                        }
+                        _touchedPieIndex = pieTouchResponse
+                            .touchedSection!.touchedSectionIndex;
+                      });
+                    },
+                  ),
+                  sections: sections,
+                  centerSpaceRadius: 60,
+                  sectionsSpace: 2,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 16.0,
+              runSpacing: 8.0,
+              children: entries.map((e) {
+                final color = assetClassColorMap[e.key] ?? fallbackColor(e.key);
+                final name = _formatAssetClassName(e.key);
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(width: 16, height: 16, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$name  ${formatCurrency(e.value, "CNY")}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===================== 公共小部件 =====================
   Widget _buildMetricRow(BuildContext context, String title, String value,
       {Color? color}) {
     return Padding(
@@ -540,17 +583,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   fontSize: 16,
                   color: Theme.of(context).colorScheme.onSurfaceVariant)),
           Text(value,
-              style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+              style:
+                  TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
         ],
       ),
     );
   }
 }
-// --- (*** 类定义结束 ***) ---
 
-
-// (文件末尾的辅助函数保持不变)
+// ===================== 文件末尾的辅助函数 =====================
 DateTime _getSpotDate(List<FlSpot> spots, int index) {
   if (index < 0 || index >= spots.length) {
     return DateTime.now();
@@ -558,28 +599,36 @@ DateTime _getSpotDate(List<FlSpot> spots, int index) {
   return DateTime.fromMillisecondsSinceEpoch(spots[index].x.toInt());
 }
 
-// (这是你原有的 SubType 名称函数)
+/// （保持你原有的 SubType 名称函数，并增强兼容性）
+/// 兼容两套命名：
+/// - 你这份文件中的：stock / etf / mutualFund / wealthManagement / other
+/// - 另一份代码中可能出现的：stock / domesticEtf / overseasFund / crypto / cash / wealthManagement / other
 String _formatAllocationName(AssetSubType subType) {
-  // (*** 2. 关键修复：修复 switch 语句 ***)
   switch (subType) {
     case AssetSubType.stock:
       return '股票';
-    case AssetSubType.etf:
+    case AssetSubType.etf: // 你的模型之一
       return '场内基金 (ETF)';
-    case AssetSubType.mutualFund:
+    case AssetSubType.mutualFund: // 你的模型之一
       return '场外基金';
-    case AssetSubType.wealthManagement: // (新增的 case)
+    case AssetSubType.wealthManagement:
       return '理财';
     case AssetSubType.other:
       return '其他资产 (价值法)';
-    default: // (新增 default 以确保安全)
-      return subType.name;
+
+    // 如果你的 enum 还有以下成员，统一中文（不会影响已有分支）
+    // ignore: dead_code
+    default:
+      final name = subType.name;
+      if (name == 'domesticEtf') return '场内基金 (ETF)';
+      if (name == 'overseasFund') return '场外基金';
+      if (name == 'crypto') return '加密资产';
+      if (name == 'cash') return '现金/存款';
+      if (name == 'wealthManagement') return '理财';
+      return name;
   }
-  // (*** 修复结束 ***)
 }
 
-// --- (*** 8. 新增：用于 AssetClass 名称的函数 ***) ---
 String _formatAssetClassName(AssetClass assetClass) {
   return assetClassDisplayNames[assetClass] ?? assetClass.name;
 }
-// --- (*** 新增结束 ***) ---
