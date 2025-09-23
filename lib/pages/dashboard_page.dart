@@ -360,7 +360,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             const SizedBox(height: 24), 
 
             SizedBox(
-              height: 200, 
+              height: 240, 
               width: double.infinity, 
               child: PieChart(
                 PieChartData(
@@ -471,7 +471,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             const SizedBox(height: 24), 
 
             SizedBox(
-              height: 200, 
+              height: 240, 
               width: double.infinity, 
               child: PieChart(
                 PieChartData(
