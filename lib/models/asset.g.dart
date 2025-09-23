@@ -295,12 +295,14 @@ const _AssetsubTypeEnumValueMap = {
   r'stock': r'stock',
   r'etf': r'etf',
   r'mutualFund': r'mutualFund',
+  r'wealthManagement': r'wealthManagement',
   r'other': r'other',
 };
 const _AssetsubTypeValueEnumMap = {
   r'stock': AssetSubType.stock,
   r'etf': AssetSubType.etf,
   r'mutualFund': AssetSubType.mutualFund,
+  r'wealthManagement': AssetSubType.wealthManagement,
   r'other': AssetSubType.other,
 };
 const _AssettrackingMethodEnumValueMap = {
