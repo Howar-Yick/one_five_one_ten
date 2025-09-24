@@ -1,18 +1,22 @@
 // 文件: lib/allocation/allocation_service.dart
-// (*** 关键修复：修正了 'max' 函数的类型错误 ***)
+// (*** 关键修改：增加了一个 'values' 字段来存储每个类别的总金额 ***)
 
 import 'dart:math';
 import 'mapping.dart';
+import 'override_service.dart';
 
 /// —— 轻量数据面向接口 ——
-/// 你的适配器只要返回这一组即可（不需改数据库）
 class PositionLike {
-  final String code;         // 证券代码（如 159509）
-  final String name;         // 名称（UI展示）
-  final double marketValue;  // 以 CNY 计的市值
-  final String? subType;     // 可空，用于更准确归桶（如 fixedIncome/wealthManagement/commodity 等）
+  final int id;
+  final int accountId;
+  final String code;
+  final String name;
+  final double marketValue;
+  final String? subType;
 
   PositionLike({
+    required this.id,
+    required this.accountId,
     required this.code,
     required this.name,
     required this.marketValue,
@@ -21,7 +25,6 @@ class PositionLike {
 }
 
 /// —— 数据源注册 ——
-/// 由主工程在启动时注入一个函数即可；未注册时页面会给出提示，不会报错。
 typedef AllocationDataSource = Future<List<PositionLike>> Function();
 
 class AllocationRegistry {
@@ -31,35 +34,48 @@ class AllocationRegistry {
 }
 
 /// —— 汇总计算 ——
-/// 输入：PositionLike 列表
-/// 输出：各 bucket 的权重（0~1）与总资产
 class AllocationSnapshot {
   final Map<AllocationBucket, double> weights;
   final double total;
+  final Map<AllocationBucket, List<PositionLike>> groupedItems;
+  // (*** 1. 新增：存储每个类别的具体金额 ***)
+  final Map<AllocationBucket, double> values;
 
-  AllocationSnapshot(this.weights, this.total);
+  AllocationSnapshot(this.weights, this.total, this.groupedItems, this.values);
 }
 
 class AllocationService {
+  final _overrideService = OverrideService();
+
   Future<AllocationSnapshot> buildSnapshot(List<PositionLike> items) async {
     double total = 0;
-    final byBucket = <AllocationBucket, double>{};
+    final byBucketValue = <AllocationBucket, double>{};
+    final byBucketItems = <AllocationBucket, List<PositionLike>>{};
+    
+    final overrides = await _overrideService.loadOverrides();
 
     for (final p in items) {
-      // (*** 修复逻辑：将 0 改为 0.0，确保返回类型为 double ***)
       final v = max(0.0, p.marketValue);
-      // (*** 修复结束 ***)
-
       total += v;
-      final bucket = mapToBucket(code: p.code, subType: p.subType);
-      byBucket.update(bucket, (x) => x + v, ifAbsent: () => v);
+      
+      final bucket = mapToBucket(
+        id: p.id, 
+        code: p.code, 
+        name: p.name, 
+        subType: p.subType, 
+        overrides: overrides,
+      );
+      
+      byBucketValue.update(bucket, (x) => x + v, ifAbsent: () => v);
+      byBucketItems.putIfAbsent(bucket, () => []).add(p);
     }
 
     final weights = <AllocationBucket, double>{};
-    byBucket.forEach((b, v) {
+    byBucketValue.forEach((b, v) {
       weights[b] = total > 0 ? v / total : 0.0;
     });
 
-    return AllocationSnapshot(weights, total);
+    // (*** 2. 在返回结果中包含具体金额的 Map ***)
+    return AllocationSnapshot(weights, total, byBucketItems, byBucketValue);
   }
 }

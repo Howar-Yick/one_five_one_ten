@@ -1,70 +1,65 @@
 // 文件: lib/allocation/mapping.dart
-// (这是 ChatGPT 的代码，稍作清理)
+// (*** 关键修复：增加 id 和 overrides 参数，优先使用自定义分类 ***)
 
-/// —— 安全的“归桶”规则 ——
-/// 仅用于计算展示，不写库，不引入迁移。
+import 'allocation_service.dart'; // 导入服务以获取枚举
 
 enum AllocationBucket { us, cn, hk, gold, oil, bondCash, other }
 
-/// 根据代码与（可选）子类型做地区/大类归桶。
-/// 注：这里覆盖了你截图中的主要 ETF/LOF；其余未知就落到 cn/other，保证安全。
+/// 根据代码、名称和（可选）子类型做地区/大类归桶。
 AllocationBucket mapToBucket({
+  required int id, // <-- 新增 id 参数
   required String code,
-  String? subType, // 你模型里若有 AssetSubType，可传进来做加强
+  required String name,
+  String? subType,
+  required Map<String, AllocationBucket> overrides, // <-- 新增 overrides 参数
 }) {
-  // —— 美股相关（纳指/标普/消费/信息科技等）——
-  // (我根据你的截图和日志更新了代码)
-  const us = {
-    '159509', // 纳指科技ETF
-    '161128', // 海外科技LOF
-    '162415', // 美国消费
-    '159612', // 标普科技
-    '005299', // 嘉实美国成长 (场外)
-    '161130', // 纳斯达克100LOF
-    '160213', // 国泰纳斯达克100 (场外)
-    '003735', // 南方纳斯达克100 (场外)
-    '006479', // 招商纳斯达克100 (场外)
-    '006475', // 嘉实纳斯达克100 (场外)
-    '000966', // 易方达标普500人民币 (场外)
-    '100061', // 华夏标普500ETF (场外)
-    '002621', // 大成标普500等权重 (场外)
-    '001092', // 汇添富纳斯达克生物科技 (场外)
-    '000071', // 华宝美国消费 (场外)
-    '513500', // 标普500ETF
-  };
-  if (us.contains(code)) return AllocationBucket.us;
+  // --- [!!!] 优先检查用户自定义的分类 ---
+  if (overrides.containsKey(id.toString())) {
+    return overrides[id.toString()]!;
+  }
+  // --- [优先检查结束] ---
+
+
+  final lowerName = name.toLowerCase();
+
+  // --- 按名称关键字判断 ---
+  const usKeywords = ['纳指', '纳斯达克', '标普', '美国'];
+  if (usKeywords.any((keyword) => lowerName.contains(keyword))) {
+    return AllocationBucket.us;
+  }
+  if (lowerName.contains('港股') || lowerName.contains('恒生')) {
+    return AllocationBucket.hk;
+  }
+  if (lowerName.contains('黄金')) {
+    return AllocationBucket.gold;
+  }
+  if (lowerName.contains('原油') || lowerName.contains('石油')) {
+    return AllocationBucket.oil;
+  }
   
-  // (来自你日志的美元基金)
-  if (code == '968061' || code == '000041') return AllocationBucket.us;
+  // —— 按代码判断（作为补充） ——
+  const usCodes = {'159509','161128','162415','161130','159612', '968061', '000041'};
+  if (usCodes.contains(code)) return AllocationBucket.us;
 
+  const goldCodes = {'159934', '518880', '000216'};
+  if (goldCodes.contains(code)) return AllocationBucket.gold;
 
-  // —— 黄金 ——（常见 518850/518880）
-  const gold = {'159934', '518880', '000216'};
-  if (gold.contains(code)) return AllocationBucket.gold;
+  const oilCodes = {'161129', '160416', '162411'};
+  if (oilCodes.contains(code)) return AllocationBucket.oil;
 
-  // —— 原油 ——（常见 161129 等）
-  const oil = {'161129', '160416', '162411'};
-  if (oil.contains(code)) return AllocationBucket.oil;
+  const hkCodes = {'513230'};
+  if (hkCodes.contains(code)) return AllocationBucket.hk;
 
-  // —— 港股 ——（如 513230）
-  if (code == '513230') return AllocationBucket.hk;
-
-  // —— 固收/理财（如果上层传了子类型）——
+  // —— 按子类型判断固收/理财 ——
   if (subType != null) {
     final s = subType.toLowerCase();
-    // (我们用这个来捕获所有 "理财" 和 "债券基金")
     if (s.contains('wealthmanagement') || s.contains('fixedincome') || s.contains('bond')) {
       return AllocationBucket.bondCash;
     }
-    // (以防万一，用子类型再次检查)
-    if (s.contains('gold')) return AllocationBucket.gold;
-    if (s.contains('oil') || s.contains('energy')) return AllocationBucket.oil;
   }
   
-  // (你的债券基金)
-  const bond = {'003191', '003376', '001077', '005436', '001702', '006113', '005879', '001859', '010554'};
-  if (bond.contains(code)) return AllocationBucket.bondCash;
-
+  const bondCodes = {'003191', '003376', '001077', '005436', '001702', '006113', '005879', '001859', '010554'};
+  if (bondCodes.contains(code)) return AllocationBucket.bondCash;
 
   // 默认：A股/其他
   return AllocationBucket.cn;
