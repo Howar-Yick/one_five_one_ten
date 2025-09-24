@@ -1,5 +1,5 @@
 // 文件: lib/pages/dashboard_page.dart
-// (*** 关键修复：添加了对 AssetSubType.wealthManagement 的处理，并提供兜底颜色/名称映射 ***)
+// (*** 已为你集成 ChatGPT 方案的入口 ***)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +8,12 @@ import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
+
+// (*** 1. 导入新模块 ***)
+import 'package:one_five_one_ten/allocation/feature_flags.dart';
+import 'package:one_five_one_ten/allocation/allocation_page.dart';
+// (*** 导入结束 ***)
+
 
 /// --- (*** 1. 新增：饼图切换的枚举 ***) ---
 enum AllocationChartType {
@@ -55,6 +61,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('概览'),
+        // (*** 2. 在这里添加新按钮 ***)
+        actions: [
+          if (kFeatureAllocation)
+            IconButton(
+              tooltip: '资产配置',
+              icon: const Icon(Icons.pie_chart_outline),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AllocationPage()),
+              ),
+            ),
+        ],
+        // (*** 添加结束 ***)
       ),
       body: dashboardDataAsync.when(
         data: (dashboardData) {
@@ -600,9 +618,6 @@ DateTime _getSpotDate(List<FlSpot> spots, int index) {
 }
 
 /// （保持你原有的 SubType 名称函数，并增强兼容性）
-/// 兼容两套命名：
-/// - 你这份文件中的：stock / etf / mutualFund / wealthManagement / other
-/// - 另一份代码中可能出现的：stock / domesticEtf / overseasFund / crypto / cash / wealthManagement / other
 String _formatAllocationName(AssetSubType subType) {
   switch (subType) {
     case AssetSubType.stock:
