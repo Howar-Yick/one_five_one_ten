@@ -649,67 +649,141 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     return sortedList;
   }
 
-  Widget _buildAssetCard(BuildContext context, WidgetRef ref, Map<String, dynamic> assetData, int accountId) {
+  Widget _buildAssetCard(BuildContext context, WidgetRef ref,
+      Map<String, dynamic> assetData, int accountId) {
     final Asset asset = assetData['asset'];
     final Map<String, dynamic> performance = assetData['performance'];
-    
-    final percentFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
 
-    final double totalValue = _getSortableValue(assetData, AssetSortCriteria.marketValue); 
-    
+    final percentFormat =
+        NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
+
+    final double totalValue =
+        _getSortableValue(assetData, AssetSortCriteria.marketValue);
+
     final double totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final double profitRate = (performance['profitRate'] ?? 0.0) as double;
-    final double annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
-    
-    Color profitColor = totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade400;
-    if (totalProfit == 0) profitColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
+    final double annualizedReturn =
+        (performance['annualizedReturn'] ?? 0.0) as double;
+
+    Color profitColor =
+        totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade400;
+    if (totalProfit == 0) {
+      profitColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
+    }
+
+    final bool isShareBased =
+        asset.trackingMethod == AssetTrackingMethod.shareBased;
+
+    String formattedShares = '';
+    String formattedCost = '';
+    // ★ 新增：用于存放格式化后价格的变量
+    String formattedPrice = ''; 
+
+    if (isShareBased) {
+      final double totalShares = performance['totalShares'] ?? 0.0;
+      final double averageCost = performance['averageCost'] ?? 0.0;
+      // ★ 新增：获取最新价格
+      final double latestPrice = performance['latestPrice'] ?? 0.0;
+      
+      if (asset.subType == AssetSubType.mutualFund) {
+        formattedShares = '份额: ${totalShares.toStringAsFixed(2)}';
+        formattedCost = '成本: ${averageCost.toStringAsFixed(4)}';
+        // ★ 新增：格式化最新价格 (4位小数)
+        formattedPrice = '价格: ${latestPrice.toStringAsFixed(4)}';
+      } else if (asset.subType == AssetSubType.etf ||
+          asset.subType == AssetSubType.stock) {
+        formattedShares = '份额: ${totalShares.toStringAsFixed(0)}';
+        formattedCost = '成本: ${averageCost.toStringAsFixed(3)}';
+        // ★ 新增：格式化最新价格 (3位小数)
+        formattedPrice = '价格: ${latestPrice.toStringAsFixed(3)}';
+      } else {
+        formattedShares = '份额: ${totalShares.toStringAsFixed(2)}';
+        formattedCost = '成本: ${averageCost.toStringAsFixed(4)}';
+        // ★ 新增：格式化最新价格 (默认4位小数)
+        formattedPrice = '价格: ${latestPrice.toStringAsFixed(4)}';
+      }
+    }
 
     return Card(
       child: ListTile(
-        leading: Icon(asset.trackingMethod == AssetTrackingMethod.shareBased 
-          ? Icons.pie_chart_outline
-          : Icons.account_balance_wallet_outlined),
-        title: Text('${asset.name} (${asset.currency})', style: const TextStyle(fontWeight: FontWeight.bold)),
-        
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (asset.code.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4.0),
-                child: Text(
-                  asset.code,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
-                ),
-              ),
-            const SizedBox(height: 4), 
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(child: Text('市值/价值: ${formatCurrency(totalValue, asset.currency)}', overflow: TextOverflow.ellipsis)),
-                Text('收益: ${formatCurrency(totalProfit, asset.currency)} (${percentFormat.format(profitRate)})', 
-                  style: TextStyle(color: profitColor)),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  asset.priceUpdateDate != null 
-                    ? '价格 @ ${DateFormat('MM-dd HH:mm').format(asset.priceUpdateDate!)}'
-                    : '价格未更新', 
-                  style: const TextStyle(fontSize: 12, color: Colors.grey)
-                ),
-                Text('年化: ${percentFormat.format(annualizedReturn)}',
-                  style: TextStyle(color: profitColor, fontSize: 12)),
-              ],
-            )
-          ],
-        ),
+        isThreeLine: true,
+        leading: Icon(isShareBased
+            ? Icons.pie_chart_outline
+            : Icons.account_balance_wallet_outlined),
+        title: Text('${asset.name} (${asset.currency})',
+            style: const TextStyle(fontWeight: FontWeight.bold)),
 
-        trailing: const Icon(Icons.arrow_forward_ios),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 第一行: 资产代码
+              if (asset.code.isNotEmpty)
+                Text(
+                  asset.code,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.grey.shade600),
+                ),
+              
+              const SizedBox(height: 8),
+
+              // 第二行: 核心信息两栏布局
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // --- 左栏: 份额、成本、价格 ---
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ★ 修改：只为份额型资产显示以下信息
+                        if (isShareBased) ...[
+                          _buildInfoRow(formattedShares, color: Colors.grey),
+                          const SizedBox(height: 4),
+                          _buildInfoRow(formattedCost, color: Colors.grey),
+                          const SizedBox(height: 4),
+                          // ★ 修改：用最新价格替换更新时间
+                          _buildInfoRow(formattedPrice, color: Colors.grey),
+                        ]
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(width: 8),
+
+                  // --- 右栏: 总值、收益、年化 ---
+                  Expanded(
+                    flex: 3,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildInfoRow(
+                          '总值: ${formatCurrency(totalValue, asset.currency)}'
+                        ),
+                        const SizedBox(height: 4),
+                        _buildInfoRow(
+                          '收益: ${formatCurrency(totalProfit, asset.currency)} (${percentFormat.format(profitRate)})',
+                          color: profitColor
+                        ),
+                        const SizedBox(height: 4),
+                        _buildInfoRow(
+                          '年化: ${percentFormat.format(annualizedReturn)}',
+                          color: profitColor
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
         
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: () {
           final pageRoute = MaterialPageRoute(builder: (context) {
             return asset.trackingMethod == AssetTrackingMethod.shareBased
@@ -720,12 +794,25 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
           Navigator.of(context).push(pageRoute).then((_) {
             ref.invalidate(accountDetailProvider(accountId));
             ref.invalidate(accountPerformanceProvider(accountId));
-            ref.invalidate(trackedAssetsWithPerformanceProvider(accountId)); 
+            ref.invalidate(trackedAssetsWithPerformanceProvider(accountId));
           });
         },
-        
-        onLongPress: () => _showDeleteAssetConfirmationDialog(context, ref, asset, accountId), 
+        onLongPress: () =>
+            _showDeleteAssetConfirmationDialog(context, ref, asset, accountId),
       ),
+    );
+  }
+
+  // 辅助 Widget 保持不变
+  Widget _buildInfoRow(String text, {Color? color}) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 12,
+        color: color,
+      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
