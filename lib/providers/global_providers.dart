@@ -1,26 +1,25 @@
 // 文件: lib/providers/global_providers.dart
-// (这是已添加价值法 Providers 并修复了所有依赖的完整文件)
+// (这是完整的、已添加主题Provider的文件)
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:isar/isar.dart';
-
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/price_sync_service.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
-import 'package:one_five_one_ten/models/position_snapshot.dart'; 
+import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
-import 'package:one_five_one_ten/models/transaction.dart'; // (*** 1. 新增导入 ***)
+import 'package:one_five_one_ten/models/transaction.dart';
+import 'package:flutter/material.dart'; // ★ 新增导入
+import 'package:shared_preferences/shared_preferences.dart'; // ★ 新增导入
 
 
 /// 说明：
 /// 集中放置需要被多个页面跨页使用的顶层 Provider，避免页面之间互相 import 导致的循环依赖。
 
-// (*** 2. 新增：全局枚举 ***)
-// (从 account_detail_page 移入)
 enum AssetSortCriteria {
   marketValue,
   totalProfit,
@@ -28,24 +27,19 @@ enum AssetSortCriteria {
   annualizedReturn,
 }
 
-// (从 account_detail_page 移入，现在对所有页面可用)
 enum AccountChartType {
   totalValue,
   totalProfit,
   profitRate,
 }
 
-// (从 share_asset_detail_page 移入)
 enum ShareAssetChartType {
   price,
   totalProfit,
   profitRate,
 }
-// (*** 新增结束 ***)
-
 
 // ------------------------ 核心服务 Providers ------------------------
-// ( ... 此区域代码保持不变 ...)
 final databaseServiceProvider = Provider<DatabaseService>((ref) {
   return DatabaseService();
 });
@@ -54,37 +48,32 @@ final syncServiceProvider = Provider<SupabaseSyncService>((ref) {
 });
 
 // ------------------------ 账户列表 ------------------------
-// ( ... 此区域代码保持不变 ...)
 final accountsProvider = StreamProvider<List<Account>>((ref) {
   final isar = ref.watch(databaseServiceProvider).isar;
   return isar.accounts.where().sortByName().watch(fireImmediately: true);
 });
 
 // ------------------------ 首页总览 ------------------------
-// --- (*** 1. 这是修改后的 Provider ***) ---
 final dashboardDataProvider =
     FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
   final calc = CalculatorService();
   final globalPerf = await calc.calculateGlobalPerformance();
   final List<FlSpot> historySpots = await calc.getGlobalValueHistory();
   
-  // 1.1 同时获取两种分配数据
   final Map<AssetSubType, double> subTypeAllocation =
-      await calc.calculateAssetAllocation(); // (旧的)
+      await calc.calculateAssetAllocation();
   final Map<AssetClass, double> classAllocation =
-      await calc.calculateAssetClassAllocation(); // (新的)
+      await calc.calculateAssetClassAllocation();
       
   return {
     ...globalPerf, 
     'historySpots': historySpots,
-    'allocationSubType': subTypeAllocation, // <-- 1.2 新 Key 1
-    'allocationClass': classAllocation,   // <-- 1.3 新 Key 2
+    'allocationSubType': subTypeAllocation,
+    'allocationClass': classAllocation,
   };
 });
-// --- (*** 修改结束 ***) ---
 
 // ------------------------ 价格同步 ------------------------
-// ( ... 此区域代码保持不变 ...)
 final priceSyncServiceProvider = Provider<PriceSyncService>((ref) {
   return PriceSyncService();
 });
@@ -93,7 +82,6 @@ class PriceSyncController extends StateNotifier<PriceSyncState> {
   final Ref _ref;
   PriceSyncController(this._ref) : super(PriceSyncState.idle);
   Future<void> syncAllPrices() async {
-    // ... (此函数保持不变)
     if (state == PriceSyncState.loading) return;
     state = PriceSyncState.loading;
     try {
@@ -155,7 +143,6 @@ final priceSyncControllerProvider =
 });
 
 // ------------------------ 账户详情页 Providers ------------------------
-// ( ... 此区域代码保持不变 ...)
 final accountDetailProvider =
     FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
   final isar = ref.watch(databaseServiceProvider).isar;
@@ -210,7 +197,6 @@ final accountHistoryProvider =
 });
 
 // ------------------------ 交易历史页 Providers ------------------------
-// ( ... 此区域代码保持不变 ...)
 final transactionHistoryProvider =
     StreamProvider.autoDispose.family<List<AccountTransaction>, int>((ref, accountId) async* { 
   final isar = ref.watch(databaseServiceProvider).isar;
@@ -229,7 +215,6 @@ final transactionHistoryProvider =
 });
 
 // ------------------------ 份额法资产详情页 Providers ------------------------
-// ( ... 此区域代码保持不变 ...)
 final shareAssetDetailProvider =
     StreamProvider.autoDispose.family<Asset?, int>((ref, assetId) {
   final isar = ref.watch(databaseServiceProvider).isar;
@@ -363,20 +348,15 @@ final shareAssetCombinedChartProvider =
   };
 });
 
-// --- (*** 4. 新增：价值法资产的 Provider ***) ---
-
-// (从 value_asset_detail_page 移入)
 final valueAssetDetailProvider =
     StreamProvider.autoDispose.family<Asset?, int>((ref, assetId) {
   final isar = ref.watch(databaseServiceProvider).isar;
   return isar.assets.watchObject(assetId, fireImmediately: true);
 });
 
-// (从 value_asset_detail_page 移入)
 final valueAssetPerformanceProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, int>(
         (ref, assetId) async {
-  // (*** 关键：依赖 DetailProvider 来自动刷新 ***)
   final asset = await ref.watch(valueAssetDetailProvider(assetId).future);
   if (asset == null) {
     throw Exception('未找到资产');
@@ -384,18 +364,47 @@ final valueAssetPerformanceProvider =
   return CalculatorService().calculateValueAssetPerformance(asset);
 });
 
-// (*** 新增：价值法的三种图表 Provider ***)
 final valueAssetHistoryChartsProvider =
     FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>(
         (ref, assetId) async {
-  // (*** 关键：依赖 PerformanceProvider 来触发刷新 ***)
   ref.watch(valueAssetPerformanceProvider(assetId)); 
   
   final asset = await ref.watch(valueAssetDetailProvider(assetId).future);
   if (asset == null) {
     return {'totalValue': [], 'totalProfit': [], 'profitRate': []};
   }
-  // (调用我们刚在 CalculatorService 中创建的新函数)
   return CalculatorService().getValueAssetHistoryCharts(asset);
 });
-// --- (*** 新增结束 ***) ---
+
+
+// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+// ★★★      新增: 主题切换 Provider      ★★★
+// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+
+final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeMode>((ref) {
+  return ThemeNotifier();
+});
+
+class ThemeNotifier extends StateNotifier<ThemeMode> {
+  // 默认设置为“跟随系统”
+  ThemeNotifier() : super(ThemeMode.system) {
+    _loadTheme();
+  }
+
+  // 从本地存储加载主题设置
+  Future<void> _loadTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    // 尝试读取设置，如果不存在，则默认为 system
+    final themeIndex = prefs.getInt('themeMode') ?? ThemeMode.system.index;
+    state = ThemeMode.values[themeIndex];
+  }
+
+  // 设置新主题并保存到本地
+  Future<void> setTheme(ThemeMode themeMode) async {
+    if (state != themeMode) {
+      state = themeMode;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('themeMode', themeMode.index);
+    }
+  }
+}

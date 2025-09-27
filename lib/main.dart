@@ -1,13 +1,11 @@
-// lib/main.dart
-// (*** 已修复 import 路径错误 ***)
+// 文件: lib/main.dart
+// (这是完整的、已应用主题切换逻辑的文件)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:one_five_one_ten/pages/main_nav_page.dart'; 
-import 'package:one_five_one_ten/services/database_service.dart'; // <-- 修正了这里的路径
+import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-// (导入新模块和所需的服务)
 import 'package:one_five_one_ten/allocation/allocation_service.dart';
 import 'package:one_five_one_ten/allocation/feature_flags.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
@@ -15,6 +13,9 @@ import 'package:one_five_one_ten/services/exchangerate_service.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:isar/isar.dart';
+
+// ★ 新增导入
+import 'package:one_five_one_ten/providers/global_providers.dart';
 
 
 Future<void> main() async {
@@ -27,7 +28,6 @@ Future<void> main() async {
 
   await DatabaseService().init();
 
-  // (注册数据源)
   if (kFeatureAllocation) {
     AllocationRegistry.register(() async {
       final isar = DatabaseService().isar;
@@ -86,22 +86,29 @@ Future<void> main() async {
 
 final supabase = Supabase.instance.client;
 
-class MyApp extends StatelessWidget {
+// ★★★ 修复点: 转换为 ConsumerWidget 以监听 Provider ★★★
+class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 监听主题变化
+    final themeMode = ref.watch(themeProvider);
+
     return MaterialApp(
       title: '壹伍壹拾',
+      // 浅色主题配置
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple, brightness: Brightness.light),
         useMaterial3: true,
       ),
+      // 深色主题配置
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple, brightness: Brightness.dark),
         useMaterial3: true,
       ),
-      themeMode: ThemeMode.system, 
+      // 应用当前的主题模式
+      themeMode: themeMode, 
       home: const MainNavPage(),
       debugShowCheckedModeBanner: false,
     );
