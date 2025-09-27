@@ -676,30 +676,25 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
 
     String formattedShares = '';
     String formattedCost = '';
-    // ★ 新增：用于存放格式化后价格的变量
     String formattedPrice = ''; 
 
     if (isShareBased) {
       final double totalShares = performance['totalShares'] ?? 0.0;
       final double averageCost = performance['averageCost'] ?? 0.0;
-      // ★ 新增：获取最新价格
       final double latestPrice = performance['latestPrice'] ?? 0.0;
       
       if (asset.subType == AssetSubType.mutualFund) {
         formattedShares = '份额: ${totalShares.toStringAsFixed(2)}';
         formattedCost = '成本: ${averageCost.toStringAsFixed(4)}';
-        // ★ 新增：格式化最新价格 (4位小数)
         formattedPrice = '价格: ${latestPrice.toStringAsFixed(4)}';
       } else if (asset.subType == AssetSubType.etf ||
           asset.subType == AssetSubType.stock) {
         formattedShares = '份额: ${totalShares.toStringAsFixed(0)}';
         formattedCost = '成本: ${averageCost.toStringAsFixed(3)}';
-        // ★ 新增：格式化最新价格 (3位小数)
         formattedPrice = '价格: ${latestPrice.toStringAsFixed(3)}';
       } else {
         formattedShares = '份额: ${totalShares.toStringAsFixed(2)}';
         formattedCost = '成本: ${averageCost.toStringAsFixed(4)}';
-        // ★ 新增：格式化最新价格 (默认4位小数)
         formattedPrice = '价格: ${latestPrice.toStringAsFixed(4)}';
       }
     }
@@ -718,7 +713,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 第一行: 资产代码
               if (asset.code.isNotEmpty)
                 Text(
                   asset.code,
@@ -730,23 +724,19 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
               
               const SizedBox(height: 8),
 
-              // 第二行: 核心信息两栏布局
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- 左栏: 份额、成本、价格 ---
                   Expanded(
                     flex: 2,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // ★ 修改：只为份额型资产显示以下信息
                         if (isShareBased) ...[
                           _buildInfoRow(formattedShares, color: Colors.grey),
                           const SizedBox(height: 4),
                           _buildInfoRow(formattedCost, color: Colors.grey),
                           const SizedBox(height: 4),
-                          // ★ 修改：用最新价格替换更新时间
                           _buildInfoRow(formattedPrice, color: Colors.grey),
                         ]
                       ],
@@ -755,7 +745,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                   
                   const SizedBox(width: 8),
 
-                  // --- 右栏: 总值、收益、年化 ---
                   Expanded(
                     flex: 3,
                     child: Column(
@@ -803,7 +792,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     );
   }
 
-  // 辅助 Widget 保持不变
   Widget _buildInfoRow(String text, {Color? color}) {
     return Text(
       text,
@@ -907,7 +895,8 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
               isCurved: false,
               barWidth: 3,
               color: colorScheme.primary, 
-              dotData: const FlDotData(show: true),
+              // ★★★ 修复点: 根据数据点数量动态显示圆点 ★★★
+              dotData: FlDotData(show: spots.length < 40),
               belowBarData: BarAreaData(show: false),
             ),
           ],

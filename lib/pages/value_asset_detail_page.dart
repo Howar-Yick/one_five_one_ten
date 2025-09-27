@@ -416,7 +416,8 @@ class _ValueAssetDetailView extends ConsumerWidget {
                         isCurved: false,
                         barWidth: 3,
                         color: colorScheme.primary, 
-                        dotData: const FlDotData(show: true),
+                        // ★★★ 修复点: 根据数据点数量动态显示圆点 ★★★
+                        dotData: FlDotData(show: spots.length < 40),
                         belowBarData: BarAreaData(show: false),
                       ),
                     ],

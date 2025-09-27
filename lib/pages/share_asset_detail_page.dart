@@ -287,10 +287,10 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
               : NumberFormat("0.00"));
         }
         final tooltipFormat = (isPercentage || _selectedChartType == ShareAssetChartType.totalProfit) 
-            ? yAxisFormat // 对于收益率和收益，工具提示和Y轴用相同格式
-            : (asset.subType == AssetSubType.mutualFund // 对于价格，工具提示用更精确的格式
-              ? NumberFormat("0.0000")
-              : (asset.subType == AssetSubType.etf ? NumberFormat("0.000") : NumberFormat("0.00")));
+          ? yAxisFormat // 对于收益率和收益，工具提示和Y轴用相同格式
+          : (asset.subType == AssetSubType.mutualFund // 对于价格，工具提示用更精确的格式
+            ? NumberFormat("0.0000")
+            : (asset.subType == AssetSubType.etf ? NumberFormat("0.000") : NumberFormat("0.00")));
         
         final colorScheme = Theme.of(context).colorScheme;
         
@@ -307,9 +307,6 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
           bottomInterval = (spots.length - 1) / desiredLabelCount;
           if (bottomInterval < 1) bottomInterval = 1;
         }
-
-        const int densityThreshold = 150; 
-        final bool isDense = spots.length > densityThreshold;
 
         return Card(
           child: Padding(
@@ -355,9 +352,10 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                         LineChartBarData(
                           spots: indexedSpots, 
                           isCurved: false,
-                          barWidth: isDense ? 2 : 3, 
+                          barWidth: 3, 
                           color: colorScheme.primary, 
-                          dotData: FlDotData(show: !isDense), 
+                          // ★★★ 修复点: 根据数据点数量动态显示圆点 ★★★
+                          dotData: FlDotData(show: spots.length < 40), 
                           belowBarData: BarAreaData(show: false),
                         ),
                       ],
@@ -782,10 +780,10 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
         }
         
         final tooltipFormat = (isPercentage || _selectedChartType == ShareAssetChartType.totalProfit) 
-            ? yAxisFormat 
-            : (asset.subType == AssetSubType.mutualFund
-              ? NumberFormat("0.0000")
-              : (asset.subType == AssetSubType.etf ? NumberFormat("0.000") : NumberFormat("0.00")));
+          ? yAxisFormat 
+          : (asset.subType == AssetSubType.mutualFund
+            ? NumberFormat("0.0000")
+            : (asset.subType == AssetSubType.etf ? NumberFormat("0.000") : NumberFormat("0.00")));
         
         final colorScheme = Theme.of(context).colorScheme;
         
@@ -803,8 +801,8 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
           if (bottomInterval < 1) bottomInterval = 1;
         }
 
-        const int densityThreshold = 150; 
-        final bool isDense = spots.length > densityThreshold;
+        // ★★★ 修复点: 统一阈值并修正变量名 ★★★
+        final bool showDots = spots.length < 40;
 
         return Card(
           child: Padding(
@@ -850,9 +848,10 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                         LineChartBarData(
                           spots: indexedSpots, 
                           isCurved: false,
-                          barWidth: isDense ? 2 : 3, 
+                          barWidth: 3, 
                           color: colorScheme.primary, 
-                          dotData: FlDotData(show: !isDense), 
+                          // ★★★ 修复点: 应用新的布尔值 ★★★
+                          dotData: FlDotData(show: showDots), 
                           belowBarData: BarAreaData(show: false),
                         ),
                       ],
