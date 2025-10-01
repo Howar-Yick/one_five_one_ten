@@ -108,22 +108,21 @@ class SupabaseSyncService {
 
   /// 启动时执行的完整同步和校准流程
   Future<void> _fullInitialSync() async {
-    await _isar.writeTxn(() async {
-      try {
-        // --- 1.1 同步删除记录 ---
-        await _syncDeletions();
+    try {
+      // --- 1.1 同步删除记录 ---
+      await _syncDeletions();
 
-        // --- 1.2 同步数据表 (包含校准) ---
-        await _reconcileTable<Account>('Account', _isar.accounts, Account.fromSupabaseJson);
-        await _reconcileTable<Asset>('Asset', _isar.assets, Asset.fromSupabaseJson);
-        await _reconcileTable<Transaction>('Transaction', _isar.transactions, Transaction.fromSupabaseJson);
-        await _reconcileTable<AccountTransaction>('AccountTransaction', _isar.accountTransactions, AccountTransaction.fromSupabaseJson);
-        await _reconcileTable<PositionSnapshot>('PositionSnapshot', _isar.positionSnapshots, PositionSnapshot.fromSupabaseJson);
+      // --- 1.2 同步数据表 (包含校准) ---
+      // 这里的事务被移入 _reconcileTable 内部，避免嵌套
+      await _reconcileTable<Account>('Account', _isar.accounts, Account.fromSupabaseJson);
+      await _reconcileTable<Asset>('Asset', _isar.assets, Asset.fromSupabaseJson);
+      await _reconcileTable<Transaction>('Transaction', _isar.transactions, Transaction.fromSupabaseJson);
+      await _reconcileTable<AccountTransaction>('AccountTransaction', _isar.accountTransactions, AccountTransaction.fromSupabaseJson);
+      await _reconcileTable<PositionSnapshot>('PositionSnapshot', _isar.positionSnapshots, PositionSnapshot.fromSupabaseJson);
 
-      } catch (e) {
-        print('首次全量同步失败: $e');
-      }
-    });
+    } catch (e) {
+      print('首次全量同步失败: $e');
+    }
   }
   
   /// (*** 3. 新增：同步删除记录的方法 ***)
@@ -139,15 +138,36 @@ class SupabaseSyncService {
     if (deletionsResponse.isEmpty) return;
 
     print('[SupabaseSync] Fetched ${deletionsResponse.length} new deletion records.');
-    for (final deletionData in (deletionsResponse as List<dynamic>)) {
-      final deletion = Deletion()
-        ..tableName = deletionData['table_name']
-        ..deletedRecordId = deletionData['deleted_record_id']
-        ..deletedAt = DateTime.parse(deletionData['deleted_at']);
-      
-      await _handleDelete(deletion.deletedRecordId, deletion.tableName);
-      await _isar.deletions.put(deletion);
-    }
+    
+    await _isar.writeTxn(() async {
+      for (final deletionData in (deletionsResponse as List<dynamic>)) {
+        final deletion = Deletion()
+          ..tableName = deletionData['table_name']
+          ..deletedRecordId = deletionData['deleted_record_id']
+          ..deletedAt = DateTime.parse(deletionData['deleted_at']);
+        
+        // 此处直接执行删除逻辑，不再调用会嵌套事务的 _handleDelete
+        final supabaseId = deletion.deletedRecordId;
+        switch (deletion.tableName) {
+          case 'Account':
+            await _isar.accounts.where().supabaseIdEqualTo(supabaseId).deleteAll();
+            break;
+          case 'Asset':
+            await _isar.assets.where().supabaseIdEqualTo(supabaseId).deleteAll();
+            break;
+          case 'Transaction':
+            await _isar.transactions.where().supabaseIdEqualTo(supabaseId).deleteAll();
+            break;
+          case 'AccountTransaction':
+            await _isar.accountTransactions.where().supabaseIdEqualTo(supabaseId).deleteAll();
+            break;
+          case 'PositionSnapshot':
+            await _isar.positionSnapshots.where().supabaseIdEqualTo(supabaseId).deleteAll();
+            break;
+        }
+        await _isar.deletions.put(deletion);
+      }
+    });
   }
 
   /// (*** 4. 新增：通用的校准方法 ***)
@@ -166,7 +186,6 @@ class SupabaseSyncService {
 
     final localItems = await isarCollection.where().findAll();
     
-    // 创建一个Map以便快速查找本地项目
     final localItemsMap = { for (var item in localItems) (item as dynamic).supabaseId: item };
 
     final List<Id> isarIdsToDelete = [];
@@ -177,16 +196,18 @@ class SupabaseSyncService {
       }
     }
 
-    if (isarIdsToDelete.isNotEmpty) {
-      await isarCollection.deleteAll(isarIdsToDelete);
-      print('[SupabaseSync] Deleted ${isarIdsToDelete.length} stale local records from $tableName.');
-    }
+    await _isar.writeTxn(() async {
+      if (isarIdsToDelete.isNotEmpty) {
+        await isarCollection.deleteAll(isarIdsToDelete);
+        print('[SupabaseSync] Deleted ${isarIdsToDelete.length} stale local records from $tableName.');
+      }
 
-    for (final remoteItem in remoteItems) {
-      final remoteSupabaseId = (remoteItem as dynamic).supabaseId;
-      final localItem = localItemsMap[remoteSupabaseId];
-      await _performLWWPut(localItem, remoteItem, isarCollection);
-    }
+      for (final remoteItem in remoteItems) {
+        final remoteSupabaseId = (remoteItem as dynamic).supabaseId;
+        final localItem = localItemsMap[remoteSupabaseId];
+        await _performLWWPut(localItem, remoteItem, isarCollection);
+      }
+    });
   }
 
   Future<void> _onCloudChange(PostgresChangePayload payload) async { 
@@ -363,20 +384,28 @@ class SupabaseSyncService {
 
   // --- 外部：推送 (Push) / 写入 API ---
   
+  // (*** 6. 关键修改：重写 _saveObject 以强制更新时间戳并简化 ***)
   Future<void> _saveObject<T>(
     String tableName, 
     T isarObject,
     IsarCollection<T> isarCollection,
-    Map<String, dynamic> jsonData,
     dynamic fromSupabaseJson
   ) async {
     if (!isLoggedIn) throw Exception("未登录");
 
+    // --- 核心修复：强制更新时间戳 ---
+    (isarObject as dynamic).updatedAt = DateTime.now();
+    
+    // 立即将更新（包括新时间戳）写入本地
+    await _isar.writeTxn(() => isarCollection.put(isarObject));
+    
+    final jsonData = (isarObject as dynamic).toSupabaseJson();
+    
     final isarId = (isarObject as dynamic).id;
     final supabaseId = (isarObject as dynamic).supabaseId as String?;
 
     if (isarId == null) {
-     throw Exception("SaveObject 失败: 传入对象的 Isar ID 为 null。必须先在本地保存。");
+     throw Exception("SaveObject 失败: 对象的 Isar ID 为 null。");
     }
 
     if (supabaseId != null) {
@@ -396,6 +425,7 @@ class SupabaseSyncService {
       
       (definitiveItem as dynamic).id = isarId; 
       
+      // 使用你原有的健壮的竞态条件处理逻辑
       await _saveWithRaceConditionHandling(
         definitiveItem, 
         isarId, 
@@ -403,25 +433,13 @@ class SupabaseSyncService {
         isarObject, 
         isarCollection
       );
-
-      return;
-
     } catch (e) {
       print('Supabase Save ($tableName) 失败: $e');
-      
-      if (!e.toString().contains('Successfully saved')) {
-        (isarObject as dynamic).id = isarId;
-        try {
-          await _isar.writeTxn(() => isarCollection.put(isarObject));
-        } catch (e2) {
-          print('Supabase Fallback Save 失败: $e2');
-        }
-        rethrow;
-      }
+      rethrow;
     }
   }
 
-  // (*** 6. 关键修改：重写 _deleteObject 以使用“墓碑表” ***)
+  // (*** 7. 关键修改：重写 _deleteObject 以使用“墓碑表” ***)
   Future<void> _deleteObject<T>(
     String tableName, 
     T isarObject, 
@@ -432,22 +450,19 @@ class SupabaseSyncService {
     final supabaseId = (isarObject as dynamic).supabaseId as String?;
     final isarId = (isarObject as dynamic).id as Id;
 
-    // 1. 先从本地删除 (UI 立即响应)
     await _isar.writeTxn(() => isarCollection.delete(isarId));
     
     if (supabaseId == null) {
-      return; // 这个对象还未被同步过，直接本地删除即可
+      return;
     }
 
     try {
-      // 2. 在云端记录到 deletions 表
       await _client.from('deletions').insert({
         'table_name': tableName,
         'deleted_record_id': supabaseId,
         'deleted_at': DateTime.now().toIso8601String(),
       });
       
-      // 3. 从云端主表中硬删除
       await _client.from(tableName).delete().eq('id', supabaseId);
 
       print('[SupabaseSync] Successfully deleted and logged tombstone for $tableName/$supabaseId');
@@ -458,34 +473,34 @@ class SupabaseSyncService {
     }
   }
   
-  // --- 为每个模型创建公共的 save/delete 方法 (保持不变) ---
+  // (*** 8. 关键修改：更新所有公共 save 方法以匹配新的 _saveObject 签名 ***)
   
   Future<void> saveAccount(Account acc) => _saveObject(
-      'Account', acc, _isar.accounts, acc.toSupabaseJson(), 
+      'Account', acc, _isar.accounts, 
       (json) => Account.fromSupabaseJson(json as Map<String, dynamic>)
   );
   Future<void> deleteAccount(Account acc) => _deleteObject('Account', acc, _isar.accounts);
 
   Future<void> saveAsset(Asset asset) => _saveObject(
-      'Asset', asset, _isar.assets, asset.toSupabaseJson(), 
+      'Asset', asset, _isar.assets, 
       (json) => Asset.fromSupabaseJson(json as Map<String, dynamic>)
   );
   Future<void> deleteAsset(Asset asset) => _deleteObject('Asset', asset, _isar.assets);
   
   Future<void> saveTransaction(Transaction tx) => _saveObject(
-      'Transaction', tx, _isar.transactions, tx.toSupabaseJson(),
+      'Transaction', tx, _isar.transactions,
       (json) => Transaction.fromSupabaseJson(json as Map<String, dynamic>)
   );
   Future<void> deleteTransaction(Transaction tx) => _deleteObject('Transaction', tx, _isar.transactions);
   
   Future<void> saveAccountTransaction(AccountTransaction tx) => _saveObject(
-      'AccountTransaction', tx, _isar.accountTransactions, tx.toSupabaseJson(),
+      'AccountTransaction', tx, _isar.accountTransactions,
       (json) => AccountTransaction.fromSupabaseJson(json as Map<String, dynamic>)
   );
   Future<void> deleteAccountTransaction(AccountTransaction tx) => _deleteObject('AccountTransaction', tx, _isar.accountTransactions);
   
   Future<void> savePositionSnapshot(PositionSnapshot snap) => _saveObject(
-      'PositionSnapshot', snap, _isar.positionSnapshots, snap.toSupabaseJson(),
+      'PositionSnapshot', snap, _isar.positionSnapshots,
       (json) => PositionSnapshot.fromSupabaseJson(json as Map<String, dynamic>)
   );
   Future<void> deletePositionSnapshot(PositionSnapshot snap) => _deleteObject('PositionSnapshot', snap, _isar.positionSnapshots);
