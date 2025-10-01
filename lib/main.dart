@@ -1,5 +1,5 @@
 // 文件: lib/main.dart
-// (这是完整的、已应用主题切换逻辑的文件)
+// (这是最终的、基于你现有完整代码的修复版本)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,12 +14,17 @@ import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:isar/isar.dart';
 
-// ★ 新增导入
 import 'package:one_five_one_ten/providers/global_providers.dart';
 
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // (*** 1. 关键修改：创建一个 ProviderContainer 以便在 runApp 之前调用 Provider ***)
+  final container = ProviderContainer();
+  // 在应用启动前，异步加载已保存的主题设置
+  await container.read(themeProvider.notifier).init();
+
 
   await Supabase.initialize(
     url: 'https://gmnuyxqxgtnpaolzgujd.supabase.co',
@@ -81,33 +86,33 @@ Future<void> main() async {
     });
   }
 
-  runApp(const ProviderScope(child: MyApp()));
+  // (*** 2. 关键修改：使用 UncontrolledProviderScope 来传递已完成初始化的 Provider 容器 ***)
+  runApp(UncontrolledProviderScope(
+    container: container,
+    child: const MyApp(),
+  ));
 }
 
 final supabase = Supabase.instance.client;
 
-// ★★★ 修复点: 转换为 ConsumerWidget 以监听 Provider ★★★
 class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 监听主题变化
+    // 你的调用方式是正确的，监听 themeProvider 即可获取 ThemeMode 状态
     final themeMode = ref.watch(themeProvider);
 
     return MaterialApp(
       title: '壹伍壹拾',
-      // 浅色主题配置
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple, brightness: Brightness.light),
         useMaterial3: true,
       ),
-      // 深色主题配置
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple, brightness: Brightness.dark),
         useMaterial3: true,
       ),
-      // 应用当前的主题模式
       themeMode: themeMode, 
       home: const MainNavPage(),
       debugShowCheckedModeBanner: false,

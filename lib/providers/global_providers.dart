@@ -1,5 +1,5 @@
 // 文件: lib/providers/global_providers.dart
-// (这是完整的、已添加主题Provider的文件)
+// (这是完整的、基于你原有代码的修复版本)
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -13,13 +13,14 @@ import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
-import 'package:flutter/material.dart'; // ★ 新增导入
-import 'package:shared_preferences/shared_preferences.dart'; // ★ 新增导入
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 
 /// 说明：
 /// 集中放置需要被多个页面跨页使用的顶层 Provider，避免页面之间互相 import 导致的循环依赖。
 
+// ... (你文件中所有其他的 Provider 和 enum 定义保持不变) ...
 enum AssetSortCriteria {
   marketValue,
   totalProfit,
@@ -39,7 +40,6 @@ enum ShareAssetChartType {
   profitRate,
 }
 
-// ------------------------ 核心服务 Providers ------------------------
 final databaseServiceProvider = Provider<DatabaseService>((ref) {
   return DatabaseService();
 });
@@ -47,13 +47,11 @@ final syncServiceProvider = Provider<SupabaseSyncService>((ref) {
   return SupabaseSyncService();
 });
 
-// ------------------------ 账户列表 ------------------------
 final accountsProvider = StreamProvider<List<Account>>((ref) {
   final isar = ref.watch(databaseServiceProvider).isar;
   return isar.accounts.where().sortByName().watch(fireImmediately: true);
 });
 
-// ------------------------ 首页总览 ------------------------
 final dashboardDataProvider =
     FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
   final calc = CalculatorService();
@@ -73,7 +71,6 @@ final dashboardDataProvider =
   };
 });
 
-// ------------------------ 价格同步 ------------------------
 final priceSyncServiceProvider = Provider<PriceSyncService>((ref) {
   return PriceSyncService();
 });
@@ -142,7 +139,6 @@ final priceSyncControllerProvider =
   return PriceSyncController(ref);
 });
 
-// ------------------------ 账户详情页 Providers ------------------------
 final accountDetailProvider =
     FutureProvider.autoDispose.family<Account?, int>((ref, accountId) {
   final isar = ref.watch(databaseServiceProvider).isar;
@@ -196,7 +192,6 @@ final accountHistoryProvider =
   return CalculatorService().getAccountHistoryCharts(account);
 });
 
-// ------------------------ 交易历史页 Providers ------------------------
 final transactionHistoryProvider =
     StreamProvider.autoDispose.family<List<AccountTransaction>, int>((ref, accountId) async* { 
   final isar = ref.watch(databaseServiceProvider).isar;
@@ -214,7 +209,6 @@ final transactionHistoryProvider =
   yield* transactionStream; 
 });
 
-// ------------------------ 份额法资产详情页 Providers ------------------------
 final shareAssetDetailProvider =
     StreamProvider.autoDispose.family<Asset?, int>((ref, assetId) {
   final isar = ref.watch(databaseServiceProvider).isar;
@@ -377,24 +371,19 @@ final valueAssetHistoryChartsProvider =
 });
 
 
-// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-// ★★★      新增: 主题切换 Provider      ★★★
-// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-
+// (*** 5. 关键修改：重命名 init 方法并调整构造函数，使其能被外部调用 ***)
 final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeMode>((ref) {
+  // 我们在 main.dart 中预加载主题，所以这里不再需要调用 init
   return ThemeNotifier();
 });
 
 class ThemeNotifier extends StateNotifier<ThemeMode> {
-  // 默认设置为“跟随系统”
-  ThemeNotifier() : super(ThemeMode.system) {
-    _loadTheme();
-  }
+  // 默认设置为“跟随系统”，将在 init 方法中被覆盖
+  ThemeNotifier() : super(ThemeMode.system);
 
-  // 从本地存储加载主题设置
-  Future<void> _loadTheme() async {
+  // 从本地存储加载主题设置，现在是公共方法
+  Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    // 尝试读取设置，如果不存在，则默认为 system
     final themeIndex = prefs.getInt('themeMode') ?? ThemeMode.system.index;
     state = ThemeMode.values[themeIndex];
   }
