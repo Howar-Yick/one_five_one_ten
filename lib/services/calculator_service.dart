@@ -138,7 +138,9 @@ class CalculatorService {
       currentPoint.totalInvested = runningTotalInvested;
       lastPoint = currentPoint;
     }
-    return dailyPoints.values.toList();
+    final points = dailyPoints.values.toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    return points;
   }
 
   // ( _ensureChartHasStart 保持不变 )
@@ -309,7 +311,9 @@ class CalculatorService {
       currentPoint.totalInvested = runningTotalInvested;
       lastPoint = currentPoint;
     }
-    return dailyPoints.values.toList();
+    final points = dailyPoints.values.toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    return points;
   }
   
   // ( calculateValueAssetPerformance 保持不变 )
@@ -336,19 +340,30 @@ class CalculatorService {
     final double profitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested;
     
     double annualizedReturn = 0.0;
-    final cashflows = <double>[];
-    final dates = <DateTime>[];
-
+    final flowEntries = <MapEntry<DateTime, double>>[];
     for (final point in historyPoints) {
       if (point.cashFlow != 0) {
-        cashflows.add(point.cashFlow);
-        dates.add(point.date);
+        flowEntries.add(MapEntry(point.date, point.cashFlow));
       }
     }
 
-    if (cashflows.isNotEmpty) {
+    if (flowEntries.isNotEmpty) {
+      flowEntries.sort((a, b) => a.key.compareTo(b.key));
+      final cashflows = <double>[];
+      final dates = <DateTime>[];
+      for (final entry in flowEntries) {
+        dates.add(entry.key);
+        cashflows.add(entry.value);
+      }
+
+      DateTime evaluationDate = historyPoints.last.date;
+      if (evaluationDate.isBefore(dates.last)) {
+        evaluationDate = dates.last;
+      }
+
       cashflows.add(currentValue);
-      dates.add(DateTime.now()); // (使用 DateTime.now() 作为终点)
+      dates.add(evaluationDate);
+
       if (cashflows.any((cf) => cf > 0) && cashflows.any((cf) => cf < 0)) {
         try {
           annualizedReturn = xirr(dates, cashflows);
