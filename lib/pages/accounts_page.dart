@@ -1,5 +1,5 @@
 // 文件: lib/pages/accounts_page.dart
-// (*** 这是完整、已修复的文件代码 ***)
+// (这是已添加入口按钮的完整文件)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +17,8 @@ import 'package:one_five_one_ten/widgets/account_card.dart';
 import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
 
+// ★ 新增导入
+import 'package:one_five_one_ten/pages/archived_assets_page.dart';
 
 class AccountsPage extends ConsumerStatefulWidget {
   const AccountsPage({super.key});
@@ -37,6 +39,17 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
       appBar: AppBar(
         title: const Text('我的账户'),
         actions: [
+          // ★★★ 新增：已清仓资产入口按钮 ★★★
+          IconButton(
+            icon: const Icon(Icons.archive_outlined),
+            tooltip: '查看已清仓资产',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ArchivedAssetsPage()),
+              );
+            },
+          ),
+          // ★★★ 新增结束 ★★★
           IconButton(
             icon: Icon(_isAmountVisible ? Icons.visibility : Icons.visibility_off),
             tooltip: '隐藏/显示金额',
@@ -119,7 +132,7 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
                         ),
                         error: (e, _) => Card(
                           margin: const EdgeInsets.symmetric(vertical: 8.0),
-                           child: ListTile(
+                            child: ListTile(
                             title: Text(account.name),
                             subtitle: Text('加载性能数据失败: $e'),
                            ),
@@ -177,11 +190,9 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
               )
             ),
             const SizedBox(height: 16),
-            // (*** 关键修改：重构为 左/右 两列的布局 ***)
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 左侧列：金额
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -194,7 +205,6 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
                   ),
                 ),
                 const SizedBox(width: 16),
-                // 右侧列：比率
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -229,15 +239,14 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
         Text(
           value,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: valueColor ?? colorScheme.onSurfaceVariant,
-              ),
+              fontWeight: FontWeight.bold,
+              color: valueColor ?? colorScheme.onSurfaceVariant,
+            ),
         ),
       ],
     );
   }
 
-  // ... (其余的 _showAddAccountDialog, _showAccountActions 等方法保持不变)
   void _showAddAccountDialog(BuildContext context, WidgetRef ref) {
     final TextEditingController nameController = TextEditingController();
     final TextEditingController descriptionController = TextEditingController();

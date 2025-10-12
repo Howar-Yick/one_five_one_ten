@@ -43,40 +43,45 @@ const AssetSchema = CollectionSchema(
       name: r'currency',
       type: IsarType.string,
     ),
-    r'latestPrice': PropertySchema(
+    r'isArchived': PropertySchema(
       id: 5,
+      name: r'isArchived',
+      type: IsarType.bool,
+    ),
+    r'latestPrice': PropertySchema(
+      id: 6,
       name: r'latestPrice',
       type: IsarType.double,
     ),
     r'name': PropertySchema(
-      id: 6,
+      id: 7,
       name: r'name',
       type: IsarType.string,
     ),
     r'priceUpdateDate': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'priceUpdateDate',
       type: IsarType.dateTime,
     ),
     r'subType': PropertySchema(
-      id: 8,
+      id: 9,
       name: r'subType',
       type: IsarType.string,
       enumMap: _AssetsubTypeEnumValueMap,
     ),
     r'supabaseId': PropertySchema(
-      id: 9,
+      id: 10,
       name: r'supabaseId',
       type: IsarType.string,
     ),
     r'trackingMethod': PropertySchema(
-      id: 10,
+      id: 11,
       name: r'trackingMethod',
       type: IsarType.string,
       enumMap: _AssettrackingMethodEnumValueMap,
     ),
     r'updatedAt': PropertySchema(
-      id: 11,
+      id: 12,
       name: r'updatedAt',
       type: IsarType.dateTime,
     )
@@ -151,6 +156,19 @@ const AssetSchema = CollectionSchema(
           caseSensitive: false,
         )
       ],
+    ),
+    r'isArchived': IndexSchema(
+      id: 655844772568347876,
+      name: r'isArchived',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'isArchived',
+          type: IndexType.value,
+          caseSensitive: false,
+        )
+      ],
     )
   },
   links: {},
@@ -199,13 +217,14 @@ void _assetSerialize(
   writer.writeString(offsets[2], object.code);
   writer.writeDateTime(offsets[3], object.createdAt);
   writer.writeString(offsets[4], object.currency);
-  writer.writeDouble(offsets[5], object.latestPrice);
-  writer.writeString(offsets[6], object.name);
-  writer.writeDateTime(offsets[7], object.priceUpdateDate);
-  writer.writeString(offsets[8], object.subType.name);
-  writer.writeString(offsets[9], object.supabaseId);
-  writer.writeString(offsets[10], object.trackingMethod.name);
-  writer.writeDateTime(offsets[11], object.updatedAt);
+  writer.writeBool(offsets[5], object.isArchived);
+  writer.writeDouble(offsets[6], object.latestPrice);
+  writer.writeString(offsets[7], object.name);
+  writer.writeDateTime(offsets[8], object.priceUpdateDate);
+  writer.writeString(offsets[9], object.subType.name);
+  writer.writeString(offsets[10], object.supabaseId);
+  writer.writeString(offsets[11], object.trackingMethod.name);
+  writer.writeDateTime(offsets[12], object.updatedAt);
 }
 
 Asset _assetDeserialize(
@@ -223,17 +242,18 @@ Asset _assetDeserialize(
   object.createdAt = reader.readDateTime(offsets[3]);
   object.currency = reader.readString(offsets[4]);
   object.id = id;
-  object.latestPrice = reader.readDouble(offsets[5]);
-  object.name = reader.readString(offsets[6]);
-  object.priceUpdateDate = reader.readDateTimeOrNull(offsets[7]);
+  object.isArchived = reader.readBool(offsets[5]);
+  object.latestPrice = reader.readDouble(offsets[6]);
+  object.name = reader.readString(offsets[7]);
+  object.priceUpdateDate = reader.readDateTimeOrNull(offsets[8]);
   object.subType =
-      _AssetsubTypeValueEnumMap[reader.readStringOrNull(offsets[8])] ??
+      _AssetsubTypeValueEnumMap[reader.readStringOrNull(offsets[9])] ??
           AssetSubType.stock;
-  object.supabaseId = reader.readStringOrNull(offsets[9]);
+  object.supabaseId = reader.readStringOrNull(offsets[10]);
   object.trackingMethod =
-      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[10])] ??
+      _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[11])] ??
           AssetTrackingMethod.valueBased;
-  object.updatedAt = reader.readDateTimeOrNull(offsets[11]);
+  object.updatedAt = reader.readDateTimeOrNull(offsets[12]);
   return object;
 }
 
@@ -256,21 +276,23 @@ P _assetDeserializeProp<P>(
     case 4:
       return (reader.readString(offset)) as P;
     case 5:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 6:
-      return (reader.readString(offset)) as P;
+      return (reader.readDouble(offset)) as P;
     case 7:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 8:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 9:
       return (_AssetsubTypeValueEnumMap[reader.readStringOrNull(offset)] ??
           AssetSubType.stock) as P;
-    case 9:
-      return (reader.readStringOrNull(offset)) as P;
     case 10:
+      return (reader.readStringOrNull(offset)) as P;
+    case 11:
       return (_AssettrackingMethodValueEnumMap[
               reader.readStringOrNull(offset)] ??
           AssetTrackingMethod.valueBased) as P;
-    case 11:
+    case 12:
       return (reader.readDateTimeOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -400,6 +422,14 @@ extension AssetQueryWhereSort on QueryBuilder<Asset, Asset, QWhere> {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
         const IndexWhereClause.any(indexName: r'supabaseId'),
+      );
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterWhere> anyIsArchived() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'isArchived'),
       );
     });
   }
@@ -911,6 +941,51 @@ extension AssetQueryWhere on QueryBuilder<Asset, Asset, QWhereClause> {
             .addWhereClause(IndexWhereClause.lessThan(
               indexName: r'supabaseId',
               upper: [''],
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterWhereClause> isArchivedEqualTo(
+      bool isArchived) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'isArchived',
+        value: [isArchived],
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterWhereClause> isArchivedNotEqualTo(
+      bool isArchived) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'isArchived',
+              lower: [],
+              upper: [isArchived],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'isArchived',
+              lower: [isArchived],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'isArchived',
+              lower: [isArchived],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'isArchived',
+              lower: [],
+              upper: [isArchived],
+              includeUpper: false,
             ));
       }
     });
@@ -1556,6 +1631,16 @@ extension AssetQueryFilter on QueryBuilder<Asset, Asset, QFilterCondition> {
         includeLower: includeLower,
         upper: upper,
         includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> isArchivedEqualTo(
+      bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'isArchived',
+        value: value,
       ));
     });
   }
@@ -2360,6 +2445,18 @@ extension AssetQuerySortBy on QueryBuilder<Asset, Asset, QSortBy> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortByIsArchived() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isArchived', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> sortByIsArchivedDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isArchived', Sort.desc);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterSortBy> sortByLatestPrice() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'latestPrice', Sort.asc);
@@ -2518,6 +2615,18 @@ extension AssetQuerySortThenBy on QueryBuilder<Asset, Asset, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenByIsArchived() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isArchived', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Asset, Asset, QAfterSortBy> thenByIsArchivedDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isArchived', Sort.desc);
+    });
+  }
+
   QueryBuilder<Asset, Asset, QAfterSortBy> thenByLatestPrice() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'latestPrice', Sort.asc);
@@ -2639,6 +2748,12 @@ extension AssetQueryWhereDistinct on QueryBuilder<Asset, Asset, QDistinct> {
     });
   }
 
+  QueryBuilder<Asset, Asset, QDistinct> distinctByIsArchived() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isArchived');
+    });
+  }
+
   QueryBuilder<Asset, Asset, QDistinct> distinctByLatestPrice() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'latestPrice');
@@ -2721,6 +2836,12 @@ extension AssetQueryProperty on QueryBuilder<Asset, Asset, QQueryProperty> {
   QueryBuilder<Asset, String, QQueryOperations> currencyProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'currency');
+    });
+  }
+
+  QueryBuilder<Asset, bool, QQueryOperations> isArchivedProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isArchived');
     });
   }
 

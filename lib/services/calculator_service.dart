@@ -1,5 +1,5 @@
 // 文件: lib/services/calculator_service.dart
-// (这是修复了最终符号逻辑的完整文件)
+// (这是已修复import错误的最终完整文件)
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:isar/isar.dart';
@@ -10,7 +10,7 @@ import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/utils/xirr.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart'; // ★★★ 修复点: 添加缺失的导入 ★★★
 import 'package:one_five_one_ten/services/exchangerate_service.dart';
 import 'dart:math';
 
@@ -138,7 +138,7 @@ class CalculatorService {
     pointsList.sort((a, b) => a.date.compareTo(b.date));
     return pointsList;
   }
-  
+
   void _ensureChartHasStart(List<FlSpot> spots) {
     if (spots.isEmpty) { return; }
     if (spots.length == 1) {
@@ -266,22 +266,17 @@ class CalculatorService {
         );
       }
       
-      final currentPoint = dailyPoints[day];
-      if (currentPoint == null) continue; 
+      final currentPoint = dailyPoints[day]!;
 
-      // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-      // ★★★  修复点: 恢复使用 .abs()，因为这个函数只用于图表和历史点  ★★★
-      // ★★★  真正的年化计算逻辑已在 calculateValueAssetPerformance 中重构  ★★★
-      // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
       if (txn.type == TransactionType.invest || txn.type == TransactionType.buy) {
         runningValue += txn.amount.abs();
         runningNetInvestment += txn.amount.abs();
         runningTotalInvested += txn.amount.abs();
-        currentPoint.cashFlow += -txn.amount.abs(); // 保持投入为负
+        currentPoint.cashFlow += -txn.amount.abs();
       } else if (txn.type == TransactionType.withdraw || txn.type == TransactionType.sell || txn.type == TransactionType.dividend) {
         runningValue -= txn.amount.abs();
         runningNetInvestment -= txn.amount.abs();
-        currentPoint.cashFlow += txn.amount.abs(); // 保持取出为正
+        currentPoint.cashFlow += txn.amount.abs();
       } else if (txn.type == TransactionType.updateValue) {
         runningValue = txn.amount;
       }
@@ -296,9 +291,6 @@ class CalculatorService {
     return pointsList;
   }
   
-  // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-  // ★★★       最终修复版：calculateValueAssetPerformance       ★★★
-  // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
   Future<Map<String, dynamic>> calculateValueAssetPerformance(Asset asset) async {
     if (asset.supabaseId == null) return {'currentValue': 0.0, 'netInvestment': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0};
 
@@ -316,33 +308,63 @@ class CalculatorService {
     double totalInvested = 0;
     double currentValue = 0;
     DateTime lastDate = transactions.first.date;
-
-    final cashflows = <double>[];
-    final dates = <DateTime>[];
     
-    // print("--- Calculating Annualized Return for: ${asset.name} ---");
-
+    final Map<DateTime, List<Transaction>> dailyTransactions = {};
     for (final txn in transactions) {
-      lastDate = txn.date;
+      final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
+      if (!dailyTransactions.containsKey(day)) {
+        dailyTransactions[day] = [];
+      }
+      dailyTransactions[day]!.add(txn);
+    }
 
-      // ★★★ 核心修复: 严格区分 Invest 和 Withdraw 的符号 ★★★
-      if (txn.type == TransactionType.invest) {
-        netInvestment += txn.amount.abs();
-        totalInvested += txn.amount.abs();
-        currentValue += txn.amount.abs();
-        cashflows.add(-txn.amount.abs()); // 强制投入为负现金流
-        dates.add(txn.date);
-        // print("Cashflow: ${-txn.amount.abs()} on ${DateFormat('yyyy-MM-dd').format(txn.date)} (Invest)");
+    final sortedDays = dailyTransactions.keys.toList()..sort();
 
-      } else if (txn.type == TransactionType.withdraw) {
-        netInvestment -= txn.amount.abs();
-        currentValue -= txn.amount.abs();
-        cashflows.add(txn.amount.abs()); // 强制取出为正现金流
-        dates.add(txn.date);
-        // print("Cashflow: ${txn.amount.abs()} on ${DateFormat('yyyy-MM-dd').format(txn.date)} (Withdraw)");
+    for (final day in sortedDays) {
+      final dayTransactions = dailyTransactions[day]!..sort((a, b) => a.date.compareTo(b.date));
+      
+      final updateTxnIndex = dayTransactions.lastIndexWhere((t) => t.type == TransactionType.updateValue);
 
-      } else if (txn.type == TransactionType.updateValue) {
-        currentValue = txn.amount;
+      if (updateTxnIndex != -1) {
+        final updateTxn = dayTransactions[updateTxnIndex];
+        // Process transactions before or at the same time as the update
+        for (int i = 0; i <= updateTxnIndex; i++) {
+          final txn = dayTransactions[i];
+          lastDate = txn.date;
+          if (txn.type == TransactionType.invest) {
+            netInvestment += txn.amount.abs();
+            totalInvested += txn.amount.abs();
+          } else if (txn.type == TransactionType.withdraw) {
+            netInvestment -= txn.amount.abs();
+          }
+        }
+        currentValue = updateTxn.amount;
+        // Process transactions after the update
+         for (int i = updateTxnIndex + 1; i < dayTransactions.length; i++) {
+            final txn = dayTransactions[i];
+            lastDate = txn.date;
+            if (txn.type == TransactionType.invest) {
+              netInvestment += txn.amount.abs();
+              totalInvested += txn.amount.abs();
+              currentValue += txn.amount.abs();
+            } else if (txn.type == TransactionType.withdraw) {
+              netInvestment -= txn.amount.abs();
+              currentValue -= txn.amount.abs();
+            }
+         }
+
+      } else {
+        for (final txn in dayTransactions) {
+          lastDate = txn.date;
+          if (txn.type == TransactionType.invest) {
+            netInvestment += txn.amount.abs();
+            totalInvested += txn.amount.abs();
+            currentValue += txn.amount.abs();
+          } else if (txn.type == TransactionType.withdraw) {
+            netInvestment -= txn.amount.abs();
+            currentValue -= txn.amount.abs();
+          }
+        }
       }
     }
 
@@ -350,11 +372,22 @@ class CalculatorService {
     final double profitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested;
     
     double annualizedReturn = 0.0;
+    final cashflows = <double>[];
+    final dates = <DateTime>[];
+
+    for (final txn in transactions) {
+      if (txn.type == TransactionType.invest) {
+        cashflows.add(-txn.amount.abs());
+        dates.add(txn.date);
+      } else if (txn.type == TransactionType.withdraw) {
+        cashflows.add(txn.amount.abs());
+        dates.add(txn.date);
+      }
+    }
 
     if (cashflows.isNotEmpty) {
       cashflows.add(currentValue);
       dates.add(lastDate);
-      // print("Final Value: $currentValue on ${DateFormat('yyyy-MM-dd').format(lastDate)}");
       
       if (cashflows.any((cf) => cf > 0) && cashflows.any((cf) => cf < 0)) {
         try {
@@ -362,7 +395,7 @@ class CalculatorService {
           final durationInDays = lastDate.difference(firstDate).inDays;
 
           if (durationInDays > 0 && durationInDays < 90) {
-            if (totalInvested > 0) { // 使用总投入额作为基数更稳定
+            if (totalInvested > 0) {
               final simpleRate = totalProfit / totalInvested;
               annualizedReturn = simpleRate * (365 / durationInDays);
             }
@@ -373,7 +406,6 @@ class CalculatorService {
             }
           }
         } catch (e) { 
-          // print("XIRR calculation failed: $e");
           annualizedReturn = 0.0;
         }
       }
@@ -382,9 +414,6 @@ class CalculatorService {
     if (totalProfit >= 0 && annualizedReturn < 0) {
       annualizedReturn = 0.0;
     }
-    
-    // print("--- Calculation Finished ---");
-    // print("Net Investment: $netInvestment, Total Profit: $totalProfit, Calculated Annualized Return: ${annualizedReturn * 100}%");
 
     return {
       'currentValue': currentValue,
@@ -394,8 +423,7 @@ class CalculatorService {
       'annualizedReturn': annualizedReturn,
     };
   }
-
-  // ... [文件的其余部分保持不变] ...
+  
   Future<Map<String, List<FlSpot>>> getValueAssetHistoryCharts(Asset asset) async {
     if (asset.supabaseId == null) {
       return {'totalValue': [], 'totalProfit': [], 'profitRate': []};

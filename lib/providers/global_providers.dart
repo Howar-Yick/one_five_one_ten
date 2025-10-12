@@ -397,3 +397,46 @@ class ThemeNotifier extends StateNotifier<ThemeMode> {
     }
   }
 }
+
+// ------------------------ 已清仓（归档）资产 Providers ------------------------
+
+final archivedAssetsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  final isar = ref.watch(databaseServiceProvider).isar;
+  final calculator = CalculatorService();
+  
+  // 1. 查询所有已归档的资产
+  final archivedAssets = await isar.assets
+      .where()
+      .filter()
+      .isArchivedEqualTo(true)
+      .findAll();
+
+  // 2. 为了显示账户名，我们一次性获取所有账户信息
+  final allAccounts = await isar.accounts.where().findAll();
+  final accountMap = { for (var acc in allAccounts) acc.supabaseId : acc.name };
+
+  // 3. 为每个归档资产计算其最终性能
+  final List<Map<String, dynamic>> results = [];
+  for (final asset in archivedAssets) {
+    Map<String, dynamic> performanceData;
+    if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
+      performanceData = await calculator.calculateShareAssetPerformance(asset);
+    } else {
+      performanceData = await calculator.calculateValueAssetPerformance(asset);
+    }
+    results.add({
+      'asset': asset,
+      'performance': performanceData,
+      'accountName': accountMap[asset.accountSupabaseId] ?? '未知账户',
+    });
+  }
+  
+  // 按更新时间倒序排列，最近清仓的在最前面
+  results.sort((a, b) {
+    final dateA = (a['asset'] as Asset).updatedAt ?? DateTime(2000);
+    final dateB = (b['asset'] as Asset).updatedAt ?? DateTime(2000);
+    return dateB.compareTo(dateA);
+  });
+
+  return results;
+});

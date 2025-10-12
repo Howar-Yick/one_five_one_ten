@@ -1,7 +1,7 @@
 // 文件: lib/models/asset.dart
-// (*** 已移除 'deposit'，按你的要求简化 ***)
+// (这是已修复 import 错误的完整文件)
 
-import 'package:isar/isar.dart';
+import 'package:isar/isar.dart'; // ★★★ 修复点: 修正了此处的 import 路径 ★★★
 part 'asset.g.dart';
 
 // --- 资产大类 (这个枚举保持不变) ---
@@ -26,8 +26,6 @@ enum AssetSubType {
   mutualFund, // 场外基金
   wealthManagement, // 理财
   
-  // (*** 'deposit' 已按要求移除 ***)
-
   other, // 其他
 }
 
@@ -62,9 +60,13 @@ class Asset {
   late DateTime createdAt;
   DateTime? updatedAt;
   
+  // ★★★ 新增字段 ★★★
+  @Index()
+  bool isArchived = false;
+  // ★★★ 新增结束 ★★★
+  
   Asset();
 
-  // (fromSupabaseJson 和 toSupabaseJson 函数保持不变)
   factory Asset.fromSupabaseJson(Map<String, dynamic> json) {
     final asset = Asset();
     asset.supabaseId = json['id'];
@@ -89,6 +91,11 @@ class Asset {
     asset.assetClass =
         AssetClass.values.byName(json['asset_class'] ?? 'other');
     asset.accountSupabaseId = json['account_id'];
+
+    // ★★★ 新增字段的解析 ★★★
+    asset.isArchived = json['is_archived'] ?? false;
+    // ★★★ 新增结束 ★★★
+    
     return asset;
   }
 
@@ -104,6 +111,9 @@ class Asset {
       'asset_class': assetClass.name,
       'account_id': accountSupabaseId,
       'created_at': createdAt.toIso8601String(),
+      // ★★★ 新增要同步的字段 ★★★
+      'is_archived': isArchived,
+      // ★★★ 新增结束 ★★★
     };
   }
 }

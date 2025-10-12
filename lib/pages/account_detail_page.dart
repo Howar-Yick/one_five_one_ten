@@ -1,11 +1,11 @@
 // 文件: lib/pages/account_detail_page.dart
-// (*** 关键修改：增加了搜索功能 ***)
+// (这是已整合“归档/删除”与“搜索”功能的完整文件)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:isar/isar.dart';
+import 'package:isar/isar.dart'; 
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
 import 'package:one_five_one_ten/models/asset.dart';
@@ -18,15 +18,15 @@ import 'package:one_five_one_ten/pages/value_asset_detail_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
-import 'package:one_five_one_ten/providers/global_providers.dart';
+import 'package:one_five_one_ten/providers/global_providers.dart'; 
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 
 
 // (*** 排序标准枚举 ***)
 enum AssetSortCriteria {
-  marketValue,      // 持仓金额
-  totalProfit,      // 收益金额
-  profitRate,       // 收益率
+  marketValue,    // 持仓金额
+  totalProfit,    // 收益金额
+  profitRate,     // 收益率
   annualizedReturn, // 年化
 }
 
@@ -55,7 +55,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
   bool _sortAscending = false;
   AccountChartType _selectedChartType = AccountChartType.totalValue;
 
-  // (*** 1. 关键修改：添加用于显示资产搜索界面的方法 ***)
   void _showAssetSearch(BuildContext context, List<Map<String, dynamic>> assets, Account account) {
     showSearch(
       context: context,
@@ -67,14 +66,12 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
       ),
     );
   }
-  // (*** 修改结束 ***)
 
   @override
   Widget build(BuildContext context) {
     final asyncAccount = ref.watch(accountDetailProvider(widget.accountId));
     final asyncPerformance = ref.watch(accountPerformanceProvider(widget.accountId));
     final syncState = ref.watch(priceSyncControllerProvider);
-    // (*** 为了搜索功能，我们需要在这里也监听资产列表 ***)
     final asyncAssets = ref.watch(trackedAssetsWithPerformanceProvider(widget.accountId));
 
     return Scaffold(
@@ -82,7 +79,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
         title: Text(asyncAccount.asData?.value?.name ?? '加载中...'),
         actions: [
           
-          // (*** 2. 关键修改：在 AppBar 中添加搜索图标按钮 ***)
           IconButton(
             icon: const Icon(Icons.search),
             tooltip: '搜索资产',
@@ -94,7 +90,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
               }
             },
           ),
-          // (*** 修改结束 ***)
           
           PopupMenuButton<AssetSortCriteria>(
             onSelected: (criteria) {
@@ -184,7 +179,8 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     );
   }
 
-  // ( _buildMacroView, _showInvestWithdrawDialog, _showUpdateValueDialog 保持不变 )
+  // ===================== 以下是所有辅助方法 =====================
+
   Widget _buildMacroView(BuildContext context, WidgetRef ref, Account account,
       Map<String, dynamic> performance) {
   
@@ -275,7 +271,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
 
   void _showInvestWithdrawDialog(
       BuildContext context, WidgetRef ref, Account account) {
-    // ( ... 此函数保持不变 ...)
+    // ... (此函数保持不变)
     final amountController = TextEditingController();
     final List<bool> isSelected = [true, false];
     DateTime selectedDate = DateTime.now();
@@ -405,7 +401,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
 
   void _showUpdateValueDialog(
       BuildContext context, WidgetRef ref, Account account) {
-    // ( ... 此函数保持不变 ...)
+    // ... (此函数保持不变)
     final valueController = TextEditingController();
     DateTime selectedDate = DateTime.now();
 
@@ -475,7 +471,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                                 ..accountSupabaseId = account.supabaseId;
                               
                               final isar = DatabaseService().isar;
-                                await isar.writeTxn(() async {
+                               await isar.writeTxn(() async {
                                 await isar.accountTransactions.put(newTxn);
                               });
 
@@ -488,9 +484,9 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                                 Navigator.of(dialogContext).pop();
                                   Navigator.of(context).push(
                                    MaterialPageRoute(
-                                     builder: (_) => TransactionHistoryPage(accountId: account.id),
+                                      builder: (_) => TransactionHistoryPage(accountId: account.id),
                                    ),
-                                 );
+                                  );
                               }
                             } catch (e) {
                               print('更新总值失败: $e');
@@ -797,8 +793,8 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
             ref.invalidate(trackedAssetsWithPerformanceProvider(accountId));
           });
         },
-        onLongPress: () =>
-            _showDeleteAssetConfirmationDialog(context, ref, asset, accountId),
+        // ★★★ 修复点: 调用新的 _showDeleteOrArchiveDialog 方法 ★★★
+        onLongPress: () => _showDeleteOrArchiveDialog(context, ref, asset, accountId),
       ),
     );
   }
@@ -815,55 +811,72 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     );
   }
 
-  void _showDeleteAssetConfirmationDialog(BuildContext context, WidgetRef ref, Asset asset, int accountId) {
-    // ( ... 此函数保持不变 ...)
-    showDialog<bool>(
+  // ★★★ 修复点: 这是新的“归档/删除”对话框方法 ★★★
+  void _showDeleteOrArchiveDialog(BuildContext context, WidgetRef ref, Asset asset, int accountId) {
+    showDialog<String>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: Text('删除资产 "${asset.name}"'),
-          content: const Text('此操作不可撤销，将删除此资产下的所有记录。'),
+          title: Text('操作资产 "${asset.name}"'),
+          content: const Text('“归档”会将已清仓的资产移至历史记录，保留其盈亏分析。\n“彻底删除”将永久抹掉此资产及其所有记录，用于修正错误录入。'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
+              onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('取消'),
             ),
             TextButton(
-              onPressed:() => Navigator.of(dialogContext).pop(true),
-              child: const Text('删除', style: TextStyle(color: Colors.red)),
+              onPressed: () => Navigator.of(dialogContext).pop('archive'),
+              child: const Text('归档'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop('delete'),
+              child: const Text('彻底删除', style: TextStyle(color: Colors.red)),
             ),
           ],
         );
       },
-    ).then((ok) async {
-      if (ok != true) return;
-      
+    ).then((result) async {
+      if (result == null) return;
+
       final syncService = ref.read(syncServiceProvider);
       final isar = DatabaseService().isar;
 
-      if (asset.supabaseId != null) {
-          final txs = await isar.transactions.where()
+      if (result == 'archive') {
+        asset.isArchived = true;
+        await syncService.saveAsset(asset);
+        
+        ref.invalidate(trackedAssetsWithPerformanceProvider(accountId));
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('已归档资产：${asset.name}')),
+          );
+        }
+
+      } else if (result == 'delete') {
+        if (asset.supabaseId != null) {
+            final txs = await isar.transactions.where()
                                 .filter()
                                 .assetSupabaseIdEqualTo(asset.supabaseId)
                                 .findAll();
-          final snaps = await isar.positionSnapshots.where()
+            final snaps = await isar.positionSnapshots.where()
                                       .filter()
                                       .assetSupabaseIdEqualTo(asset.supabaseId)
                                       .findAll();
-          
-          for (final tx in txs) { await syncService.deleteTransaction(tx); }
-          for (final snap in snaps) { await syncService.deletePositionSnapshot(snap); }
-      }
-      
-      await syncService.deleteAsset(asset);
+            
+            for (final tx in txs) { await syncService.deleteTransaction(tx); }
+            for (final snap in snaps) { await syncService.deletePositionSnapshot(snap); }
+        }
+        
+        await syncService.deleteAsset(asset); 
 
-      ref.invalidate(accountPerformanceProvider(accountId));
-      ref.invalidate(dashboardDataProvider);
+        ref.invalidate(accountPerformanceProvider(accountId));
+        ref.invalidate(dashboardDataProvider);
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已删除资产：${asset.name}')),
-        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('已彻底删除资产：${asset.name}')),
+          );
+        }
       }
     });
   }
@@ -1106,4 +1119,3 @@ class _AssetSearchDelegate extends SearchDelegate<Asset?> {
     );
   }
 }
-// (*** 修改结束 ***)
