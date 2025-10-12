@@ -1,5 +1,5 @@
 // 文件: lib/services/calculator_service.dart
-// (这是已修复import错误的最终完整文件)
+// (这是添加了新计算逻辑的最终完整文件)
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:isar/isar.dart';
@@ -10,7 +10,7 @@ import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/utils/xirr.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
-import 'package:intl/intl.dart'; // ★★★ 修复点: 添加缺失的导入 ★★★
+import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/services/exchangerate_service.dart';
 import 'dart:math';
 
@@ -34,7 +34,7 @@ class _AccountHistoryPoint {
   final DateTime date;
   double value;
   double netInvestment;
-  double totalInvested; 
+  double totalInvested;
 
   _AccountHistoryPoint({
     required this.date,
@@ -67,7 +67,7 @@ class CalculatorService {
     double annualizedReturn = 0.0;
     final xirrCashflows = <double>[];
     final xirrDates = <DateTime>[];
-    for (var txn in originalTransactions) { 
+    for (var txn in originalTransactions) {
       if (txn.type == TransactionType.invest) {
         xirrCashflows.add(-txn.amount);
         xirrDates.add(txn.date);
@@ -78,7 +78,7 @@ class CalculatorService {
     }
     if (xirrCashflows.isNotEmpty && currentValue != 0) {
       xirrCashflows.add(currentValue);
-      xirrDates.add(historyPoints.last.date); 
+      xirrDates.add(historyPoints.last.date);
       if (xirrCashflows.any((cf) => cf > 0) && xirrCashflows.any((cf) => cf < 0)) {
         try {
           annualizedReturn = xirr(xirrDates, xirrCashflows);
@@ -88,11 +88,11 @@ class CalculatorService {
       }
     }
     return {
-      'currentValue': currentValue,      
-      'netInvestment': netInvestment,      
-      'totalProfit': totalProfit,        
-      'profitRate': profitRate,        
-      'annualizedReturn': annualizedReturn, 
+      'currentValue': currentValue,
+      'netInvestment': netInvestment,
+      'totalProfit': totalProfit,
+      'profitRate': profitRate,
+      'annualizedReturn': annualizedReturn,
     };
   }
 
@@ -103,7 +103,7 @@ class CalculatorService {
     _AccountHistoryPoint? lastPoint;
     double runningValue = 0.0;
     double runningNetInvestment = 0.0;
-    double runningTotalInvested = 0.0; 
+    double runningTotalInvested = 0.0;
     for (final txn in transactions) {
       final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
       if (!dailyPoints.containsKey(day)) {
@@ -111,21 +111,21 @@ class CalculatorService {
         runningNetInvestment = lastPoint?.netInvestment ?? 0.0;
         runningTotalInvested = lastPoint?.totalInvested ?? 0.0;
         dailyPoints[day] = _AccountHistoryPoint(
-            date: day, 
-            value: runningValue, 
+            date: day,
+            value: runningValue,
             netInvestment: runningNetInvestment,
             totalInvested: runningTotalInvested
         );
       }
       final currentPoint = dailyPoints[day];
-      if (currentPoint == null) continue; 
+      if (currentPoint == null) continue;
       if (txn.type == TransactionType.invest) {
         runningValue += txn.amount;
         runningNetInvestment += txn.amount;
-        runningTotalInvested += txn.amount; 
+        runningTotalInvested += txn.amount;
       } else if (txn.type == TransactionType.withdraw) {
         runningValue -= txn.amount;
-        runningNetInvestment -= txn.amount; 
+        runningNetInvestment -= txn.amount;
       } else if (txn.type == TransactionType.updateValue) {
         runningValue = txn.amount;
       }
@@ -145,7 +145,7 @@ class CalculatorService {
       final firstDate = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
       final dayBefore = firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
       spots.insert(0, FlSpot(dayBefore, 0.0));
-    } else if (spots.first.y.abs() > 0.0001) { 
+    } else if (spots.first.y.abs() > 0.0001) {
       final firstDate = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
       final dayBefore = firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
       spots.insert(0, FlSpot(dayBefore, 0.0));
@@ -157,7 +157,7 @@ class CalculatorService {
     final snapshots = await _isar.positionSnapshots
         .filter()
         .assetSupabaseIdEqualTo(asset.supabaseId)
-        .sortByDate() 
+        .sortByDate()
         .findAll();
     if (snapshots.isEmpty) {
       return {
@@ -258,8 +258,8 @@ class CalculatorService {
         runningNetInvestment = lastPoint?.netInvestment ?? 0.0;
         runningTotalInvested = lastPoint?.totalInvested ?? 0.0;
         dailyPoints[day] = _ValueHistoryPoint(
-          date: day, 
-          value: runningValue, 
+          date: day,
+          value: runningValue,
           cashFlow: 0,
           netInvestment: runningNetInvestment,
           totalInvested: runningTotalInvested
@@ -298,7 +298,7 @@ class CalculatorService {
         .filter()
         .assetSupabaseIdEqualTo(asset.supabaseId)
         .sortByDate()
-        .findAll(); 
+        .findAll();
 
     if (transactions.isEmpty) {
       return {'currentValue': 0.0, 'netInvestment': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0};
@@ -340,18 +340,18 @@ class CalculatorService {
         }
         currentValue = updateTxn.amount;
         // Process transactions after the update
-         for (int i = updateTxnIndex + 1; i < dayTransactions.length; i++) {
-            final txn = dayTransactions[i];
-            lastDate = txn.date;
-            if (txn.type == TransactionType.invest) {
-              netInvestment += txn.amount.abs();
-              totalInvested += txn.amount.abs();
-              currentValue += txn.amount.abs();
-            } else if (txn.type == TransactionType.withdraw) {
-              netInvestment -= txn.amount.abs();
-              currentValue -= txn.amount.abs();
-            }
-         }
+        for (int i = updateTxnIndex + 1; i < dayTransactions.length; i++) {
+          final txn = dayTransactions[i];
+          lastDate = txn.date;
+          if (txn.type == TransactionType.invest) {
+            netInvestment += txn.amount.abs();
+            totalInvested += txn.amount.abs();
+            currentValue += txn.amount.abs();
+          } else if (txn.type == TransactionType.withdraw) {
+            netInvestment -= txn.amount.abs();
+            currentValue -= txn.amount.abs();
+          }
+        }
 
       } else {
         for (final txn in dayTransactions) {
@@ -405,7 +405,7 @@ class CalculatorService {
               annualizedReturn = 0.0;
             }
           }
-        } catch (e) { 
+        } catch (e) {
           annualizedReturn = 0.0;
         }
       }
@@ -437,13 +437,13 @@ class CalculatorService {
         
     final points = _processValueTransactions(transactions);
     
-    final perf = await calculateValueAssetPerformance(asset); 
+    final perf = await calculateValueAssetPerformance(asset);
     final today = DateTime.now();
     final todayDateOnly = DateTime(today.year, today.month, today.day);
     
     final double currentTotalValue = (perf['currentValue'] ?? 0.0) as double;
     final double currentNetInvestment = (perf['netInvestment'] ?? 0.0) as double;
-    final double currentTotalInvested = points.isEmpty 
+    final double currentTotalInvested = points.isEmpty
         ? ((perf['netInvestment'] ?? 0.0) as double > 0 ? (perf['netInvestment'] ?? 0.0) as double : 0.0)
         : points.last.totalInvested;
 
@@ -452,12 +452,12 @@ class CalculatorService {
         date: todayDateOnly,
         value: currentTotalValue,
         netInvestment: currentNetInvestment,
-        totalInvested: currentTotalInvested, 
+        totalInvested: currentTotalInvested,
       ));
     } else {
       points.last.value = currentTotalValue;
       points.last.netInvestment = currentNetInvestment;
-      points.last.totalInvested = currentTotalInvested; 
+      points.last.totalInvested = currentTotalInvested;
     }
 
     final List<FlSpot> valueSpots = [];
@@ -478,8 +478,8 @@ class CalculatorService {
         profitSpots.add(FlSpot(dateEpoch, totalProfit));
       }
       
-      final double profitRate = (p.totalInvested == 0 || p.totalInvested.isNaN) 
-              ? 0.0 
+      final double profitRate = (p.totalInvested == 0 || p.totalInvested.isNaN)
+              ? 0.0
               : totalProfit / p.totalInvested;
       if (profitRate.abs() > 0.0001 || hasProfitRateStarted) {
         hasProfitRateStarted = true;
@@ -513,13 +513,13 @@ class CalculatorService {
     final todayDateOnly = DateTime(today.year, today.month, today.day);
     final double currentTotalValue = (perf['currentValue'] ?? 0.0) as double;
     final double currentNetInvestment = (perf['netInvestment'] ?? 0.0) as double;
-    final double currentTotalInvested = (points.isEmpty ? 0.0 : points.last.totalInvested); 
+    final double currentTotalInvested = (points.isEmpty ? 0.0 : points.last.totalInvested);
     if (points.isEmpty || !points.last.date.isAtSameMomentAs(todayDateOnly)) {
       points.add(_AccountHistoryPoint(
         date: todayDateOnly,
         value: currentTotalValue,
         netInvestment: currentNetInvestment,
-        totalInvested: currentTotalInvested, 
+        totalInvested: currentTotalInvested,
       ));
     } else {
       points.last.value = currentTotalValue;
@@ -544,8 +544,8 @@ class CalculatorService {
         profitSpots.add(FlSpot(dateEpoch, totalProfit));
       }
       
-      final double profitRate = (p.totalInvested == 0 || p.totalInvested.isNaN) 
-              ? 0.0 
+      final double profitRate = (p.totalInvested == 0 || p.totalInvested.isNaN)
+              ? 0.0
               : totalProfit / p.totalInvested;
       if (profitRate.abs() > 0.0001 || hasProfitRateStarted) {
         hasProfitRateStarted = true;
@@ -565,7 +565,7 @@ class CalculatorService {
   }
 
   Future<Map<AssetSubType, double>> calculateAssetAllocation() async {
-    final isar = _isar; 
+    final isar = _isar;
     final allAssets = await isar.assets.where().anyId().findAll();
     final fx = ExchangeRateService();
     final Map<AssetSubType, double> allocationCNY = {};
@@ -574,20 +574,20 @@ class CalculatorService {
       double assetLocalValue = 0.0;
       
       AssetSubType subTypeForGrouping = asset.subType;
-      if (asset.trackingMethod == AssetTrackingMethod.valueBased && 
+      if (asset.trackingMethod == AssetTrackingMethod.valueBased &&
           asset.subType == AssetSubType.stock) {
         subTypeForGrouping = AssetSubType.wealthManagement;
       }
       
       if (asset.subType == AssetSubType.wealthManagement) {
-        performance = await calculateValueAssetPerformance(asset); 
+        performance = await calculateValueAssetPerformance(asset);
         assetLocalValue = (performance['currentValue'] ?? 0.0) as double;
-      } 
+      }
       else if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
-        performance = await calculateShareAssetPerformance(asset); 
+        performance = await calculateShareAssetPerformance(asset);
         assetLocalValue = (performance['marketValue'] ?? 0.0) as double;
-      } else { 
-        performance = await calculateValueAssetPerformance(asset); 
+      } else {
+        performance = await calculateValueAssetPerformance(asset);
         assetLocalValue = (performance['currentValue'] ?? 0.0) as double;
       }
 
@@ -598,10 +598,10 @@ class CalculatorService {
     }
     allocationCNY.removeWhere((key, value) => value <= 0);
     return allocationCNY;
-  } 
+  }
 
   Future<Map<AssetClass, double>> calculateAssetClassAllocation() async {
-    final isar = _isar; 
+    final isar = _isar;
     final allAssets = await isar.assets.where().anyId().findAll();
     final fx = ExchangeRateService();
     final Map<AssetClass, double> allocationCNY = {};
@@ -610,28 +610,28 @@ class CalculatorService {
       double assetLocalValue = 0.0;
       
       if (asset.subType == AssetSubType.wealthManagement) {
-        performance = await calculateValueAssetPerformance(asset); 
+        performance = await calculateValueAssetPerformance(asset);
         assetLocalValue = (performance['currentValue'] ?? 0.0) as double;
-      } 
+      }
       else if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
-        performance = await calculateShareAssetPerformance(asset); 
+        performance = await calculateShareAssetPerformance(asset);
         assetLocalValue = (performance['marketValue'] ?? 0.0) as double;
-      } else { 
-        performance = await calculateValueAssetPerformance(asset); 
+      } else {
+        performance = await calculateValueAssetPerformance(asset);
         assetLocalValue = (performance['currentValue'] ?? 0.0) as double;
       }
 
       final double rate = await fx.getRate(asset.currency, 'CNY');
       final double assetValueCNY = assetLocalValue * rate;
       
-      allocationCNY.update(asset.assetClass, (existing) => existing + assetValueCNY, ifAbsent: () => assetValueCNY); 
+      allocationCNY.update(asset.assetClass, (existing) => existing + assetValueCNY, ifAbsent: () => assetValueCNY);
     }
     allocationCNY.removeWhere((key, value) => value <= 0);
     return allocationCNY;
-  } 
+  }
 
   Future<Map<String, dynamic>> calculateGlobalPerformance() async {
-    final isar = _isar; 
+    final isar = _isar;
     final allAccounts = await isar.accounts.where().anyId().findAll();
     final fx = ExchangeRateService();
     double totalValueCNY = 0;
@@ -651,7 +651,7 @@ class CalculatorService {
           .filter()
           .accountSupabaseIdEqualTo(account.supabaseId)
           .findAll();
-      for (final txn in accTransactions) { 
+      for (final txn in accTransactions) {
         if (txn.type == TransactionType.invest) {
           double amountCNY = txn.amount * rate;
           globalCashflows.add(-amountCNY);
@@ -681,16 +681,16 @@ class CalculatorService {
     return {
       'totalValue': totalValueCNY,
       'totalProfit': totalProfit,
-      'netInvestment': totalNetInvestmentCNY,      
-      'profitRate': totalProfitRate,          
-      'annualizedReturn': globalAnnualizedReturn, 
+      'netInvestment': totalNetInvestmentCNY,
+      'profitRate': totalProfitRate,
+      'annualizedReturn': globalAnnualizedReturn,
     };
   }
   
   Future<List<FlSpot>> getGlobalValueHistory() async {
-    final isar = _isar; 
+    final isar = _isar;
     final allTransactions = await isar.collection<AccountTransaction>().where().filter()
-        .typeEqualTo(TransactionType.updateValue) 
+        .typeEqualTo(TransactionType.updateValue)
         .findAll();
     if (allTransactions.isEmpty) return [];
     final allAccounts = await isar.accounts.where().findAll();
@@ -704,17 +704,17 @@ class CalculatorService {
     }
     final Map<String, AccountTransaction> latestDailyAccountUpdates = {};
     for (final txn in allTransactions) {
-      if (txn.type != TransactionType.updateValue) continue; 
+      if (txn.type != TransactionType.updateValue) continue;
       final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
       final int? accountId = supabaseIdToLocalIdMap[txn.accountSupabaseId];
-      if (accountId == null) continue; 
+      if (accountId == null) continue;
       final key = "${DateFormat('yyyy-MM-dd').format(day)}-$accountId";
       if (!latestDailyAccountUpdates.containsKey(key) || txn.date.isAfter(latestDailyAccountUpdates[key]!.date)) {
         latestDailyAccountUpdates[key] = txn;
       }
     }
     final dailyTotalValues = <DateTime, double>{};
-    final latestValuesByAccount = <int, double>{}; 
+    final latestValuesByAccount = <int, double>{};
     final allUpdateDays = latestDailyAccountUpdates.values
         .map((txn) => DateTime(txn.date.year, txn.date.month, txn.date.day))
         .toSet().toList()..sort();
@@ -735,9 +735,9 @@ class CalculatorService {
       }
       double totalValueCNYToday = 0;
       for (final entry in latestValuesByAccount.entries) {
-        final accountId = entry.key; 
+        final accountId = entry.key;
         final localValue = entry.value;
-        final currency = localIdToCurrencyMap[accountId] ?? 'CNY'; 
+        final currency = localIdToCurrencyMap[accountId] ?? 'CNY';
         final rate = await fx.getRate(currency, 'CNY');
         totalValueCNYToday += localValue * rate;
       }
@@ -745,7 +745,7 @@ class CalculatorService {
     }
     final sortedEntries = dailyTotalValues.entries.toList()..sort((a,b) => a.key.compareTo(b.key));
     if (sortedEntries.length < 2) {
-      final currentPerf = await calculateGlobalPerformance(); 
+      final currentPerf = await calculateGlobalPerformance();
       final double currentTotalValue = currentPerf['totalValue'] ?? 0.0;
       if (sortedEntries.isEmpty && currentTotalValue > 0) {
           final today = DateTime.now();
@@ -780,7 +780,7 @@ class CalculatorService {
     final allSnapshots = await isar.positionSnapshots
         .filter()
         .assetSupabaseIdEqualTo(asset.supabaseId)
-        .sortByDate() 
+        .sortByDate()
         .findAll();
     PositionSnapshot? lastSnapshot;
     final snapshotsBeforeTx = allSnapshots.where((s) => !s.date.isAfter(newTx.date)).toList();
@@ -793,25 +793,25 @@ class CalculatorService {
     final otherTransactions = await isar.transactions
         .filter()
         .assetSupabaseIdEqualTo(asset.supabaseId)
-        .group((q) => q 
+        .group((q) => q
           .typeEqualTo(TransactionType.buy)
           .or()
           .typeEqualTo(TransactionType.sell))
         .and()
-        .dateGreaterThan(lastSnapshot?.date ?? DateTime(2000)) 
+        .dateGreaterThan(lastSnapshot?.date ?? DateTime(2000))
         .and()
-        .dateLessThan(newTx.date) 
+        .dateLessThan(newTx.date)
         .sortByDate()
         .findAll();
     for (final tx in otherTransactions) {
       if (tx.type == TransactionType.buy && tx.shares != null && tx.amount != 0) {
-        runningTotalCost += tx.amount.abs(); 
-        runningShares += tx.shares!;       
+        runningTotalCost += tx.amount.abs();
+        runningShares += tx.shares!;
       } else if (tx.type == TransactionType.sell && tx.shares != null && tx.amount != 0) {
         if (runningShares > 0) {
-          runningTotalCost -= tx.shares!.abs() * (runningTotalCost / runningShares); 
+          runningTotalCost -= tx.shares!.abs() * (runningTotalCost / runningShares);
         }
-        runningShares -= tx.shares!.abs(); 
+        runningShares -= tx.shares!.abs();
       }
     }
     if (newTx.type == TransactionType.buy && newTx.shares != null && newTx.amount != 0) {
@@ -821,7 +821,7 @@ class CalculatorService {
       if (runningShares > 0) {
         runningTotalCost -= newTx.shares!.abs() * (runningTotalCost / runningShares);
       }
-      runningShares -= newTx.shares!.abs(); 
+      runningShares -= newTx.shares!.abs();
     }
     if (runningShares.abs() < 0.0001) {
       runningShares = 0;
@@ -830,12 +830,73 @@ class CalculatorService {
       runningCost = runningTotalCost / runningShares;
     }
     final newSnapshot = PositionSnapshot()
-      ..date = newTx.date 
+      ..date = newTx.date
       ..totalShares = runningShares
       ..averageCost = runningCost
       ..assetSupabaseId = asset.supabaseId
-      ..createdAt = DateTime.now(); 
+      ..createdAt = DateTime.now();
 
     return newSnapshot;
+  }
+  
+  // ★★★ 新增方法: 计算已清仓份额类资产的最终表现 ★★★
+  ///
+  /// 该方法通过遍历所有历史交易记录来计算最终的已实现盈亏，
+  /// 而不是依赖于当前为零的持仓快照。
+  Future<Map<String, dynamic>> calculateArchivedShareAssetPerformance(Asset asset) async {
+    if (asset.supabaseId == null) {
+      return {
+        'totalCost': 0.0,
+        'totalRevenue': 0.0,
+        'totalProfit': 0.0,
+        'profitRate': 0.0,
+      };
+    }
+
+    final transactions = await _isar.transactions
+        .filter()
+        .assetSupabaseIdEqualTo(asset.supabaseId)
+        .findAll();
+
+    if (transactions.isEmpty) {
+      return {
+        'totalCost': 0.0,
+        'totalRevenue': 0.0,
+        'totalProfit': 0.0,
+        'profitRate': 0.0,
+      };
+    }
+
+    // 1. 计算总成本和总收入
+    double totalCost = 0.0;
+    double totalRevenue = 0.0;
+
+    for (final txn in transactions) {
+      switch (txn.type) {
+        case TransactionType.buy:
+          totalCost += txn.amount.abs(); // 成本总是正数
+          break;
+        case TransactionType.sell:
+        case TransactionType.dividend:
+          totalRevenue += txn.amount.abs(); // 收入也用正数记
+          break;
+        default:
+          // 其他类型的交易在此处不计入
+          break;
+      }
+    }
+
+    // 2. 计算已实现盈亏
+    final totalProfit = totalRevenue - totalCost;
+
+    // 3. 计算已实现盈亏百分比
+    final profitRate = totalCost == 0 ? 0.0 : totalProfit / totalCost;
+
+    return {
+      'totalCost': totalCost,
+      'totalRevenue': totalRevenue,
+      'totalProfit': totalProfit,
+      'profitRate': profitRate,
+    };
   }
 }
