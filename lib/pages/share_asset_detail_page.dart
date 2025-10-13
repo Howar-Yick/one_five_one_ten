@@ -77,14 +77,20 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                     parentAccount = await isar.accounts.get(asset.accountLocalId!);
                   }
 
-                  if (parentAccount != null && context.mounted) {
+                  if (!context.mounted) {
+                    return;
+                  }
+
+                  if (parentAccount != null) {
+                    final accountId = parentAccount.id;
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => AddEditAssetPage(accountId: parentAccount.id, assetId: asset.id),
+                        builder: (_) => AddEditAssetPage(accountId: accountId, assetId: asset.id),
                       ),
                     );
-                  } else if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('错误：找不到父账户')));
+                  } else {
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(const SnackBar(content: Text('错误：找不到父账户')));
                   }
                 },
               ),
