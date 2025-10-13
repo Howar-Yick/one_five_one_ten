@@ -875,11 +875,15 @@ class CalculatorService {
     for (final txn in transactions) {
       switch (txn.type) {
         case TransactionType.buy:
-          totalCost += txn.amount.abs(); // 成本总是正数
+        case TransactionType.invest:
+          // "invest" 类型是旧数据中常见的份额法入金记录，这里与 buy 归为一类
+          totalCost += txn.amount.abs();
           break;
         case TransactionType.sell:
+        case TransactionType.withdraw:
         case TransactionType.dividend:
-          totalRevenue += txn.amount.abs(); // 收入也用正数记
+          // "withdraw" 同样是旧数据中常见的份额法卖出/出金记录
+          totalRevenue += txn.amount.abs();
           break;
         default:
           // 其他类型的交易在此处不计入
