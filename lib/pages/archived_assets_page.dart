@@ -1,18 +1,16 @@
 // 文件: lib/pages/archived_assets_page.dart
-// (这是添加了缺失 import 的最终修复版本)
+// (这是最终的、简洁的UI展示文件)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
-import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
 import 'package:one_five_one_ten/pages/share_asset_detail_page.dart';
 import 'package:one_five_one_ten/pages/value_asset_detail_page.dart';
-// ★★★ 修复点: 添加这两个缺失的 import ★★★
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 
@@ -35,6 +33,7 @@ class ArchivedAssetsPage extends ConsumerWidget {
           }
           return RefreshIndicator(
             onRefresh: () async {
+              // 刷新 Provider
               ref.invalidate(archivedAssetsProvider);
             },
             child: ListView.builder(
@@ -43,97 +42,63 @@ class ArchivedAssetsPage extends ConsumerWidget {
                 final assetData = assets[index];
                 final asset = assetData['asset'] as Asset;
                 final accountName = assetData['accountName'] as String;
+                // 直接从 provider 获取已计算好的 performance 数据
+                final performance = assetData['performance'] as Map<String, dynamic>;
 
-                final calculator = CalculatorService();
-                final performanceFuture = asset.trackingMethod == AssetTrackingMethod.shareBased
-                    ? calculator.calculateArchivedShareAssetPerformance(asset)
-                    : calculator.calculateValueAssetPerformance(asset);
-
-                return FutureBuilder<Map<String, dynamic>>(
-                  future: performanceFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: ListTile(
-                          title: Text(asset.name),
-                          subtitle: Text('所属账户: $accountName'),
-                          trailing: const SizedBox(
-                            width: 24, height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2.0),
-                          ),
-                        ),
-                      );
-                    }
-
-                    if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
-                      return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: ListTile(
-                          title: Text(asset.name),
-                          subtitle: Text('所属账户: $accountName'),
-                          trailing: const Icon(Icons.error_outline, color: Colors.grey),
-                          onTap: () => _showActionsDialog(context, ref, asset),
-                        ),
-                      );
-                    }
-
-                    final performance = snapshot.data!;
-                    final double totalProfit = (performance['totalProfit'] ?? 0.0) as double;
-                    final double totalCost = (performance['totalCost'] ?? 0.0) as double;
-                    final double profitRate = (performance['profitRate'] ?? 0.0) as double;
-
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: () {
-                          if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
-                            Navigator.of(context).push(MaterialPageRoute(
-                              builder: (_) => ShareAssetDetailPage(assetId: asset.id),
-                            ));
-                          } else {
-                            Navigator.of(context).push(MaterialPageRoute(
-                              builder: (_) => ValueAssetDetailPage(assetId: asset.id),
-                            ));
-                          }
-                        },
-                        onLongPress: () => _showActionsDialog(context, ref, asset),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                // 从 performance map 中安全地提取数据
+                final double totalProfit = (performance['totalProfit'] ?? 0.0) as double;
+                final double totalCost = (performance['totalCost'] ?? 0.0) as double;
+                final double profitRate = (performance['profitRate'] ?? 0.0) as double;
+                
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () {
+                      if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
+                        Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => ShareAssetDetailPage(assetId: asset.id),
+                        ));
+                      } else {
+                        Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => ValueAssetDetailPage(assetId: asset.id),
+                        ));
+                      }
+                    },
+                    onLongPress: () => _showActionsDialog(context, ref, asset),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(asset.name, style: Theme.of(context).textTheme.titleLarge),
+                          const SizedBox(height: 4),
+                          Text('所属账户: $accountName', style: Theme.of(context).textTheme.bodySmall),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(asset.name, style: Theme.of(context).textTheme.titleLarge),
-                              const SizedBox(height: 4),
-                              Text('所属账户: $accountName', style: Theme.of(context).textTheme.bodySmall),
-                              const SizedBox(height: 16),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  _buildPerformanceColumn(
-                                    '已实现盈亏',
-                                    formatCurrency(totalProfit, asset.currency),
-                                    totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade600,
-                                  ),
-                                  _buildPerformanceColumn(
-                                    '总投入',
-                                    formatCurrency(totalCost, asset.currency),
-                                    Theme.of(context).textTheme.bodyLarge?.color,
-                                  ),
-                                  _buildPerformanceColumn(
-                                    '回报率',
-                                    '${(profitRate * 100).toStringAsFixed(2)}%',
-                                    totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade600,
-                                  ),
-                                ],
+                              _buildPerformanceColumn(
+                                '已实现盈亏',
+                                formatCurrency(totalProfit, asset.currency),
+                                totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade600,
+                              ),
+                              _buildPerformanceColumn(
+                                '总投入',
+                                formatCurrency(totalCost, asset.currency),
+                                Theme.of(context).textTheme.bodyLarge?.color,
+                              ),
+                              _buildPerformanceColumn(
+                                '回报率',
+                                '${(profitRate * 100).toStringAsFixed(2)}%',
+                                totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade600,
                               ),
                             ],
                           ),
-                        ),
+                        ],
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 );
               },
             ),
@@ -184,6 +149,7 @@ class ArchivedAssetsPage extends ConsumerWidget {
                 asset.isArchived = false;
                 await ref.read(syncServiceProvider).saveAsset(asset);
                 ref.invalidate(archivedAssetsProvider);
+                // 恢复资产后，也需要刷新主页的资产列表
                 ref.invalidate(trackedAssetsWithPerformanceProvider);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -222,13 +188,12 @@ class ArchivedAssetsPage extends ConsumerWidget {
               onPressed: () async {
                 final syncService = ref.read(syncServiceProvider);
                 final isar = ref.read(databaseServiceProvider).isar;
-
+                
                 try {
-                  Navigator.of(dialogContext).pop(); // 先关闭对话框
+                  Navigator.of(dialogContext).pop(); 
 
                   if (asset.supabaseId != null) {
                     await isar.writeTxn(() async {
-                      // 现在 isar.transactions 和 isar.positionSnapshots 可以被正确识别
                       final txs = await isar.transactions.filter().assetSupabaseIdEqualTo(asset.supabaseId).findAll();
                       for (final tx in txs) { await syncService.deleteTransaction(tx); }
                       

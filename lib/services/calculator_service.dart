@@ -1,5 +1,5 @@
 // 文件: lib/services/calculator_service.dart
-// (这是添加了新计算逻辑的最终完整文件)
+// (这是最终的、包含归档资产计算逻辑的完整文件)
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:isar/isar.dart';
@@ -48,6 +48,7 @@ class _AccountHistoryPoint {
 class CalculatorService {
   Isar get _isar => DatabaseService().isar;
 
+  // ... (calculateAccountPerformance, _buildAccountHistoryPoints, _ensureChartHasStart 等方法保持不变) ...
   Future<Map<String, dynamic>> calculateAccountPerformance(Account account) async {
     if (account.supabaseId == null) return {'currentValue': 0.0, 'netInvestment': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0};
     final originalTransactions = await _isar.accountTransactions
@@ -566,7 +567,7 @@ class CalculatorService {
 
   Future<Map<AssetSubType, double>> calculateAssetAllocation() async {
     final isar = _isar;
-    final allAssets = await isar.assets.where().anyId().findAll();
+    final allAssets = await isar.assets.where().filter().isArchivedEqualTo(false).findAll(); // 只统计未归档的
     final fx = ExchangeRateService();
     final Map<AssetSubType, double> allocationCNY = {};
     for (final asset in allAssets) {
@@ -602,7 +603,7 @@ class CalculatorService {
 
   Future<Map<AssetClass, double>> calculateAssetClassAllocation() async {
     final isar = _isar;
-    final allAssets = await isar.assets.where().anyId().findAll();
+    final allAssets = await isar.assets.where().filter().isArchivedEqualTo(false).findAll(); // 只统计未归档的
     final fx = ExchangeRateService();
     final Map<AssetClass, double> allocationCNY = {};
     for (final asset in allAssets) {
@@ -839,7 +840,7 @@ class CalculatorService {
     return newSnapshot;
   }
   
-  // ★★★ 新增方法: 计算已清仓份额类资产的最终表现 ★★★
+  /// ★★★ 核心方法: 专门计算已清仓份额类资产的最终表现 ★★★
   ///
   /// 该方法通过遍历所有历史交易记录来计算最终的已实现盈亏，
   /// 而不是依赖于当前为零的持仓快照。
@@ -867,7 +868,7 @@ class CalculatorService {
       };
     }
 
-    // 1. 计算总成本和总收入
+    // 1. 计算总投入成本和总卖出收入
     double totalCost = 0.0;
     double totalRevenue = 0.0;
 
@@ -889,7 +890,7 @@ class CalculatorService {
     // 2. 计算已实现盈亏
     final totalProfit = totalRevenue - totalCost;
 
-    // 3. 计算已实现盈亏百分比
+    // 3. 计算回报率
     final profitRate = totalCost == 0 ? 0.0 : totalProfit / totalCost;
 
     return {

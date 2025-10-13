@@ -1,5 +1,5 @@
 // 文件: lib/providers/global_providers.dart
-// (这是完整的、基于你原有代码的修复版本)
+// (这是修正了 archivedAssetsProvider 逻辑的最终完整文件)
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -16,11 +16,7 @@ import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-
-/// 说明：
-/// 集中放置需要被多个页面跨页使用的顶层 Provider，避免页面之间互相 import 导致的循环依赖。
-
-// ... (你文件中所有其他的 Provider 和 enum 定义保持不变) ...
+// ... (文件中所有其他的 Provider 和 enum 定义保持不变) ...
 enum AssetSortCriteria {
   marketValue,
   totalProfit,
@@ -167,7 +163,10 @@ final trackedAssetsWithPerformanceProvider =
       .where()
       .filter()
       .accountSupabaseIdEqualTo(accountSupabaseId)
+      .and()
+      .isArchivedEqualTo(false) // 只看未归档的
       .watch(fireImmediately: true);
+
   await for (var assets in assetStream) {
     final List<Map<String, dynamic>> results = [];
     for (final asset in assets) {
@@ -220,6 +219,10 @@ final shareAssetPerformanceProvider =
   final asset = await ref.watch(shareAssetDetailProvider(assetId).future);
   if (asset == null) {
     throw Exception('未找到资产');
+  }
+  // ★★★ 如果资产已归档，也使用归档算法 ★★★
+  if (asset.isArchived) {
+    return CalculatorService().calculateArchivedShareAssetPerformance(asset);
   }
   return CalculatorService().calculateShareAssetPerformance(asset);
 });
@@ -370,25 +373,19 @@ final valueAssetHistoryChartsProvider =
   return CalculatorService().getValueAssetHistoryCharts(asset);
 });
 
-
-// (*** 5. 关键修改：重命名 init 方法并调整构造函数，使其能被外部调用 ***)
 final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeMode>((ref) {
-  // 我们在 main.dart 中预加载主题，所以这里不再需要调用 init
   return ThemeNotifier();
 });
 
 class ThemeNotifier extends StateNotifier<ThemeMode> {
-  // 默认设置为“跟随系统”，将在 init 方法中被覆盖
   ThemeNotifier() : super(ThemeMode.system);
 
-  // 从本地存储加载主题设置，现在是公共方法
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final themeIndex = prefs.getInt('themeMode') ?? ThemeMode.system.index;
     state = ThemeMode.values[themeIndex];
   }
 
-  // 设置新主题并保存到本地
   Future<void> setTheme(ThemeMode themeMode) async {
     if (state != themeMode) {
       state = themeMode;
@@ -400,6 +397,7 @@ class ThemeNotifier extends StateNotifier<ThemeMode> {
 
 // ------------------------ 已清仓（归档）资产 Providers ------------------------
 
+// ★★★ 这是最关键的修改 ★★★
 final archivedAssetsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   final isar = ref.watch(databaseServiceProvider).isar;
   final calculator = CalculatorService();
@@ -416,20 +414,26 @@ final archivedAssetsProvider = FutureProvider.autoDispose<List<Map<String, dynam
   final accountMap = { for (var acc in allAccounts) acc.supabaseId : acc.name };
 
   // 3. 为每个归档资产计算其最终性能
-  final List<Map<String, dynamic>> results = [];
-  for (final asset in archivedAssets) {
+  final List<Future<Map<String, dynamic>>> futures = archivedAssets.map((asset) async {
     Map<String, dynamic> performanceData;
+    
+    // ★★★ 核心逻辑：根据资产类型，调用正确的计算方法 ★★★
     if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
-      performanceData = await calculator.calculateShareAssetPerformance(asset);
+      // 对于份额类资产，必须使用我们专门创建的“归档”算法
+      performanceData = await calculator.calculateArchivedShareAssetPerformance(asset);
     } else {
+      // 对于价值类资产，其原有算法已经是基于交易流水，所以是正确的
       performanceData = await calculator.calculateValueAssetPerformance(asset);
     }
-    results.add({
+    
+    return {
       'asset': asset,
-      'performance': performanceData,
+      'performance': performanceData, // 这里的数据现在是正确的了
       'accountName': accountMap[asset.accountSupabaseId] ?? '未知账户',
-    });
-  }
+    };
+  }).toList();
+  
+  final results = await Future.wait(futures);
   
   // 按更新时间倒序排列，最近清仓的在最前面
   results.sort((a, b) {
