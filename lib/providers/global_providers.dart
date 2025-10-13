@@ -1,5 +1,5 @@
 // 文件: lib/providers/global_providers.dart
-// (这是修正了 archivedAssetsProvider 逻辑的最终完整文件)
+// (这是最终确认的、完全正确的版本)
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -16,7 +16,6 @@ import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// ... (文件中所有其他的 Provider 和 enum 定义保持不变) ...
 enum AssetSortCriteria {
   marketValue,
   totalProfit,
@@ -149,6 +148,7 @@ final accountPerformanceProvider =
   }
   return CalculatorService().calculateAccountPerformance(account);
 });
+
 final trackedAssetsWithPerformanceProvider =
     StreamProvider.autoDispose.family<List<Map<String, dynamic>>, int>((ref, accountId) async* { 
   final isar = ref.watch(databaseServiceProvider).isar;
@@ -164,9 +164,9 @@ final trackedAssetsWithPerformanceProvider =
       .filter()
       .accountSupabaseIdEqualTo(accountSupabaseId)
       .and()
-      .isArchivedEqualTo(false) // 只看未归档的
+      .isArchivedEqualTo(false) 
       .watch(fireImmediately: true);
-
+      
   await for (var assets in assetStream) {
     final List<Map<String, dynamic>> results = [];
     for (final asset in assets) {
@@ -184,6 +184,7 @@ final trackedAssetsWithPerformanceProvider =
     yield results; 
   }
 });
+
 final accountHistoryProvider = 
     FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, Account>(
         (ref, account) {
@@ -213,6 +214,10 @@ final shareAssetDetailProvider =
   final isar = ref.watch(databaseServiceProvider).isar;
   return isar.assets.watchObject(assetId, fireImmediately: true);
 });
+
+// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+// ★★★ 这是最核心的修复：让详情页的数据源变得智能 ★★★
+// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 final shareAssetPerformanceProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, int>(
         (ref, assetId) async {
@@ -220,12 +225,16 @@ final shareAssetPerformanceProvider =
   if (asset == null) {
     throw Exception('未找到资产');
   }
-  // ★★★ 如果资产已归档，也使用归档算法 ★★★
+  
+  // 关键判断：如果资产已归档，则调用归档专用的计算方法
   if (asset.isArchived) {
     return CalculatorService().calculateArchivedShareAssetPerformance(asset);
   }
+  
+  // 否则（未归档），使用常规的持仓计算方法
   return CalculatorService().calculateShareAssetPerformance(asset);
 });
+
 final assetHistoryChartProvider =
     FutureProvider.autoDispose.family<List<FlSpot>, int>((ref, assetId) async {
   final asset = await ref.watch(shareAssetDetailProvider(assetId).future);
@@ -373,6 +382,7 @@ final valueAssetHistoryChartsProvider =
   return CalculatorService().getValueAssetHistoryCharts(asset);
 });
 
+
 final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeMode>((ref) {
   return ThemeNotifier();
 });
@@ -397,45 +407,37 @@ class ThemeNotifier extends StateNotifier<ThemeMode> {
 
 // ------------------------ 已清仓（归档）资产 Providers ------------------------
 
-// ★★★ 这是最关键的修改 ★★★
 final archivedAssetsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   final isar = ref.watch(databaseServiceProvider).isar;
   final calculator = CalculatorService();
   
-  // 1. 查询所有已归档的资产
   final archivedAssets = await isar.assets
       .where()
       .filter()
       .isArchivedEqualTo(true)
       .findAll();
 
-  // 2. 为了显示账户名，我们一次性获取所有账户信息
   final allAccounts = await isar.accounts.where().findAll();
   final accountMap = { for (var acc in allAccounts) acc.supabaseId : acc.name };
 
-  // 3. 为每个归档资产计算其最终性能
   final List<Future<Map<String, dynamic>>> futures = archivedAssets.map((asset) async {
     Map<String, dynamic> performanceData;
     
-    // ★★★ 核心逻辑：根据资产类型，调用正确的计算方法 ★★★
     if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
-      // 对于份额类资产，必须使用我们专门创建的“归档”算法
       performanceData = await calculator.calculateArchivedShareAssetPerformance(asset);
     } else {
-      // 对于价值类资产，其原有算法已经是基于交易流水，所以是正确的
       performanceData = await calculator.calculateValueAssetPerformance(asset);
     }
     
     return {
       'asset': asset,
-      'performance': performanceData, // 这里的数据现在是正确的了
+      'performance': performanceData,
       'accountName': accountMap[asset.accountSupabaseId] ?? '未知账户',
     };
   }).toList();
   
   final results = await Future.wait(futures);
   
-  // 按更新时间倒序排列，最近清仓的在最前面
   results.sort((a, b) {
     final dateA = (a['asset'] as Asset).updatedAt ?? DateTime(2000);
     final dateB = (b['asset'] as Asset).updatedAt ?? DateTime(2000);
