@@ -34,5 +34,37 @@ class DatabaseService {
       directory: dir.path,
       name: 'one_five_one_ten_db',
     );
+
+    await _backfillAssetAccountLocalIds();
+  }
+
+  Future<void> _backfillAssetAccountLocalIds() async {
+    final accounts = await isar.accounts.where().findAll();
+    if (accounts.isEmpty) return;
+
+    final Map<String, int> accountIdMap = {
+      for (final account in accounts)
+        if (account.supabaseId != null) account.supabaseId!: account.id,
+    };
+
+    final assets = await isar.assets.where().findAll();
+    final needsUpdate = assets.where((asset) =>
+        asset.accountLocalId == null && asset.accountSupabaseId != null &&
+        accountIdMap.containsKey(asset.accountSupabaseId!));
+
+    if (needsUpdate.isEmpty) return;
+
+    await isar.writeTxn(() async {
+      for (final asset in needsUpdate) {
+        final supaId = asset.accountSupabaseId;
+        if (supaId != null) {
+          final accountId = accountIdMap[supaId];
+          if (accountId != null) {
+            asset.accountLocalId = accountId;
+            await isar.assets.put(asset);
+          }
+        }
+      }
+    });
   }
 }

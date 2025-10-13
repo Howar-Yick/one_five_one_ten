@@ -150,26 +150,27 @@ final accountPerformanceProvider =
 });
 
 final trackedAssetsWithPerformanceProvider =
-    StreamProvider.autoDispose.family<List<Map<String, dynamic>>, int>((ref, accountId) async* { 
+    StreamProvider.autoDispose.family<List<Map<String, dynamic>>, int>((ref, accountId) async* {
   final isar = ref.watch(databaseServiceProvider).isar;
   final calculator = CalculatorService();
   final account = await ref.watch(accountDetailProvider(accountId).future);
-  if (account == null || account.supabaseId == null) {
-    yield []; 
+  if (account == null) {
+    yield [];
     return;
   }
-  final accountSupabaseId = account.supabaseId!;
-  final assetStream = isar.assets
-      .where()
-      .filter()
-      .accountSupabaseIdEqualTo(accountSupabaseId)
-      .and()
-      .isArchivedEqualTo(false) 
-      .watch(fireImmediately: true);
-      
+  final accountSupabaseId = account.supabaseId;
+  final assetStream = isar.assets.where().watch(fireImmediately: true);
+
   await for (var assets in assetStream) {
+    final relevantAssets = assets.where((asset) {
+      if (asset.isArchived) return false;
+      final matchesSupabase =
+          accountSupabaseId != null && asset.accountSupabaseId == accountSupabaseId;
+      final matchesLocal = asset.accountLocalId == accountId;
+      return matchesSupabase || matchesLocal;
+    }).toList();
     final List<Map<String, dynamic>> results = [];
-    for (final asset in assets) {
+    for (final asset in relevantAssets) {
       Map<String, dynamic> performanceData;
       if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
         performanceData = await calculator.calculateShareAssetPerformance(asset);
@@ -181,7 +182,7 @@ final trackedAssetsWithPerformanceProvider =
         'performance': performanceData,
       });
     }
-    yield results; 
+    yield results;
   }
 });
 
@@ -418,7 +419,11 @@ final archivedAssetsProvider = FutureProvider.autoDispose<List<Map<String, dynam
       .findAll();
 
   final allAccounts = await isar.accounts.where().findAll();
-  final accountMap = { for (var acc in allAccounts) acc.supabaseId : acc.name };
+  final accountNameBySupabase = {
+    for (var acc in allAccounts)
+      if (acc.supabaseId != null) acc.supabaseId!: acc.name
+  };
+  final accountNameById = { for (var acc in allAccounts) acc.id : acc.name };
 
   final List<Future<Map<String, dynamic>>> futures = archivedAssets.map((asset) async {
     Map<String, dynamic> performanceData;
@@ -432,7 +437,11 @@ final archivedAssetsProvider = FutureProvider.autoDispose<List<Map<String, dynam
     return {
       'asset': asset,
       'performance': performanceData,
-      'accountName': accountMap[asset.accountSupabaseId] ?? '未知账户',
+      'accountName': asset.accountSupabaseId != null
+          ? (accountNameBySupabase[asset.accountSupabaseId!] ?? '未知账户')
+          : (asset.accountLocalId != null
+              ? (accountNameById[asset.accountLocalId!] ?? '未知账户')
+              : '未知账户'),
     };
   }).toList();
   

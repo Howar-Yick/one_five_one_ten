@@ -382,8 +382,27 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     String selectedCurrency = account.currency;
     final isar = DatabaseService().isar;
 
-    final txCount = await isar.accountTransactions.where().filter().accountSupabaseIdEqualTo(account.supabaseId).count();
-    final assetCount = await isar.assets.where().filter().accountSupabaseIdEqualTo(account.supabaseId).count();
+    final String? accountSupabaseId = account.supabaseId;
+
+    final int txCount = accountSupabaseId == null
+        ? 0
+        : await isar.accountTransactions
+            .where()
+            .filter()
+            .accountSupabaseIdEqualTo(accountSupabaseId)
+            .count();
+
+    int assetCount;
+    if (accountSupabaseId != null) {
+      assetCount = await isar.assets
+          .where()
+          .filter()
+          .accountSupabaseIdEqualTo(accountSupabaseId)
+          .count();
+    } else {
+      final assets = await isar.assets.where().findAll();
+      assetCount = assets.where((asset) => asset.accountLocalId == account.id).length;
+    }
     
     final bool hasTransactions = txCount > 0;
     final bool hasAssets = assetCount > 0;
@@ -553,36 +572,55 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
         final isar = DatabaseService().isar;
         final syncService = ref.read(syncServiceProvider);
         
+        List<Asset> assetsToDelete;
         if (account.supabaseId == null) {
-          await isar.writeTxn(() async {
-            await isar.accounts.delete(account.id);
-          });
+          final allAssets = await isar.assets.where().findAll();
+          assetsToDelete = allAssets.where((asset) => asset.accountLocalId == account.id).toList();
         } else {
           final accountSupaId = account.supabaseId!;
-          
-          final assetsToDelete = await isar.assets.where().filter().accountSupabaseIdEqualTo(accountSupaId).findAll();
-          
-          for (final asset in assetsToDelete) {
-            if (asset.supabaseId != null) {
-              final assetSupaId = asset.supabaseId!;
-              final txs = await isar.transactions.where().filter().assetSupabaseIdEqualTo(assetSupaId).findAll();
-              for (final tx in txs) {
-                await syncService.deleteTransaction(tx);
-              }
-              final snaps = await isar.positionSnapshots.where().filter().assetSupabaseIdEqualTo(assetSupaId).findAll();
-              for (final snap in snaps) {
-                await syncService.deletePositionSnapshot(snap);
-              }
-            }
-            await syncService.deleteAsset(asset);
-          }
+          assetsToDelete = await isar.assets
+              .where()
+              .filter()
+              .accountSupabaseIdEqualTo(accountSupaId)
+              .findAll();
 
-          final accTxsToDelete = await isar.accountTransactions.where().filter().accountSupabaseIdEqualTo(accountSupaId).findAll();
+          final accTxsToDelete = await isar.accountTransactions
+              .where()
+              .filter()
+              .accountSupabaseIdEqualTo(accountSupaId)
+              .findAll();
           for (final tx in accTxsToDelete) {
             await syncService.deleteAccountTransaction(tx);
           }
         }
-        
+
+        for (final asset in assetsToDelete) {
+          if (asset.supabaseId != null) {
+            final assetSupaId = asset.supabaseId!;
+            final txs = await isar.transactions
+                .where()
+                .filter()
+                .assetSupabaseIdEqualTo(assetSupaId)
+                .findAll();
+            for (final tx in txs) {
+              await syncService.deleteTransaction(tx);
+            }
+            final snaps = await isar.positionSnapshots
+                .where()
+                .filter()
+                .assetSupabaseIdEqualTo(assetSupaId)
+                .findAll();
+            for (final snap in snaps) {
+              await syncService.deletePositionSnapshot(snap);
+            }
+          }
+          await syncService.deleteAsset(asset);
+        }
+
+        await isar.writeTxn(() async {
+          await isar.accounts.delete(account.id);
+        });
+
         await syncService.deleteAccount(account);
 
         ref.invalidate(dashboardDataProvider);

@@ -179,6 +179,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         assetToUpdate.code = code;
         assetToUpdate.currency = currentSelectedCurrency;
         assetToUpdate.assetClass = currentSelectedAssetClass;
+        assetToUpdate.accountLocalId = widget.accountId;
         
         // (*** 2.1 关键修复：同时保存跟踪方法和子类型 ***)
         assetToUpdate.trackingMethod = currentSelectedMethod; 
@@ -206,8 +207,9 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           ..trackingMethod = currentSelectedMethod // (来自 state)
           ..subType = currentSelectedSubType       // (来自 state)
           ..currency = currentSelectedCurrency
-          ..createdAt = DateTime.now() 
+          ..createdAt = DateTime.now()
           ..accountSupabaseId = parentAccount.supabaseId
+          ..accountLocalId = widget.accountId
           ..assetClass = currentSelectedAssetClass;
 
         if (latestPriceText.isNotEmpty) {

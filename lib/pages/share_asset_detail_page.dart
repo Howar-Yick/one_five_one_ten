@@ -63,13 +63,20 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
               IconButton(
                 icon: const Icon(Icons.edit_outlined),
                 tooltip: '编辑资产',
-                onPressed: () async { 
+                onPressed: () async {
                   final isar = DatabaseService().isar;
-                  final parentAccount = await isar.accounts.where()
-                      .filter()
-                      .supabaseIdEqualTo(asset.accountSupabaseId)
-                      .findFirst();
-                  
+                  Account? parentAccount;
+                  if (asset.accountSupabaseId != null) {
+                    parentAccount = await isar.accounts
+                        .where()
+                        .filter()
+                        .supabaseIdEqualTo(asset.accountSupabaseId)
+                        .findFirst();
+                  }
+                  if (parentAccount == null && asset.accountLocalId != null) {
+                    parentAccount = await isar.accounts.get(asset.accountLocalId!);
+                  }
+
                   if (parentAccount != null && context.mounted) {
                     Navigator.of(context).push(
                       MaterialPageRoute(

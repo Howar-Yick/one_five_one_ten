@@ -46,7 +46,7 @@ Future<void> main() async {
         for (var acc in allAccounts)
           if (acc.supabaseId != null) acc.supabaseId!: acc.id
       };
-      
+
       final List<PositionLike> items = [];
 
       for (final asset in allAssets) {
@@ -68,7 +68,10 @@ Future<void> main() async {
         final double rate = await fx.getRate(asset.currency, 'CNY');
         final double marketValueCNY = assetLocalValue * rate;
 
-        final int? localAccountId = accountSupabaseIdToLocalId[asset.accountSupabaseId];
+        final int? localAccountId = asset.accountLocalId ??
+            (asset.accountSupabaseId != null
+                ? accountSupabaseIdToLocalId[asset.accountSupabaseId!]
+                : null);
 
         if (marketValueCNY > 0.01 && localAccountId != null) {
           items.add(PositionLike(
