@@ -84,12 +84,9 @@ class Asset {
         ? DateTime.parse(json['price_update_date']).toLocal()
         : null;
     asset.currency = json['currency'] ?? 'CNY';
-    asset.trackingMethod = AssetTrackingMethod.values
-        .byName(json['tracking_method'] ?? 'valueBased');
-    asset.subType =
-        AssetSubType.values.byName(json['sub_type'] ?? 'other');
-    asset.assetClass =
-        AssetClass.values.byName(json['asset_class'] ?? 'other');
+    asset.trackingMethod = _parseTrackingMethod(json['tracking_method']);
+    asset.subType = _parseAssetSubType(json['sub_type']);
+    asset.assetClass = _parseAssetClass(json['asset_class']);
     asset.accountSupabaseId = json['account_id'];
 
     // ★★★ 新增字段的解析 ★★★
@@ -116,4 +113,67 @@ class Asset {
       // ★★★ 新增结束 ★★★
     };
   }
+}
+
+AssetTrackingMethod _parseTrackingMethod(dynamic rawValue) {
+  return _parseEnumValue(
+    AssetTrackingMethod.values,
+    rawValue,
+    AssetTrackingMethod.valueBased,
+    (value) => value.name,
+  );
+}
+
+AssetSubType _parseAssetSubType(dynamic rawValue) {
+  return _parseEnumValue(
+    AssetSubType.values,
+    rawValue,
+    AssetSubType.other,
+    (value) => value.name,
+  );
+}
+
+AssetClass _parseAssetClass(dynamic rawValue) {
+  return _parseEnumValue(
+    AssetClass.values,
+    rawValue,
+    AssetClass.other,
+    (value) => value.name,
+  );
+}
+
+T _parseEnumValue<T>(List<T> values, dynamic rawValue, T fallback, String Function(T) nameGetter) {
+  if (rawValue == null) {
+    return fallback;
+  }
+
+  final rawString = rawValue.toString().trim();
+  if (rawString.isEmpty) {
+    return fallback;
+  }
+
+  for (final value in values) {
+    final candidate = nameGetter(value);
+    if (_compareEnumStrings(rawString, candidate)) {
+      return value;
+    }
+  }
+
+  return fallback;
+}
+
+bool _compareEnumStrings(String input, String candidate) {
+  if (input == candidate) {
+    return true;
+  }
+
+  final lowerInput = input.toLowerCase();
+  final lowerCandidate = candidate.toLowerCase();
+  if (lowerInput == lowerCandidate) {
+    return true;
+  }
+
+  final simplifiedInput = lowerInput.replaceAll(RegExp(r'[_\s-]'), '');
+  final simplifiedCandidate = lowerCandidate.replaceAll(RegExp(r'[_\s-]'), '');
+  return simplifiedInput == simplifiedCandidate;
 }
