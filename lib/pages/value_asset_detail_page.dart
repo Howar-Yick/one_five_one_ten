@@ -53,32 +53,38 @@ class _ValueAssetDetailPageState extends ConsumerState<ValueAssetDetailPage> {
                 icon: const Icon(Icons.edit),
                 tooltip: '编辑资产',
                 onPressed: () async {
-                  
+
                   final isar = DatabaseService().isar;
 
-                  final account = await isar.accounts
-                      .filter()
-                      .supabaseIdEqualTo(asset.accountSupabaseId)
-                      .findFirst();
+                  Account? account;
+                  if (asset.accountSupabaseId != null) {
+                    account = await isar.accounts
+                        .filter()
+                        .supabaseIdEqualTo(asset.accountSupabaseId)
+                        .findFirst();
+                  }
+                  if (account == null && asset.accountLocalId != null) {
+                    account = await isar.accounts.get(asset.accountLocalId!);
+                  }
 
-                  if (account == null) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('无法找到父账户，数据可能未同步。')),
-                      );
-                    }
+                  if (!context.mounted) {
                     return;
                   }
 
-                  if (context.mounted) {
+                  if (account != null) {
+                    final accountId = account.id;
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => AddEditAssetPage(
-                          accountId: account.id, // (父账户的 Isar ID)
-                          assetId: asset.id,     // (当前资产的 Isar ID)
+                          accountId: accountId,
+                          assetId: asset.id,
                         ),
                       ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('无法找到父账户，数据可能未同步。')),
                     );
                   }
                 },

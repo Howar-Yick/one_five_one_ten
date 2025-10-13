@@ -52,7 +52,9 @@ class Asset {
   AssetClass assetClass = AssetClass.other; 
 
   @Index()
-  String? accountSupabaseId; 
+  String? accountSupabaseId;
+
+  int? accountLocalId;
 
   @Index(type: IndexType.value, unique: true, caseSensitive: false)
   String? supabaseId; 
@@ -88,6 +90,7 @@ class Asset {
     asset.subType = _parseAssetSubType(json['sub_type']);
     asset.assetClass = _parseAssetClass(json['asset_class']);
     asset.accountSupabaseId = json['account_id'];
+    asset.accountLocalId = null;
 
     // ★★★ 新增字段的解析 ★★★
     asset.isArchived = json['is_archived'] ?? false;

@@ -177,7 +177,7 @@ class SupabaseSyncService {
     T Function(Map<String, dynamic>) fromJson,
   ) async {
     print('[SupabaseSync] Reconciling table: $tableName');
-    
+
     final remoteResponse = await _client.from(tableName).select();
     final List<T> remoteItems = (remoteResponse as List<dynamic>)
         .map((doc) => fromJson(doc as Map<String, dynamic>))
@@ -185,8 +185,17 @@ class SupabaseSyncService {
     final remoteSupabaseIds = remoteItems.map((e) => (e as dynamic).supabaseId as String?).toSet();
 
     final localItems = await isarCollection.where().findAll();
-    
+
     final localItemsMap = { for (var item in localItems) (item as dynamic).supabaseId: item };
+
+    Map<String, int> accountIdMap = const {};
+    if (T == Asset) {
+      final accounts = await _isar.accounts.where().findAll();
+      accountIdMap = {
+        for (final account in accounts)
+          if (account.supabaseId != null) account.supabaseId!: account.id,
+      };
+    }
 
     final List<Id> isarIdsToDelete = [];
     for (final localItem in localItems) {
@@ -204,6 +213,12 @@ class SupabaseSyncService {
 
       for (final remoteItem in remoteItems) {
         final remoteSupabaseId = (remoteItem as dynamic).supabaseId;
+        if (remoteItem is Asset && remoteItem.accountLocalId == null) {
+          final supaId = remoteItem.accountSupabaseId;
+          if (supaId != null) {
+            remoteItem.accountLocalId = accountIdMap[supaId];
+          }
+        }
         final localItem = localItemsMap[remoteSupabaseId];
         await _performLWWPut(localItem, remoteItem, isarCollection);
       }
@@ -252,6 +267,13 @@ class SupabaseSyncService {
             break;
           case 'Asset':
             final remoteItem = Asset.fromSupabaseJson(remoteData);
+            if (remoteItem.accountLocalId == null && remoteItem.accountSupabaseId != null) {
+              final account = await _isar.accounts
+                  .where()
+                  .supabaseIdEqualTo(remoteItem.accountSupabaseId)
+                  .findFirst();
+              remoteItem.accountLocalId = account?.id;
+            }
             final localItem = await _isar.assets.where().supabaseIdEqualTo(remoteItem.supabaseId).findFirst();
             await _performLWWPut(localItem, remoteItem, _isar.assets);
             break;
@@ -422,13 +444,23 @@ class SupabaseSyncService {
       final savedData = response.first as Map<String, dynamic>;
       final definitiveItem = fromSupabaseJson(savedData) as T;
       final definitiveSupaId = (definitiveItem as dynamic).supabaseId as String?;
-      
-      (definitiveItem as dynamic).id = isarId; 
-      
+
+      (definitiveItem as dynamic).id = isarId;
+
+      if (definitiveItem is Asset &&
+          definitiveItem.accountLocalId == null &&
+          definitiveItem.accountSupabaseId != null) {
+        final account = await _isar.accounts
+            .where()
+            .supabaseIdEqualTo(definitiveItem.accountSupabaseId)
+            .findFirst();
+        definitiveItem.accountLocalId = account?.id;
+      }
+
       // 使用你原有的健壮的竞态条件处理逻辑
       await _saveWithRaceConditionHandling(
-        definitiveItem, 
-        isarId, 
+        definitiveItem,
+        isarId,
         definitiveSupaId, 
         isarObject, 
         isarCollection

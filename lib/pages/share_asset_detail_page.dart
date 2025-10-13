@@ -63,21 +63,34 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
               IconButton(
                 icon: const Icon(Icons.edit_outlined),
                 tooltip: '编辑资产',
-                onPressed: () async { 
+                onPressed: () async {
                   final isar = DatabaseService().isar;
-                  final parentAccount = await isar.accounts.where()
-                      .filter()
-                      .supabaseIdEqualTo(asset.accountSupabaseId)
-                      .findFirst();
-                  
-                  if (parentAccount != null && context.mounted) {
+                  Account? parentAccount;
+                  if (asset.accountSupabaseId != null) {
+                    parentAccount = await isar.accounts
+                        .where()
+                        .filter()
+                        .supabaseIdEqualTo(asset.accountSupabaseId)
+                        .findFirst();
+                  }
+                  if (parentAccount == null && asset.accountLocalId != null) {
+                    parentAccount = await isar.accounts.get(asset.accountLocalId!);
+                  }
+
+                  if (!context.mounted) {
+                    return;
+                  }
+
+                  if (parentAccount != null) {
+                    final accountId = parentAccount.id;
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => AddEditAssetPage(accountId: parentAccount.id, assetId: asset.id),
+                        builder: (_) => AddEditAssetPage(accountId: accountId, assetId: asset.id),
                       ),
                     );
-                  } else if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('错误：找不到父账户')));
+                  } else {
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(const SnackBar(content: Text('错误：找不到父账户')));
                   }
                 },
               ),
