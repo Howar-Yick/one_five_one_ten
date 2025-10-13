@@ -845,63 +845,109 @@ class CalculatorService {
   /// 该方法通过遍历所有历史交易记录来计算最终的已实现盈亏，
   /// 而不是依赖于当前为零的持仓快照。
   Future<Map<String, dynamic>> calculateArchivedShareAssetPerformance(Asset asset) async {
-    if (asset.supabaseId == null) {
-      return {
-        'totalCost': 0.0,
-        'totalRevenue': 0.0,
-        'totalProfit': 0.0,
-        'profitRate': 0.0,
-      };
-    }
-
-    final transactions = await _isar.transactions
-        .filter()
-        .assetSupabaseIdEqualTo(asset.supabaseId)
-        .findAll();
-
-    if (transactions.isEmpty) {
-      return {
-        'totalCost': 0.0,
-        'totalRevenue': 0.0,
-        'totalProfit': 0.0,
-        'profitRate': 0.0,
-      };
-    }
-
-    // 1. 计算总投入成本和总卖出收入
     double totalCost = 0.0;
     double totalRevenue = 0.0;
 
-    for (final txn in transactions) {
-      switch (txn.type) {
-        case TransactionType.buy:
-        case TransactionType.invest:
-          // "invest" 类型是旧数据中常见的份额法入金记录，这里与 buy 归为一类
-          totalCost += txn.amount.abs();
-          break;
-        case TransactionType.sell:
-        case TransactionType.withdraw:
-        case TransactionType.dividend:
-          // "withdraw" 同样是旧数据中常见的份额法卖出/出金记录
-          totalRevenue += txn.amount.abs();
-          break;
-        default:
-          // 其他类型的交易在此处不计入
-          break;
+    List<Transaction> transactions = const <Transaction>[];
+    if (asset.supabaseId != null) {
+      transactions = await _isar.transactions
+          .filter()
+          .assetSupabaseIdEqualTo(asset.supabaseId)
+          .findAll();
+    }
+
+    if (transactions.isNotEmpty) {
+      for (final txn in transactions) {
+        switch (txn.type) {
+          case TransactionType.buy:
+          case TransactionType.invest:
+            totalCost += txn.amount.abs();
+            break;
+          case TransactionType.sell:
+          case TransactionType.withdraw:
+          case TransactionType.dividend:
+            totalRevenue += txn.amount.abs();
+            break;
+          default:
+            break;
+        }
       }
     }
 
-    // 2. 计算已实现盈亏
-    final totalProfit = totalRevenue - totalCost;
+    double totalProfit = totalRevenue - totalCost;
+    double profitRate = totalCost == 0 ? 0.0 : totalProfit / totalCost;
 
-    // 3. 计算回报率
-    final profitRate = totalCost == 0 ? 0.0 : totalProfit / totalCost;
+    final bool hasMeaningfulTransactions =
+        transactions.isNotEmpty && (totalCost > 0 || totalRevenue > 0);
+
+    if (!hasMeaningfulTransactions) {
+      final fallback =
+          await _estimateArchivedSharePerformanceFromSnapshots(asset);
+      if (fallback != null) {
+        totalCost = fallback['totalCost']!;
+        totalRevenue = fallback['totalRevenue']!;
+        totalProfit = fallback['totalProfit']!;
+        profitRate = fallback['profitRate']!;
+      }
+    }
 
     return {
       'totalCost': totalCost,
       'totalRevenue': totalRevenue,
       'totalProfit': totalProfit,
       'profitRate': profitRate,
+    };
+  }
+
+  Future<Map<String, double>?> _estimateArchivedSharePerformanceFromSnapshots(
+      Asset asset) async {
+    if (asset.supabaseId == null) {
+      return null;
+    }
+
+    final snapshots = await _isar.positionSnapshots
+        .filter()
+        .assetSupabaseIdEqualTo(asset.supabaseId)
+        .sortByDate()
+        .findAll();
+
+    if (snapshots.isEmpty) {
+      return null;
+    }
+
+    PositionSnapshot? latestPosition = snapshots
+        .lastWhere((snap) => snap.totalShares > 0 && snap.averageCost.isFinite,
+            orElse: () => snapshots.last);
+
+    if (latestPosition.totalShares <= 0 ||
+        !latestPosition.totalShares.isFinite ||
+        !latestPosition.averageCost.isFinite) {
+      return null;
+    }
+
+    final double totalShares = latestPosition.totalShares;
+    final double averageCost = latestPosition.averageCost;
+    double exitPrice = asset.latestPrice;
+    if (!exitPrice.isFinite || exitPrice <= 0) {
+      exitPrice = averageCost;
+    }
+
+    double estimatedRevenue = totalShares * exitPrice;
+    double estimatedCost = totalShares * averageCost;
+
+    if (!estimatedRevenue.isFinite || !estimatedCost.isFinite) {
+      return null;
+    }
+
+    final double estimatedProfit = estimatedRevenue - estimatedCost;
+    final double estimatedProfitRate =
+        estimatedCost == 0 ? 0.0 : estimatedProfit / estimatedCost;
+
+    return {
+      'totalCost': estimatedCost,
+      'totalRevenue': estimatedRevenue,
+      'totalProfit': estimatedProfit,
+      'profitRate': estimatedProfitRate,
     };
   }
 }
