@@ -155,11 +155,13 @@ class CalculatorService {
 
   Future<Map<String, dynamic>> calculateShareAssetPerformance(Asset asset) async {
     if (asset.supabaseId == null) return {'marketValue': 0.0, 'totalCost': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0, 'totalShares': 0.0, 'averageCost': 0.0, 'latestPrice': 0.0};
+    
     final snapshots = await _isar.positionSnapshots
         .filter()
         .assetSupabaseIdEqualTo(asset.supabaseId)
-        .sortByDate()
+        .sortByDate() 
         .findAll();
+        
     if (snapshots.isEmpty) {
       return {
         'marketValue': 0.0, 'totalCost': 0.0, 'totalProfit': 0.0,
@@ -167,16 +169,51 @@ class CalculatorService {
         'totalShares': 0.0, 'averageCost': 0.0, 'latestPrice': 0.0,
       };
     }
-    final latestSnapshot = snapshots.last;
 
+    final latestSnapshot = snapshots.last;
     double totalShares = latestSnapshot.totalShares;
+
+    // ★★★ 关键修复：仅对份额法资产应用清仓逻辑 ★★★
+    if (asset.trackingMethod == AssetTrackingMethod.shareBased && totalShares.abs() < 0.0001 && snapshots.length > 1) {
+      // 这是一个已清仓的份额法资产
+      final lastActiveSnapshot = snapshots[snapshots.length - 2];
+      
+      final double salePrice = asset.latestPrice;
+
+      if (lastActiveSnapshot.totalShares > 0) {
+        final double proceeds = lastActiveSnapshot.totalShares * salePrice;
+        final double costBasis = lastActiveSnapshot.totalShares * lastActiveSnapshot.averageCost;
+        final double realizedProfit = proceeds - costBasis;
+        final double realizedProfitRate = costBasis > 0 ? realizedProfit / costBasis : 0.0;
+
+        return {
+          'marketValue': 0.0,
+          'totalCost': 0.0,
+          'totalProfit': realizedProfit,
+          'profitRate': realizedProfitRate,
+          'annualizedReturn': 0.0,
+          'totalShares': 0.0,
+          'averageCost': 0.0,
+          'latestPrice': salePrice,
+        };
+      }
+    }
+    // ★★★ 修复结束 ★★★
+
+    // --- 以下是处理“持仓中”资产的原有逻辑 ---
     double averageCost = latestSnapshot.averageCost;
-    if (!totalShares.isFinite) totalShares = 0.0;
-    if (!averageCost.isFinite) averageCost = 0.0;
+    if (!totalShares.isFinite) {
+      totalShares = 0.0;
+    }
+    if (!averageCost.isFinite) {
+      averageCost = 0.0;
+    }
 
     final bool hasPosition = totalShares > 0;
     double totalCost = hasPosition ? totalShares * averageCost : 0.0;
-    if (!totalCost.isFinite) totalCost = 0.0;
+    if (!totalCost.isFinite) {
+      totalCost = 0.0;
+    }
 
     double latestPrice = asset.latestPrice;
     if (!latestPrice.isFinite || latestPrice == 0) {
@@ -184,19 +221,25 @@ class CalculatorService {
     }
 
     double marketValue = totalShares * latestPrice;
-    if (!marketValue.isFinite) marketValue = 0.0;
+    if (!marketValue.isFinite) {
+      marketValue = 0.0;
+    }
 
     double totalProfit = marketValue - totalCost;
-    if (!totalProfit.isFinite) totalProfit = 0.0;
+    if (!totalProfit.isFinite) {
+      totalProfit = 0.0;
+    }
 
     double profitRate;
     if (totalCost == 0 || !totalCost.isFinite) {
       profitRate = 0.0;
     } else {
       profitRate = totalProfit / totalCost;
-      if (!profitRate.isFinite) profitRate = 0.0;
+      if (!profitRate.isFinite) {
+        profitRate = 0.0;
+      }
     }
-
+    
     double annualizedReturn = 0.0;
     if (snapshots.length >= 1) {
       final dates = <DateTime>[];
@@ -207,8 +250,9 @@ class CalculatorService {
       for (int i = 1; i < snapshots.length; i++) {
         final prevCost = snapshots[i - 1].totalShares * snapshots[i - 1].averageCost;
         final currentCost = snapshots[i].totalShares * snapshots[i].averageCost;
-        if (!prevCost.isFinite || !currentCost.isFinite) continue;
-        
+        if (!prevCost.isFinite || !currentCost.isFinite) {
+          continue;
+        }
         final costChange = currentCost - prevCost;
         if (costChange.isFinite && costChange.abs() > 0.01) {
           dates.add(snapshots[i].date);
@@ -222,10 +266,14 @@ class CalculatorService {
         if (cashflows.any((cf) => cf > 0) && cashflows.any((cf) => cf < 0)) {
           annualizedReturn = xirr(dates, cashflows);
         }
-      } catch (e) { /* ignored */ }
+      } catch (e) {
+        //
+      }
     }
-    if (!annualizedReturn.isFinite) annualizedReturn = 0.0;
-    
+    if (!annualizedReturn.isFinite) {
+      annualizedReturn = 0.0;
+    }
+
     if (totalProfit >= 0 && annualizedReturn < 0) {
       annualizedReturn = 0.0;
     }
