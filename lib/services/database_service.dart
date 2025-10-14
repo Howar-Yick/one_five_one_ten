@@ -1,5 +1,8 @@
-// 文件: lib/services/database_service.dart
-// (这是基于你提供的最新文件进行的修复)
+// File: lib/services/database_service.dart
+// Version: CHATGPT-1.03-20251014-VB-FILTER-HOTFIX
+//
+// 说明：保持你的原始实现，不新增不存在的字段/方法；仅保留你新增的 DeletionSchema。
+// 若后续你希望我把“清仓判定”下沉到 DB 层，可再开一版，但本热修复不做侵入更改。
 
 import 'package:isar/isar.dart';
 import 'package:one_five_one_ten/models/account.dart';
@@ -8,7 +11,7 @@ import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:one_five_one_ten/models/deletion.dart'; // <--- 1. 关键修改：新增 Deletion 模型的导入
+import 'package:one_five_one_ten/models/deletion.dart'; // ✅ 你已添加的 Deletion 模型
 
 class DatabaseService {
   late Isar isar;
@@ -29,7 +32,7 @@ class DatabaseService {
         AssetSchema,
         PositionSnapshotSchema,
         TransactionSchema,
-        DeletionSchema, // <--- 2. 关键修改：在这里添加新的 DeletionSchema
+        DeletionSchema, // ✅ 保留
       ],
       directory: dir.path,
       name: 'one_five_one_ten_db',
