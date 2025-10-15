@@ -422,16 +422,83 @@ final valueAssetPerformanceProvider =
   return CalculatorService().calculateValueAssetPerformance(asset);
 });
 
-final valueAssetHistoryChartsProvider =
-    FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>(
-        (ref, assetId) async {
+/// 价值法资产 —— 统一按“日期”对齐；同日多次仅保留“最后一条”；确保至少两点
+final valueAssetCombinedChartProvider =
+    FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>((ref, assetId) async {
+  // 触发依赖（与原来保持一致，不影响其它逻辑）
   ref.watch(valueAssetPerformanceProvider(assetId));
+
+  // 读取资产对象
   final asset = await ref.watch(valueAssetDetailProvider(assetId).future);
   if (asset == null) {
-    return {'totalValue': [], 'totalProfit': [], 'profitRate': []};
+    return {'totalValue': const [], 'totalProfit': const [], 'profitRate': const []};
   }
-  return CalculatorService().getValueAssetHistoryCharts(asset);
+
+  // 取原有计算结果（保持兼容）：可能已经包含 totalValue/totalProfit/profitRate 三条线
+  final raw = await CalculatorService().getValueAssetHistoryCharts(asset);
+
+  // 工具：取“日期”（去时分秒），按本地日历对齐
+  DateTime _dateOnly(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
+
+  // 工具：对一条折线做“同日去重 -> 保留当天最后一个点 -> 升序排序”
+  List<FlSpot> _normalizeByDay(List<FlSpot> spots) {
+    if (spots.isEmpty) return spots;
+    final Map<int, FlSpot> lastOfDay = {}; // key: dayEpoch(本地0点), value: 最后一个 FlSpot
+
+    for (final s in spots) {
+      final d = DateTime.fromMillisecondsSinceEpoch(s.x.toInt());
+      final dayEpoch = _dateOnly(d).millisecondsSinceEpoch;
+      // 取“最后一个点”：直接覆盖即可（spots 本身已按时间递增通常也可，但这里更稳妥）
+      lastOfDay[dayEpoch] = s;
+    }
+
+    final result = lastOfDay.entries
+        .map((e) => FlSpot(e.key.toDouble(), e.value.y))
+        .toList()
+      ..sort((a, b) => a.x.compareTo(b.x));
+    return result;
+  }
+
+  // 工具：至少两点，避免图层不渲染
+  void _ensureTwoSpots(List<FlSpot> spots, double defaultY) {
+    if (spots.isEmpty) return;
+    if (spots.length == 1) {
+      final d0 = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
+      final dayBefore = d0.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
+      spots.insert(0, FlSpot(dayBefore, defaultY));
+    }
+  }
+
+  // 分别标准化三条线（不存在的键用空列表）
+  final List<FlSpot> valueLine = _normalizeByDay((raw['totalValue'] ?? const <FlSpot>[]) as List<FlSpot>);
+  final List<FlSpot> profitLine = _normalizeByDay((raw['totalProfit'] ?? const <FlSpot>[]) as List<FlSpot>);
+  final List<FlSpot> rateLine = _normalizeByDay((raw['profitRate'] ?? const <FlSpot>[]) as List<FlSpot>);
+
+  // 兜底：至少两点
+  if (valueLine.isNotEmpty) {
+    _ensureTwoSpots(valueLine, valueLine.first.y);
+  }
+  if (profitLine.isNotEmpty) {
+    _ensureTwoSpots(profitLine, 0.0);
+  }
+  if (rateLine.isNotEmpty) {
+    _ensureTwoSpots(rateLine, 0.0);
+  }
+
+  return {
+    'totalValue': valueLine,
+    'totalProfit': profitLine,
+    'profitRate': rateLine,
+  };
 });
+
+
+final valueAssetHistoryChartsProvider =
+    FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>((ref, assetId) async {
+  // 直接复用统一后的“按日对齐 + 兜底”逻辑
+  return ref.watch(valueAssetCombinedChartProvider(assetId).future);
+});
+
 
 final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeMode>((ref) {
   return ThemeNotifier();
