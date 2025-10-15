@@ -1,5 +1,5 @@
 // File: lib/providers/global_providers.dart
-// Version: CHATGPT-1.03-20251014-VB-FILTER-HOTFIX
+// Version: CHATGPT-1.04-20251014-TZ-FIX
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -15,6 +15,7 @@ import 'package:one_five_one_ten/models/account_transaction.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:one_five_one_ten/utils/timezone.dart'; // ☆ 新增：引入工具
 
 enum AssetSortCriteria {
   marketValue,
@@ -277,98 +278,108 @@ final snapshotHistoryProvider =
 final shareAssetCombinedChartProvider =
     FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>(
         (ref, assetId) async {
-  final priceHistoryFuture =
-      ref.watch(assetHistoryChartProvider(assetId).future);
-  final snapshotHistoryFuture =
-      ref.watch(snapshotHistoryProvider(assetId).future);
-  final priceHistory = await priceHistoryFuture;
-  final snapshots = await snapshotHistoryFuture;
+  // 价格(按日) + 快照(按日) → 统一到 UTC 日维度
+  final priceHistoryFuture = ref.watch(assetHistoryChartProvider(assetId).future);
+  final snapshotHistoryFuture = ref.watch(snapshotHistoryProvider(assetId).future);
+
+  final priceHistory = await priceHistoryFuture;   // List<FlSpot>，其 x 可能是本地/UTC 毫秒
+  final snapshots = await snapshotHistoryFuture;   // List<PositionSnapshot>，其 date 可能是本地/UTC
+
   if (snapshots.isEmpty || priceHistory.isEmpty) {
     return {'price': priceHistory, 'totalProfit': [], 'profitRate': []};
   }
-  final sortedSnapshots = snapshots.reversed.toList();
-  final firstSnapshotDate = sortedSnapshots.first.date;
-  final firstSnapshotEpoch =
-      DateTime(firstSnapshotDate.year, firstSnapshotDate.month, firstSnapshotDate.day)
-          .millisecondsSinceEpoch
-          .toDouble();
-  final relevantPriceHistory =
-      priceHistory.where((spot) => spot.x >= firstSnapshotEpoch).toList();
+
+  // —— 1) 以第一条快照的“UTC 当天”作为起点 —— //
+  final firstSnapDateUtc = utcDateOnly(snapshots.first.date);
+  final firstSnapshotEpoch = firstSnapDateUtc.millisecondsSinceEpoch.toDouble();
+
+  // —— 2) 价格序列的 X 统一到 UTC 当天 —— //
+  final List<FlSpot> normalizedPrice = priceHistory
+      .map((s) {
+        final d = DateTime.fromMillisecondsSinceEpoch(s.x.toInt(), isUtc: false);
+        // 如果原始 x 是 UTC 毫秒，这里 toUtc(). 如果是本地毫秒，这里先当本地再转 UTC 零点
+        final x = utcDateEpoch(d);
+        return FlSpot(x, s.y);
+      })
+      .toList()
+    ..sort((a, b) => a.x.compareTo(b.x));
+
+  // —— 3) 快照按日期升序，后续做“随日推进的活动快照” —— //
+  final sortedSnapshots = List<PositionSnapshot>.from(snapshots)
+    ..sort((a, b) => a.date.compareTo(b.date));
+
+  // —— 4) 仅保留 >= 起点 的价格 —— //
+  final relevantPriceHistory = normalizedPrice.where((s) => s.x >= firstSnapshotEpoch).toList();
   if (relevantPriceHistory.isEmpty) {
     return {'price': [], 'totalProfit': [], 'profitRate': []};
   }
+
+  // —— 5) 逐日推进，选择“当天（UTC）不晚于该日”的最新快照 —— //
   final List<FlSpot> profitSpots = [];
   final List<FlSpot> profitRateSpots = [];
+
   PositionSnapshot? activeSnapshot;
-  int snapshotIndex = 0;
+  int snapIdx = 0;
+
   for (final priceSpot in relevantPriceHistory) {
-    final currentDateEpoch = priceSpot.x;
-    final currentDate =
-        DateTime.fromMillisecondsSinceEpoch(currentDateEpoch.toInt());
-    while (snapshotIndex < sortedSnapshots.length) {
-      final snapshotDate = sortedSnapshots[snapshotIndex].date;
-      final snapshotDateOnly =
-          DateTime(snapshotDate.year, snapshotDate.month, snapshotDate.day);
-      if (!snapshotDateOnly.isAfter(currentDate)) {
-        activeSnapshot = sortedSnapshots[snapshotIndex];
-        snapshotIndex++;
+    final currentUtc = DateTime.fromMillisecondsSinceEpoch(priceSpot.x.toInt(), isUtc: true);
+
+    // 推进快照游标：选择 date(转UTC日) <= currentUtc 的最新一条
+    while (snapIdx < sortedSnapshots.length) {
+      final sdtUtc = utcDateOnly(sortedSnapshots[snapIdx].date);
+      if (!sdtUtc.isAfter(currentUtc)) {
+        activeSnapshot = sortedSnapshots[snapIdx];
+        snapIdx++;
       } else {
         break;
       }
     }
+
     if (activeSnapshot == null) {
       profitSpots.add(FlSpot(priceSpot.x, 0.0));
       profitRateSpots.add(FlSpot(priceSpot.x, 0.0));
       continue;
     }
-    final double price = priceSpot.y;
+
+    // —— 6) 用你现有 share 快照字段：totalShares / averageCost —— //
     double totalShares = activeSnapshot.totalShares;
     double averageCost = activeSnapshot.averageCost;
+    final price = priceSpot.y;
+
     if (!totalShares.isFinite || totalShares <= 0) {
       profitSpots.add(FlSpot(priceSpot.x, 0.0));
       profitRateSpots.add(FlSpot(priceSpot.x, 0.0));
       continue;
     }
-    if (!averageCost.isFinite) {
-      averageCost = 0.0;
-    }
+    if (!averageCost.isFinite) averageCost = 0.0;
+
     double totalCost = totalShares * averageCost;
-    if (!totalCost.isFinite) {
-      totalCost = 0.0;
-    }
     double marketValue = totalShares * price;
-    if (!marketValue.isFinite) {
-      marketValue = 0.0;
-    }
     double totalProfit = marketValue - totalCost;
-    if (!totalProfit.isFinite) {
-      totalProfit = 0.0;
-    }
-    double profitRate;
-    if (totalCost == 0 || !totalCost.isFinite) {
-      profitRate = 0.0;
-    } else {
-      profitRate = totalProfit / totalCost;
-      if (!profitRate.isFinite) {
-        profitRate = 0.0;
-      }
-    }
+    double profitRate = (totalCost == 0 || !totalCost.isFinite) ? 0.0 : totalProfit / totalCost;
+
+    if (!totalCost.isFinite) totalCost = 0.0;
+    if (!marketValue.isFinite) marketValue = 0.0;
+    if (!totalProfit.isFinite) totalProfit = 0.0;
+    if (!profitRate.isFinite) profitRate = 0.0;
+
     profitSpots.add(FlSpot(priceSpot.x, totalProfit));
     profitRateSpots.add(FlSpot(priceSpot.x, profitRate));
   }
+
+  // —— 7) 保证至少两点，避免线条不显示 —— //
   void ensureTwoSpots(List<FlSpot> spots, [double defaultY = 0.0]) {
     if (spots.length == 1) {
-      final firstDate =
-          DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
-      final dayBefore =
-          firstDate.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
-      spots.insert(0, FlSpot(dayBefore, defaultY));
+      final firstUtc = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt(), isUtc: true);
+      final dayBeforeUtc = firstUtc.subtract(const Duration(days: 1));
+      spots.insert(0, FlSpot(dayBeforeUtc.millisecondsSinceEpoch.toDouble(), defaultY));
     }
   }
+
   ensureTwoSpots(profitSpots);
   ensureTwoSpots(profitRateSpots);
-  ensureTwoSpots(
-      relevantPriceHistory, relevantPriceHistory.isNotEmpty ? relevantPriceHistory.first.y : 0.0);
+  ensureTwoSpots(relevantPriceHistory, relevantPriceHistory.isNotEmpty ? relevantPriceHistory.first.y : 0.0);
+
   return {
     'price': relevantPriceHistory,
     'totalProfit': profitSpots,
