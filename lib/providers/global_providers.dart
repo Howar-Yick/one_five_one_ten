@@ -1,5 +1,5 @@
 // File: lib/providers/global_providers.dart
-// Version: CHATGPT-1.13-20251016-ACCOUNT-CHART-AXIS-A+B
+// Version: CHATGPT-1.14-20251016-ACCOUNT-CHART-TRIM-PROFIT-ZEROS
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -188,15 +188,14 @@ final trackedAssetsWithPerformanceProvider =
   }
 });
 
-// ------------------------ ✅ 这里是本次的关键修改 ------------------------
-// 账户曲线：A) 去前导零并在首个有效点前一天补一个同值点；B) 仅对“净值”曲线计算 minY/maxY（含 3% padding）
+// ------------------------ ✅ 账户曲线：净值 A+B + 收益两线去前导 0 ------------------------
 final accountHistoryProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, Account>(
         (ref, account) async {
   // 触发依赖刷新（保持旧行为）
   ref.watch(accountPerformanceProvider(account.id));
 
-  // 拿到原始三条曲线
+  // 原始三条曲线
   final raw = await CalculatorService().getAccountHistoryCharts(account);
   final List<FlSpot> rawValue =
       (raw['totalValue'] ?? const <FlSpot>[]) as List<FlSpot>;
@@ -209,42 +208,45 @@ final accountHistoryProvider =
   void _ensureTwo(List<FlSpot> spots, double defaultY) {
     if (spots.isEmpty) return;
     if (spots.length == 1) {
-      final d0 =
-          DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
+      final d0 = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
       final dayBefore =
           d0.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
       spots.insert(0, FlSpot(dayBefore, defaultY));
     }
   }
 
-  // A. 去掉“前导 0”并在首个有效点前一天补同值点
-  List<FlSpot> value = List<FlSpot>.from(rawValue);
-  value.sort((a, b) => a.x.compareTo(b.x));
-  int firstIdx = 0;
-  while (firstIdx < value.length &&
-      (value[firstIdx].y.isNaN || value[firstIdx].y.abs() < 1e-9)) {
-    firstIdx++;
+  // 工具：裁掉前导 0，并在首个有效点的前一日补同值点（ε 为零判断阈值）
+  List<FlSpot> _trimLeadingZerosAndPrependPrev(List<FlSpot> spots,
+      {double epsilon = 1e-8}) {
+    if (spots.isEmpty) return spots;
+    final list = List<FlSpot>.from(spots)..sort((a, b) => a.x.compareTo(b.x));
+    int k = 0;
+    while (k < list.length &&
+        (list[k].y.isNaN || list[k].y.abs() < epsilon)) {
+      k++;
+    }
+    if (k > 0 && k < list.length) {
+      final trimmed = list.sublist(k);
+      final d0 = DateTime.fromMillisecondsSinceEpoch(trimmed.first.x.toInt());
+      final dayBefore =
+          d0.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
+      trimmed.insert(0, FlSpot(dayBefore, trimmed.first.y));
+      return trimmed;
+    }
+    // 全 0 或本就无前导 0：原样返回（仍做 ensureTwo 兜底）
+    return list;
   }
-  if (firstIdx > 0 && firstIdx < value.length) {
-    value = value.sublist(firstIdx);
-    // 补：首个有效点前一天，同值点
-    final d0 =
-        DateTime.fromMillisecondsSinceEpoch(value.first.x.toInt());
-    final dayBefore =
-        d0.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
-    value.insert(0, FlSpot(dayBefore, value.first.y));
-  }
-  // 若全为 0 或空，维持原样（min/max 按默认）
 
-  // 兜底：至少两点
+  // A) 净值：与上个版本一致（去前导 0 + 前一日补点 + 动态 Y 轴）
+  List<FlSpot> value = _trimLeadingZerosAndPrependPrev(rawValue, epsilon: 1e-9);
   if (value.isNotEmpty) {
     _ensureTwo(value, value.first.y);
   }
 
-  // B. 计算 min/max（仅用于“净值”曲线）
+  // 仅用于“净值”图表的动态 Y 轴范围
   double? valueMinY;
   double? valueMaxY;
-  if (value.length >= 1) {
+  if (value.isNotEmpty) {
     double minY = value.first.y;
     double maxY = value.first.y;
     for (final s in value) {
@@ -252,7 +254,6 @@ final accountHistoryProvider =
       if (s.y > maxY) maxY = s.y;
     }
     if (minY == maxY) {
-      // 竖线或水平线的兜底 padding
       final pad = (maxY.abs() * 0.03).clamp(1e-6, double.infinity);
       valueMinY = maxY - pad;
       valueMaxY = maxY + pad;
@@ -263,9 +264,11 @@ final accountHistoryProvider =
     }
   }
 
-  // 其它两条不变（不做动态缩放）
-  final List<FlSpot> profit = List<FlSpot>.from(rawProfit)..sort((a, b) => a.x.compareTo(b.x));
-  final List<FlSpot> rate = List<FlSpot>.from(rawRate)..sort((a, b) => a.x.compareTo(b.x));
+  // B) 收益与收益率：新增“去前导 0 + 首日前一日补点”，不改 Y 轴缩放策略（沿用默认）
+  final List<FlSpot> profit =
+      _trimLeadingZerosAndPrependPrev(rawProfit, epsilon: 1e-8);
+  final List<FlSpot> rate =
+      _trimLeadingZerosAndPrependPrev(rawRate, epsilon: 1e-8);
 
   _ensureTwo(profit, 0.0);
   _ensureTwo(rate, 0.0);
@@ -274,7 +277,7 @@ final accountHistoryProvider =
     'totalValue': value,
     'totalProfit': profit,
     'profitRate': rate,
-    // 新增：仅供“净值”图表读取
+    // 仅供“净值”图表读取
     'valueMinY': valueMinY,
     'valueMaxY': valueMaxY,
   };
@@ -475,7 +478,7 @@ final valueAssetPerformanceProvider =
         (ref, assetId) async {
   final asset = await ref.watch(valueAssetDetailProvider(assetId).future);
   if (asset == null) {
-    throw Exception('未找到资产');
+    throw Exception('未找到账户');
   }
   return CalculatorService().calculateValueAssetPerformance(asset);
 });
