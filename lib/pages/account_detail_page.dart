@@ -1,5 +1,5 @@
 // 文件: lib/pages/account_detail_page.dart
-// (这是已整合“归档/删除”与“搜索”功能的完整文件)
+// Version: CHATGPT-1.13-20251016-ACCOUNT-CHART-AXIS-A+B
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,7 +21,6 @@ import 'package:one_five_one_ten/utils/currency_formatter.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart'; 
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 
-
 // (*** 排序标准枚举 ***)
 enum AssetSortCriteria {
   marketValue,    // 持仓金额
@@ -37,7 +36,6 @@ enum AccountChartType {
   profitRate,
 }
 
-
 // (转换为 ConsumerStatefulWidget)
 class AccountDetailPage extends ConsumerStatefulWidget {
   final int accountId;
@@ -50,7 +48,6 @@ class AccountDetailPage extends ConsumerStatefulWidget {
 // (State 类)
 class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
 
-  // (状态变量)
   AssetSortCriteria _sortCriteria = AssetSortCriteria.marketValue;
   bool _sortAscending = false;
   AccountChartType _selectedChartType = AccountChartType.totalValue;
@@ -78,7 +75,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
       appBar: AppBar(
         title: Text(asyncAccount.asData?.value?.name ?? '加载中...'),
         actions: [
-          
           IconButton(
             icon: const Icon(Icons.search),
             tooltip: '搜索资产',
@@ -90,7 +86,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
               }
             },
           ),
-          
           PopupMenuButton<AssetSortCriteria>(
             onSelected: (criteria) {
               setState(() {
@@ -111,7 +106,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
               _buildSortMenuItem(AssetSortCriteria.annualizedReturn, '按年化收益率'),
             ],
           ),
-          
           if (syncState == PriceSyncState.loading)
             const Padding(
               padding: EdgeInsets.all(16.0),
@@ -140,12 +134,12 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
           }
           final account = asyncAccount.asData!.value!;
           return RefreshIndicator(
-              onRefresh: () async {
-                ref.read(priceSyncControllerProvider.notifier).syncAllPrices();
-                ref.invalidate(accountPerformanceProvider(widget.accountId));
-                ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
-                await ref.read(accountHistoryProvider(account).future);
-              },
+            onRefresh: () async {
+              ref.read(priceSyncControllerProvider.notifier).syncAllPrices();
+              ref.invalidate(accountPerformanceProvider(widget.accountId));
+              ref.invalidate(trackedAssetsWithPerformanceProvider(widget.accountId));
+              await ref.read(accountHistoryProvider(account).future);
+            },
             child: ListView(
               padding: const EdgeInsets.all(16.0),
               children: [
@@ -159,7 +153,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) => Center(child: Text('发生错误: $err')),
       ),
-      
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.add),
         label: const Text('添加资产'),
@@ -183,7 +176,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
 
   Widget _buildMacroView(BuildContext context, WidgetRef ref, Account account,
       Map<String, dynamic> performance) {
-  
     final percentFormat =
         NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
     final totalProfit = (performance['totalProfit'] ?? 0.0) as double;
@@ -271,7 +263,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
 
   void _showInvestWithdrawDialog(
       BuildContext context, WidgetRef ref, Account account) {
-    // ... (此函数保持不变)
+    // ... 保持不变（略）
     final amountController = TextEditingController();
     final List<bool> isSelected = [true, false];
     DateTime selectedDate = DateTime.now();
@@ -401,7 +393,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
 
   void _showUpdateValueDialog(
       BuildContext context, WidgetRef ref, Account account) {
-    // ... (此函数保持不变)
+    // ... 保持不变（略）
     final valueController = TextEditingController();
     DateTime selectedDate = DateTime.now();
 
@@ -452,50 +444,50 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                     child: const Text('取消')),
                 TextButton(
                   onPressed: () async {
-                            try {
-                              final value = double.tryParse(valueController.text);
-                              if (value == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('请输入有效的价值')),
-                                );
-                                return;
-                              }
+                    try {
+                      final value = double.tryParse(valueController.text);
+                      if (value == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请输入有效的价值')),
+                        );
+                        return;
+                      }
 
-                              final syncService = ref.read(syncServiceProvider);
+                      final syncService = ref.read(syncServiceProvider);
 
-                              final newTxn = AccountTransaction()
-                                ..amount = value
-                                ..date = selectedDate
-                                ..createdAt = DateTime.now()
-                                ..type = TransactionType.updateValue
-                                ..accountSupabaseId = account.supabaseId;
-                              
-                              final isar = DatabaseService().isar;
-                               await isar.writeTxn(() async {
-                                await isar.accountTransactions.put(newTxn);
-                              });
+                      final newTxn = AccountTransaction()
+                        ..amount = value
+                        ..date = selectedDate
+                        ..createdAt = DateTime.now()
+                        ..type = TransactionType.updateValue
+                        ..accountSupabaseId = account.supabaseId;
+                      
+                      final isar = DatabaseService().isar;
+                      await isar.writeTxn(() async {
+                        await isar.accountTransactions.put(newTxn);
+                      });
 
-                              await syncService.saveAccountTransaction(newTxn);
-                              
-                              ref.invalidate(accountPerformanceProvider(account.id));
-                              ref.invalidate(dashboardDataProvider);
+                      await syncService.saveAccountTransaction(newTxn);
+                      
+                      ref.invalidate(accountPerformanceProvider(account.id));
+                      ref.invalidate(dashboardDataProvider);
 
-                              if (dialogContext.mounted) {
-                                Navigator.of(dialogContext).pop();
-                                  Navigator.of(context).push(
-                                   MaterialPageRoute(
-                                      builder: (_) => TransactionHistoryPage(accountId: account.id),
-                                   ),
-                                  );
-                              }
-                            } catch (e) {
-                              print('更新总值失败: $e');
-                              if (dialogContext.mounted) {
-                                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                  SnackBar(content: Text('操作失败: $e')),
-                                );
-                              }
-                            }
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => TransactionHistoryPage(accountId: account.id),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      print('更新总值失败: $e');
+                      if (dialogContext.mounted) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          SnackBar(content: Text('操作失败: $e')),
+                        );
+                      }
+                    }
                   },
                   child: const Text('保存'),
                 ),
@@ -514,25 +506,30 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
       children: [
         ref.watch(accountHistoryProvider(account)).when(
           data: (chartDataMap) {
-            
+            // 注意：accountHistoryProvider 现在返回 Map<String, dynamic>
             List<FlSpot> spots;
             String chartTitle;
             bool isPercentage = false;
+            double? minY;
+            double? maxY;
 
             switch (_selectedChartType) {
               case AccountChartType.totalProfit:
-                spots = chartDataMap['totalProfit'] ?? [];
+                spots = (chartDataMap['totalProfit'] ?? const <FlSpot>[]) as List<FlSpot>;
                 chartTitle = '累计收益趋势';
                 break;
               case AccountChartType.profitRate:
-                spots = chartDataMap['profitRate'] ?? [];
+                spots = (chartDataMap['profitRate'] ?? const <FlSpot>[]) as List<FlSpot>;
                 chartTitle = '收益率趋势';
                 isPercentage = true;
                 break;
               case AccountChartType.totalValue:
               default:
-                spots = chartDataMap['totalValue'] ?? [];
+                spots = (chartDataMap['totalValue'] ?? const <FlSpot>[]) as List<FlSpot>;
                 chartTitle = '账户净值趋势';
+                // “净值”独享动态纵轴
+                minY = chartDataMap['valueMinY'] as double?;
+                maxY = chartDataMap['valueMaxY'] as double?;
                 break;
             }
 
@@ -549,7 +546,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                     
                     LayoutBuilder(
                       builder: (context, constraints) {
-                        
                         return SegmentedButton<AccountChartType>(
                           segments: const [
                             ButtonSegment(value: AccountChartType.totalValue, label: Text('净值'), icon: Icon(Icons.show_chart)),
@@ -568,7 +564,15 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                     ),
                     const SizedBox(height: 24),
                     
-                    _buildHistoryChart(context, spots, account, isPercentage),
+                    _buildHistoryChart(
+                      context,
+                      spots,
+                      account,
+                      isPercentage,
+                      // 仅在“净值”时传入动态纵轴范围
+                      minY: minY,
+                      maxY: maxY,
+                    ),
                   ],
                 ),
               ),
@@ -588,9 +592,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
         const Divider(height: 20),
         asyncAssets.when(
           data: (assetsData) {
-            
             final sortedAssets = _sortAssetList(assetsData, _sortCriteria, _sortAscending);
-            
             if (sortedAssets.isEmpty) {
               return const Card(child: ListTile(title: Text('暂无持仓资产')));
             }
@@ -793,7 +795,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
             ref.invalidate(trackedAssetsWithPerformanceProvider(accountId));
           });
         },
-        // ★★★ 修复点: 调用新的 _showDeleteOrArchiveDialog 方法 ★★★
         onLongPress: () => _showDeleteOrArchiveDialog(context, ref, asset, accountId),
       ),
     );
@@ -811,7 +812,6 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     );
   }
 
-  // ★★★ 修复点: 这是新的“归档/删除”对话框方法 ★★★
   void _showDeleteOrArchiveDialog(BuildContext context, WidgetRef ref, Asset asset, int accountId) {
     showDialog<String>(
       context: context,
@@ -881,8 +881,8 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     });
   }
 
-  Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots, Account account, bool isPercentage) {
-    
+  /// 新增：minY/maxY 仅在“净值”曲线时传入，其它曲线保持默认
+  Widget _buildHistoryChart(BuildContext context, List<FlSpot> spots, Account account, bool isPercentage, {double? minY, double? maxY}) {
     final NumberFormat yAxisFormat;
     if (isPercentage) {
       yAxisFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 1;
@@ -912,7 +912,9 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
         LineChartData(
           minX: 0,
           maxX: (spots.length - 1).toDouble(),
-
+          // 仅当参数提供时才限制 Y 轴范围（净值曲线用）
+          minY: minY,
+          maxY: maxY,
           lineBarsData: [
             LineChartBarData(
               spots: indexedSpots,
@@ -954,21 +956,12 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
               getTooltipItems: (touchedSpotsList) {
                 return touchedSpotsList.map((touchedSpot) {
                   final int index = touchedSpot.x.round();
-                  
-                  if (index < 0 || index >= spots.length) {
-                          return null;
-                  }
-
+                  if (index < 0 || index >= spots.length) return null;
                   final FlSpot originalSpot = spots[index];
                   final date = DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(originalSpot.x.toInt()));
-                  
-                  final String valueStr;
-                  if (isPercentage) {
-                    valueStr = (NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2).format(originalSpot.y);
-                  } else {
-                    valueStr = formatCurrency(originalSpot.y, account.currency);
-                  }
-                  
+                  final String valueStr = isPercentage
+                      ? (NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2).format(originalSpot.y)
+                      : formatCurrency(originalSpot.y, account.currency);
                   return LineTooltipItem(
                     '$date\n$valueStr',
                     const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -1002,7 +995,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
   }
 }
 
-// (*** 3. 关键修改：添加处理资产搜索的委托类 ***)
+// (*** 3. 处理资产搜索的委托类，保持不变 ***)
 class _AssetSearchDelegate extends SearchDelegate<Asset?> {
   final List<Map<String, dynamic>> allAssets;
   final int accountId;
@@ -1021,7 +1014,6 @@ class _AssetSearchDelegate extends SearchDelegate<Asset?> {
 
   @override
   List<Widget>? buildActions(BuildContext context) {
-    // 搜索框右侧的动作按钮，这里是一个清除按钮
     return [
       IconButton(
         icon: const Icon(Icons.clear),
@@ -1035,7 +1027,6 @@ class _AssetSearchDelegate extends SearchDelegate<Asset?> {
 
   @override
   Widget? buildLeading(BuildContext context) {
-    // 搜索框左侧的按钮，这里是一个返回按钮
     return IconButton(
       icon: const Icon(Icons.arrow_back),
       onPressed: () {
@@ -1045,41 +1036,26 @@ class _AssetSearchDelegate extends SearchDelegate<Asset?> {
   }
 
   @override
-  Widget buildResults(BuildContext context) {
-    // 当用户在键盘上点击“搜索”后显示的结果
-    return _buildSearchResults(context);
-  }
-
+  Widget buildResults(BuildContext context) => _buildSearchResults(context);
   @override
-  Widget buildSuggestions(BuildContext context) {
-    // 当用户在搜索框中输入时，动态显示的建议
-    return _buildSearchResults(context);
-  }
+  Widget buildSuggestions(BuildContext context) => _buildSearchResults(context);
 
-  // 辅助方法，用于构建搜索结果和建议的列表
   Widget _buildSearchResults(BuildContext context) {
     final suggestions = allAssets.where((assetData) {
       final asset = assetData['asset'] as Asset;
       final input = query.toLowerCase();
       final name = asset.name.toLowerCase();
       final code = asset.code.toLowerCase();
-      // 模糊匹配资产名称或代码
       return name.contains(input) || code.contains(input);
     }).toList();
 
     if (query.isEmpty) {
-      return const Center(
-        child: Text('请输入资产名称或代码进行搜索'),
-      );
+      return const Center(child: Text('请输入资产名称或代码进行搜索'));
     }
-    
     if (suggestions.isEmpty) {
-      return const Center(
-        child: Text('未找到匹配的资产'),
-      );
+      return const Center(child: Text('未找到匹配的资产'));
     }
 
-    // 使用 ListView 显示过滤后的资产列表
     return ListView.builder(
       itemCount: suggestions.length,
       itemBuilder: (context, index) {
@@ -1098,17 +1074,13 @@ class _AssetSearchDelegate extends SearchDelegate<Asset?> {
           subtitle: Text(asset.code.isNotEmpty ? asset.code : '价值型资产'),
           trailing: Text(formatCurrency(totalValue, account.currency)),
           onTap: () {
-            // 点击后，关闭搜索页面并导航到资产详情页
             close(context, asset); 
-            
             final pageRoute = MaterialPageRoute(builder: (context) {
               return asset.trackingMethod == AssetTrackingMethod.shareBased
                   ? ShareAssetDetailPage(assetId: asset.id)
                   : ValueAssetDetailPage(assetId: asset.id);
             });
-
             Navigator.of(context).push(pageRoute).then((_) {
-              // 从详情页返回后，刷新相关数据
               ref.invalidate(accountDetailProvider(accountId));
               ref.invalidate(accountPerformanceProvider(accountId));
               ref.invalidate(trackedAssetsWithPerformanceProvider(accountId));

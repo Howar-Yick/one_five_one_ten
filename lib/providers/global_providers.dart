@@ -1,5 +1,5 @@
 // File: lib/providers/global_providers.dart
-// Version: CHATGPT-1.04-20251014-TZ-FIX
+// Version: CHATGPT-1.13-20251016-ACCOUNT-CHART-AXIS-A+B
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -15,7 +15,7 @@ import 'package:one_five_one_ten/models/account_transaction.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:one_five_one_ten/utils/timezone.dart'; // ☆ 新增：引入工具
+import 'package:one_five_one_ten/utils/timezone.dart'; // ☆
 
 enum AssetSortCriteria {
   marketValue,
@@ -149,11 +149,7 @@ final accountPerformanceProvider =
   return CalculatorService().calculateAccountPerformance(account);
 });
 
-// ------------------------ 🔧 核心热修复位置开始 ------------------------
-// 原实现：查询时就 isArchived==false 直接过滤，价值法若被误标归档会被隐藏
-// 修复：查询不加 isArchived 过滤；在代码里：
-//  - shareBased：若 isArchived==true 则跳过
-//  - valueBased：无论 isArchived 值为何，统一保留（交给 Calculator 渲染表现）
+// ------------------------ 🔧 热修复：资产列表（保持不变） ------------------------
 final trackedAssetsWithPerformanceProvider =
     StreamProvider.autoDispose.family<List<Map<String, dynamic>>, int>((ref, accountId) async* {
   final isar = ref.watch(databaseServiceProvider).isar;
@@ -165,7 +161,6 @@ final trackedAssetsWithPerformanceProvider =
   }
   final accountSupabaseId = account.supabaseId!;
 
-  // ✅ 去掉 isArchivedEqualTo(false) 的一刀切过滤
   final assetStream = isar.assets
       .where()
       .filter()
@@ -175,38 +170,117 @@ final trackedAssetsWithPerformanceProvider =
   await for (var assets in assetStream) {
     final List<Map<String, dynamic>> results = [];
     for (final asset in assets) {
-      // 份额法：仍然遵守归档不显示
       if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
-        if (asset.isArchived) {
-          continue;
-        }
+        if (asset.isArchived) continue;
         final perf = await calculator.calculateShareAssetPerformance(asset);
         results.add({'asset': asset, 'performance': perf});
         continue;
       }
-
-      // 价值法：⚠️ 忽略 isArchived 标记（避免被“份额为0=清仓=归档”的旧逻辑误伤）
       if (asset.trackingMethod == AssetTrackingMethod.valueBased) {
         final perf = await calculator.calculateValueAssetPerformance(asset);
         results.add({'asset': asset, 'performance': perf});
         continue;
       }
-
-      // 其它兜底（若将来扩展）
       final perf = await calculator.calculateValueAssetPerformance(asset);
       results.add({'asset': asset, 'performance': perf});
     }
     yield results;
   }
 });
-// ------------------------ 🔧 核心热修复位置结束 ------------------------
 
+// ------------------------ ✅ 这里是本次的关键修改 ------------------------
+// 账户曲线：A) 去前导零并在首个有效点前一天补一个同值点；B) 仅对“净值”曲线计算 minY/maxY（含 3% padding）
 final accountHistoryProvider =
-    FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, Account>(
-        (ref, account) {
+    FutureProvider.autoDispose.family<Map<String, dynamic>, Account>(
+        (ref, account) async {
+  // 触发依赖刷新（保持旧行为）
   ref.watch(accountPerformanceProvider(account.id));
-  return CalculatorService().getAccountHistoryCharts(account);
+
+  // 拿到原始三条曲线
+  final raw = await CalculatorService().getAccountHistoryCharts(account);
+  final List<FlSpot> rawValue =
+      (raw['totalValue'] ?? const <FlSpot>[]) as List<FlSpot>;
+  final List<FlSpot> rawProfit =
+      (raw['totalProfit'] ?? const <FlSpot>[]) as List<FlSpot>;
+  final List<FlSpot> rawRate =
+      (raw['profitRate'] ?? const <FlSpot>[]) as List<FlSpot>;
+
+  // 工具：至少两点（若仅 1 点，则在前一日补同值点）
+  void _ensureTwo(List<FlSpot> spots, double defaultY) {
+    if (spots.isEmpty) return;
+    if (spots.length == 1) {
+      final d0 =
+          DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
+      final dayBefore =
+          d0.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
+      spots.insert(0, FlSpot(dayBefore, defaultY));
+    }
+  }
+
+  // A. 去掉“前导 0”并在首个有效点前一天补同值点
+  List<FlSpot> value = List<FlSpot>.from(rawValue);
+  value.sort((a, b) => a.x.compareTo(b.x));
+  int firstIdx = 0;
+  while (firstIdx < value.length &&
+      (value[firstIdx].y.isNaN || value[firstIdx].y.abs() < 1e-9)) {
+    firstIdx++;
+  }
+  if (firstIdx > 0 && firstIdx < value.length) {
+    value = value.sublist(firstIdx);
+    // 补：首个有效点前一天，同值点
+    final d0 =
+        DateTime.fromMillisecondsSinceEpoch(value.first.x.toInt());
+    final dayBefore =
+        d0.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
+    value.insert(0, FlSpot(dayBefore, value.first.y));
+  }
+  // 若全为 0 或空，维持原样（min/max 按默认）
+
+  // 兜底：至少两点
+  if (value.isNotEmpty) {
+    _ensureTwo(value, value.first.y);
+  }
+
+  // B. 计算 min/max（仅用于“净值”曲线）
+  double? valueMinY;
+  double? valueMaxY;
+  if (value.length >= 1) {
+    double minY = value.first.y;
+    double maxY = value.first.y;
+    for (final s in value) {
+      if (s.y < minY) minY = s.y;
+      if (s.y > maxY) maxY = s.y;
+    }
+    if (minY == maxY) {
+      // 竖线或水平线的兜底 padding
+      final pad = (maxY.abs() * 0.03).clamp(1e-6, double.infinity);
+      valueMinY = maxY - pad;
+      valueMaxY = maxY + pad;
+    } else {
+      final pad = (maxY - minY) * 0.03;
+      valueMinY = minY - pad;
+      valueMaxY = maxY + pad;
+    }
+  }
+
+  // 其它两条不变（不做动态缩放）
+  final List<FlSpot> profit = List<FlSpot>.from(rawProfit)..sort((a, b) => a.x.compareTo(b.x));
+  final List<FlSpot> rate = List<FlSpot>.from(rawRate)..sort((a, b) => a.x.compareTo(b.x));
+
+  _ensureTwo(profit, 0.0);
+  _ensureTwo(rate, 0.0);
+
+  return {
+    'totalValue': value,
+    'totalProfit': profit,
+    'profitRate': rate,
+    // 新增：仅供“净值”图表读取
+    'valueMinY': valueMinY,
+    'valueMaxY': valueMaxY,
+  };
 });
+
+// --------------------------------------------------------------------
 
 final transactionHistoryProvider =
     StreamProvider.autoDispose.family<List<AccountTransaction>, int>((ref, accountId) async* {
@@ -278,15 +352,11 @@ final snapshotHistoryProvider =
 final shareAssetCombinedChartProvider =
     FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>(
   (ref, assetId) async {
-    // 价格历史（按你现有服务获取）
     final priceHistory = await ref.watch(assetHistoryChartProvider(assetId).future);
-    // 快照历史（数据库实时流取到后再 future 化）
     final snapshots = await ref.watch(snapshotHistoryProvider(assetId).future);
 
-    // —— 仅用“日期”对齐，去掉时分秒，避免跨时区/UTC 导致的日边界错位 ——
     DateTime _dateOnly(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
 
-    // 保证折线至少两点，避免图层不渲染
     void _ensureTwoSpots(List<FlSpot> spots, double defaultY) {
       if (spots.isEmpty) return;
       if (spots.length == 1) {
@@ -297,7 +367,6 @@ final shareAssetCombinedChartProvider =
       }
     }
 
-    // 空数据兜底
     if (priceHistory.isEmpty && snapshots.isEmpty) {
       return {
         'price': const [],
@@ -306,11 +375,9 @@ final shareAssetCombinedChartProvider =
       };
     }
 
-    // 1) 快照：按“日期”升序；不再过滤 totalShares==0（清仓仍可画历史）
     final sortedSnapshots = snapshots.toList()
       ..sort((a, b) => _dateOnly(a.date).compareTo(_dateOnly(b.date)));
 
-    // 若没有快照，只返回价格线
     if (sortedSnapshots.isEmpty) {
       final price = priceHistory.toList();
       _ensureTwoSpots(price, price.isNotEmpty ? price.first.y : 0.0);
@@ -321,7 +388,6 @@ final shareAssetCombinedChartProvider =
       };
     }
 
-    // 2) 价格：从第一条快照“当天”开始（按日过滤，而非毫秒比较）
     final firstSnapDay = _dateOnly(sortedSnapshots.first.date);
     final firstSnapEpoch = firstSnapDay.millisecondsSinceEpoch.toDouble();
 
@@ -331,12 +397,10 @@ final shareAssetCombinedChartProvider =
       return dayEpoch >= firstSnapEpoch;
     }).toList();
 
-    // 如果行情当天未到价，兜底：不做过滤，避免整图消失
     final List<FlSpot> effectivePrice =
         priceByDay.isNotEmpty ? priceByDay : priceHistory.toList();
 
     if (effectivePrice.isEmpty) {
-      // 极端兜底：构造两点 0 线，保证界面不空
       final now = DateTime.now().millisecondsSinceEpoch.toDouble();
       final yesterday =
           DateTime.now().subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
@@ -347,7 +411,6 @@ final shareAssetCombinedChartProvider =
       };
     }
 
-    // 3) 用“当日或之前”的最新快照计算收益与收益率
     final List<FlSpot> profitSpots = [];
     final List<FlSpot> profitRateSpots = [];
 
@@ -357,7 +420,6 @@ final shareAssetCombinedChartProvider =
     for (final p in effectivePrice) {
       final pDate = _dateOnly(DateTime.fromMillisecondsSinceEpoch(p.x.toInt()));
 
-      // 前进指针：选择 <= 当天 的最新快照
       while (snapIdx < sortedSnapshots.length) {
         final sDate = _dateOnly(sortedSnapshots[snapIdx].date);
         if (sDate.isAfter(pDate)) break;
@@ -366,7 +428,6 @@ final shareAssetCombinedChartProvider =
       }
 
       if (active == null) {
-        // 价格有点但当天之前无快照，收益按 0 画
         profitSpots.add(FlSpot(p.x, 0.0));
         profitRateSpots.add(FlSpot(p.x, 0.0));
         continue;
@@ -377,7 +438,6 @@ final shareAssetCombinedChartProvider =
       final double price = p.y;
 
       if (!shares.isFinite || shares <= 0) {
-        // 清仓日/份额=0 也保持曲线连续（收益为0）
         profitSpots.add(FlSpot(p.x, 0.0));
         profitRateSpots.add(FlSpot(p.x, 0.0));
         continue;
@@ -392,7 +452,6 @@ final shareAssetCombinedChartProvider =
       profitRateSpots.add(FlSpot(p.x, rate.isFinite ? rate : 0.0));
     }
 
-    // 4) 三条线都保证至少两点
     _ensureTwoSpots(effectivePrice, effectivePrice.first.y);
     _ensureTwoSpots(profitSpots, 0.0);
     _ensureTwoSpots(profitRateSpots, 0.0);
@@ -404,7 +463,6 @@ final shareAssetCombinedChartProvider =
     };
   },
 );
-
 
 final valueAssetDetailProvider =
     StreamProvider.autoDispose.family<Asset?, int>((ref, assetId) {
@@ -425,33 +483,23 @@ final valueAssetPerformanceProvider =
 /// 价值法资产 —— 统一按“日期”对齐；同日多次仅保留“最后一条”；确保至少两点
 final valueAssetCombinedChartProvider =
     FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>((ref, assetId) async {
-  // 触发依赖（与原来保持一致，不影响其它逻辑）
   ref.watch(valueAssetPerformanceProvider(assetId));
-
-  // 读取资产对象
   final asset = await ref.watch(valueAssetDetailProvider(assetId).future);
   if (asset == null) {
     return {'totalValue': const [], 'totalProfit': const [], 'profitRate': const []};
   }
-
-  // 取原有计算结果（保持兼容）：可能已经包含 totalValue/totalProfit/profitRate 三条线
   final raw = await CalculatorService().getValueAssetHistoryCharts(asset);
 
-  // 工具：取“日期”（去时分秒），按本地日历对齐
   DateTime _dateOnly(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
 
-  // 工具：对一条折线做“同日去重 -> 保留当天最后一个点 -> 升序排序”
   List<FlSpot> _normalizeByDay(List<FlSpot> spots) {
     if (spots.isEmpty) return spots;
-    final Map<int, FlSpot> lastOfDay = {}; // key: dayEpoch(本地0点), value: 最后一个 FlSpot
-
+    final Map<int, FlSpot> lastOfDay = {};
     for (final s in spots) {
       final d = DateTime.fromMillisecondsSinceEpoch(s.x.toInt());
       final dayEpoch = _dateOnly(d).millisecondsSinceEpoch;
-      // 取“最后一个点”：直接覆盖即可（spots 本身已按时间递增通常也可，但这里更稳妥）
       lastOfDay[dayEpoch] = s;
     }
-
     final result = lastOfDay.entries
         .map((e) => FlSpot(e.key.toDouble(), e.value.y))
         .toList()
@@ -459,7 +507,6 @@ final valueAssetCombinedChartProvider =
     return result;
   }
 
-  // 工具：至少两点，避免图层不渲染
   void _ensureTwoSpots(List<FlSpot> spots, double defaultY) {
     if (spots.isEmpty) return;
     if (spots.length == 1) {
@@ -469,21 +516,13 @@ final valueAssetCombinedChartProvider =
     }
   }
 
-  // 分别标准化三条线（不存在的键用空列表）
   final List<FlSpot> valueLine = _normalizeByDay((raw['totalValue'] ?? const <FlSpot>[]) as List<FlSpot>);
   final List<FlSpot> profitLine = _normalizeByDay((raw['totalProfit'] ?? const <FlSpot>[]) as List<FlSpot>);
   final List<FlSpot> rateLine = _normalizeByDay((raw['profitRate'] ?? const <FlSpot>[]) as List<FlSpot>);
 
-  // 兜底：至少两点
-  if (valueLine.isNotEmpty) {
-    _ensureTwoSpots(valueLine, valueLine.first.y);
-  }
-  if (profitLine.isNotEmpty) {
-    _ensureTwoSpots(profitLine, 0.0);
-  }
-  if (rateLine.isNotEmpty) {
-    _ensureTwoSpots(rateLine, 0.0);
-  }
+  if (valueLine.isNotEmpty) _ensureTwoSpots(valueLine, valueLine.first.y);
+  if (profitLine.isNotEmpty) _ensureTwoSpots(profitLine, 0.0);
+  if (rateLine.isNotEmpty) _ensureTwoSpots(rateLine, 0.0);
 
   return {
     'totalValue': valueLine,
@@ -492,13 +531,10 @@ final valueAssetCombinedChartProvider =
   };
 });
 
-
 final valueAssetHistoryChartsProvider =
     FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>((ref, assetId) async {
-  // 直接复用统一后的“按日对齐 + 兜底”逻辑
   return ref.watch(valueAssetCombinedChartProvider(assetId).future);
 });
-
 
 final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeMode>((ref) {
   return ThemeNotifier();
