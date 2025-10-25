@@ -3,21 +3,23 @@ import 'package:isar/isar.dart';
 
 part 'allocation_plan.g.dart';
 
+/// 资产配置“方案”表（支持多方案）
 @collection
 class AllocationPlan {
   Id id = Isar.autoIncrement;
 
-  /// 方案名称：如 “进取型-2025Q1”
-  @Index(unique: true, caseSensitive: false)
+  /// 方案名称（例如：长期配置 / 稳健配置 / 实验组合）
+  @Index(caseSensitive: false)
   late String name;
 
-  /// 是否默认方案（全局唯一建议用 UI 层约束，这里不加唯一索引，避免写入冲突）
+  /// 备注说明
+  String? note;
+
+  /// 是否为当前启用方案（后续可支持多启用或单启用策略）
   @Index()
-  bool isDefault = false;
+  bool isActive = true;
 
-  /// 方案描述（可选）
-  String? description;
-
+  /// 方案创建/更新时间
   DateTime createdAt = DateTime.now();
   DateTime updatedAt = DateTime.now();
 }

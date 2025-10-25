@@ -1,30 +1,36 @@
 // File: lib/services/database_service.dart
-// Version: CHATGPT-1.03-20251014-VB-FILTER-HOTFIX
-//
-// 说明：保持你的原始实现，不新增不存在的字段/方法；仅保留你新增的 DeletionSchema。
-// 若后续你希望我把“清仓判定”下沉到 DB 层，可再开一版，但本热修复不做侵入更改。
+// Version: CHATGPT-ALLOC-STEP2-DB-SCHEMAS-ADD
 
 import 'package:isar/isar.dart';
+import 'package:path_provider/path_provider.dart';
+
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:one_five_one_ten/models/deletion.dart'; // ✅ 你已添加的 Deletion 模型
+import 'package:one_five_one_ten/models/deletion.dart';
+
+// ▼ 新增：资产配置模型
+import 'package:one_five_one_ten/models/allocation_plan.dart';
+import 'package:one_five_one_ten/models/allocation_plan_item.dart';
 
 class DatabaseService {
-  late Isar isar;
   DatabaseService._();
   static final DatabaseService _instance = DatabaseService._();
   factory DatabaseService() => _instance;
+
+  late Isar isar;
 
   Future<void> init() async {
     if (Isar.instanceNames.isNotEmpty) {
       isar = Isar.getInstance()!;
       return;
     }
+
     final dir = await getApplicationDocumentsDirectory();
+
+    // ★★★ 一定要把两个新表的 Schema 一起注册 ★★★
     isar = await Isar.open(
       [
         AccountSchema,
@@ -32,7 +38,11 @@ class DatabaseService {
         AssetSchema,
         PositionSnapshotSchema,
         TransactionSchema,
-        DeletionSchema, // ✅ 保留
+        DeletionSchema,
+
+        // 新增：资产配置
+        AllocationPlanSchema,
+        AllocationPlanItemSchema,
       ],
       directory: dir.path,
       name: 'one_five_one_ten_db',

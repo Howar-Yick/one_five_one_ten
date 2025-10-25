@@ -22,19 +22,19 @@ const AllocationPlanSchema = CollectionSchema(
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
-    r'description': PropertySchema(
+    r'isActive': PropertySchema(
       id: 1,
-      name: r'description',
-      type: IsarType.string,
-    ),
-    r'isDefault': PropertySchema(
-      id: 2,
-      name: r'isDefault',
+      name: r'isActive',
       type: IsarType.bool,
     ),
     r'name': PropertySchema(
-      id: 3,
+      id: 2,
       name: r'name',
+      type: IsarType.string,
+    ),
+    r'note': PropertySchema(
+      id: 3,
+      name: r'note',
       type: IsarType.string,
     ),
     r'updatedAt': PropertySchema(
@@ -52,7 +52,7 @@ const AllocationPlanSchema = CollectionSchema(
     r'name': IndexSchema(
       id: 879695947855722453,
       name: r'name',
-      unique: true,
+      unique: false,
       replace: false,
       properties: [
         IndexPropertySchema(
@@ -62,14 +62,14 @@ const AllocationPlanSchema = CollectionSchema(
         )
       ],
     ),
-    r'isDefault': IndexSchema(
-      id: -6569979013669400724,
-      name: r'isDefault',
+    r'isActive': IndexSchema(
+      id: 8092228061260947457,
+      name: r'isActive',
       unique: false,
       replace: false,
       properties: [
         IndexPropertySchema(
-          name: r'isDefault',
+          name: r'isActive',
           type: IndexType.value,
           caseSensitive: false,
         )
@@ -90,13 +90,13 @@ int _allocationPlanEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  bytesCount += 3 + object.name.length * 3;
   {
-    final value = object.description;
+    final value = object.note;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
     }
   }
-  bytesCount += 3 + object.name.length * 3;
   return bytesCount;
 }
 
@@ -107,9 +107,9 @@ void _allocationPlanSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeDateTime(offsets[0], object.createdAt);
-  writer.writeString(offsets[1], object.description);
-  writer.writeBool(offsets[2], object.isDefault);
-  writer.writeString(offsets[3], object.name);
+  writer.writeBool(offsets[1], object.isActive);
+  writer.writeString(offsets[2], object.name);
+  writer.writeString(offsets[3], object.note);
   writer.writeDateTime(offsets[4], object.updatedAt);
 }
 
@@ -121,10 +121,10 @@ AllocationPlan _allocationPlanDeserialize(
 ) {
   final object = AllocationPlan();
   object.createdAt = reader.readDateTime(offsets[0]);
-  object.description = reader.readStringOrNull(offsets[1]);
   object.id = id;
-  object.isDefault = reader.readBool(offsets[2]);
-  object.name = reader.readString(offsets[3]);
+  object.isActive = reader.readBool(offsets[1]);
+  object.name = reader.readString(offsets[2]);
+  object.note = reader.readStringOrNull(offsets[3]);
   object.updatedAt = reader.readDateTime(offsets[4]);
   return object;
 }
@@ -139,11 +139,11 @@ P _allocationPlanDeserializeProp<P>(
     case 0:
       return (reader.readDateTime(offset)) as P;
     case 1:
-      return (reader.readStringOrNull(offset)) as P;
-    case 2:
       return (reader.readBool(offset)) as P;
-    case 3:
+    case 2:
       return (reader.readString(offset)) as P;
+    case 3:
+      return (reader.readStringOrNull(offset)) as P;
     case 4:
       return (reader.readDateTime(offset)) as P;
     default:
@@ -164,61 +164,6 @@ void _allocationPlanAttach(
   object.id = id;
 }
 
-extension AllocationPlanByIndex on IsarCollection<AllocationPlan> {
-  Future<AllocationPlan?> getByName(String name) {
-    return getByIndex(r'name', [name]);
-  }
-
-  AllocationPlan? getByNameSync(String name) {
-    return getByIndexSync(r'name', [name]);
-  }
-
-  Future<bool> deleteByName(String name) {
-    return deleteByIndex(r'name', [name]);
-  }
-
-  bool deleteByNameSync(String name) {
-    return deleteByIndexSync(r'name', [name]);
-  }
-
-  Future<List<AllocationPlan?>> getAllByName(List<String> nameValues) {
-    final values = nameValues.map((e) => [e]).toList();
-    return getAllByIndex(r'name', values);
-  }
-
-  List<AllocationPlan?> getAllByNameSync(List<String> nameValues) {
-    final values = nameValues.map((e) => [e]).toList();
-    return getAllByIndexSync(r'name', values);
-  }
-
-  Future<int> deleteAllByName(List<String> nameValues) {
-    final values = nameValues.map((e) => [e]).toList();
-    return deleteAllByIndex(r'name', values);
-  }
-
-  int deleteAllByNameSync(List<String> nameValues) {
-    final values = nameValues.map((e) => [e]).toList();
-    return deleteAllByIndexSync(r'name', values);
-  }
-
-  Future<Id> putByName(AllocationPlan object) {
-    return putByIndex(r'name', object);
-  }
-
-  Id putByNameSync(AllocationPlan object, {bool saveLinks = true}) {
-    return putByIndexSync(r'name', object, saveLinks: saveLinks);
-  }
-
-  Future<List<Id>> putAllByName(List<AllocationPlan> objects) {
-    return putAllByIndex(r'name', objects);
-  }
-
-  List<Id> putAllByNameSync(List<AllocationPlan> objects,
-      {bool saveLinks = true}) {
-    return putAllByIndexSync(r'name', objects, saveLinks: saveLinks);
-  }
-}
-
 extension AllocationPlanQueryWhereSort
     on QueryBuilder<AllocationPlan, AllocationPlan, QWhere> {
   QueryBuilder<AllocationPlan, AllocationPlan, QAfterWhere> anyId() {
@@ -227,10 +172,10 @@ extension AllocationPlanQueryWhereSort
     });
   }
 
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterWhere> anyIsDefault() {
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterWhere> anyIsActive() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
-        const IndexWhereClause.any(indexName: r'isDefault'),
+        const IndexWhereClause.any(indexName: r'isActive'),
       );
     });
   }
@@ -353,44 +298,44 @@ extension AllocationPlanQueryWhere
   }
 
   QueryBuilder<AllocationPlan, AllocationPlan, QAfterWhereClause>
-      isDefaultEqualTo(bool isDefault) {
+      isActiveEqualTo(bool isActive) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'isDefault',
-        value: [isDefault],
+        indexName: r'isActive',
+        value: [isActive],
       ));
     });
   }
 
   QueryBuilder<AllocationPlan, AllocationPlan, QAfterWhereClause>
-      isDefaultNotEqualTo(bool isDefault) {
+      isActiveNotEqualTo(bool isActive) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
             .addWhereClause(IndexWhereClause.between(
-              indexName: r'isDefault',
+              indexName: r'isActive',
               lower: [],
-              upper: [isDefault],
+              upper: [isActive],
               includeUpper: false,
             ))
             .addWhereClause(IndexWhereClause.between(
-              indexName: r'isDefault',
-              lower: [isDefault],
+              indexName: r'isActive',
+              lower: [isActive],
               includeLower: false,
               upper: [],
             ));
       } else {
         return query
             .addWhereClause(IndexWhereClause.between(
-              indexName: r'isDefault',
-              lower: [isDefault],
+              indexName: r'isActive',
+              lower: [isActive],
               includeLower: false,
               upper: [],
             ))
             .addWhereClause(IndexWhereClause.between(
-              indexName: r'isDefault',
+              indexName: r'isActive',
               lower: [],
-              upper: [isDefault],
+              upper: [isActive],
               includeUpper: false,
             ));
       }
@@ -456,160 +401,6 @@ extension AllocationPlanQueryFilter
     });
   }
 
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      descriptionIsNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'description',
-      ));
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      descriptionIsNotNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'description',
-      ));
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      descriptionEqualTo(
-    String? value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'description',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      descriptionGreaterThan(
-    String? value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'description',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      descriptionLessThan(
-    String? value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'description',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      descriptionBetween(
-    String? lower,
-    String? upper, {
-    bool includeLower = true,
-    bool includeUpper = true,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'description',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      descriptionStartsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'description',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      descriptionEndsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'description',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      descriptionContains(String value, {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'description',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      descriptionMatches(String pattern, {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'description',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      descriptionIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'description',
-        value: '',
-      ));
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      descriptionIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'description',
-        value: '',
-      ));
-    });
-  }
-
   QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition> idEqualTo(
       Id value) {
     return QueryBuilder.apply(this, (query) {
@@ -666,10 +457,10 @@ extension AllocationPlanQueryFilter
   }
 
   QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
-      isDefaultEqualTo(bool value) {
+      isActiveEqualTo(bool value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'isDefault',
+        property: r'isActive',
         value: value,
       ));
     });
@@ -812,6 +603,160 @@ extension AllocationPlanQueryFilter
   }
 
   QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
+      noteIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'note',
+      ));
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
+      noteIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'note',
+      ));
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
+      noteEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'note',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
+      noteGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'note',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
+      noteLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'note',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
+      noteBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'note',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
+      noteStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'note',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
+      noteEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'note',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
+      noteContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'note',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
+      noteMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'note',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
+      noteIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'note',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
+      noteIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'note',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterFilterCondition>
       updatedAtEqualTo(DateTime value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
@@ -889,30 +834,16 @@ extension AllocationPlanQuerySortBy
     });
   }
 
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy>
-      sortByDescription() {
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy> sortByIsActive() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'description', Sort.asc);
+      return query.addSortBy(r'isActive', Sort.asc);
     });
   }
 
   QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy>
-      sortByDescriptionDesc() {
+      sortByIsActiveDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'description', Sort.desc);
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy> sortByIsDefault() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'isDefault', Sort.asc);
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy>
-      sortByIsDefaultDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'isDefault', Sort.desc);
+      return query.addSortBy(r'isActive', Sort.desc);
     });
   }
 
@@ -925,6 +856,18 @@ extension AllocationPlanQuerySortBy
   QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy> sortByNameDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'name', Sort.desc);
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy> sortByNote() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'note', Sort.asc);
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy> sortByNoteDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'note', Sort.desc);
     });
   }
 
@@ -957,20 +900,6 @@ extension AllocationPlanQuerySortThenBy
     });
   }
 
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy>
-      thenByDescription() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'description', Sort.asc);
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy>
-      thenByDescriptionDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'description', Sort.desc);
-    });
-  }
-
   QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy> thenById() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'id', Sort.asc);
@@ -983,16 +912,16 @@ extension AllocationPlanQuerySortThenBy
     });
   }
 
-  QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy> thenByIsDefault() {
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy> thenByIsActive() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'isDefault', Sort.asc);
+      return query.addSortBy(r'isActive', Sort.asc);
     });
   }
 
   QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy>
-      thenByIsDefaultDesc() {
+      thenByIsActiveDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'isDefault', Sort.desc);
+      return query.addSortBy(r'isActive', Sort.desc);
     });
   }
 
@@ -1005,6 +934,18 @@ extension AllocationPlanQuerySortThenBy
   QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy> thenByNameDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'name', Sort.desc);
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy> thenByNote() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'note', Sort.asc);
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QAfterSortBy> thenByNoteDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'note', Sort.desc);
     });
   }
 
@@ -1031,17 +972,9 @@ extension AllocationPlanQueryWhereDistinct
     });
   }
 
-  QueryBuilder<AllocationPlan, AllocationPlan, QDistinct> distinctByDescription(
-      {bool caseSensitive = true}) {
+  QueryBuilder<AllocationPlan, AllocationPlan, QDistinct> distinctByIsActive() {
     return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'description', caseSensitive: caseSensitive);
-    });
-  }
-
-  QueryBuilder<AllocationPlan, AllocationPlan, QDistinct>
-      distinctByIsDefault() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'isDefault');
+      return query.addDistinctBy(r'isActive');
     });
   }
 
@@ -1049,6 +982,13 @@ extension AllocationPlanQueryWhereDistinct
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'name', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<AllocationPlan, AllocationPlan, QDistinct> distinctByNote(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'note', caseSensitive: caseSensitive);
     });
   }
 
@@ -1074,22 +1014,21 @@ extension AllocationPlanQueryProperty
     });
   }
 
-  QueryBuilder<AllocationPlan, String?, QQueryOperations>
-      descriptionProperty() {
+  QueryBuilder<AllocationPlan, bool, QQueryOperations> isActiveProperty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'description');
-    });
-  }
-
-  QueryBuilder<AllocationPlan, bool, QQueryOperations> isDefaultProperty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'isDefault');
+      return query.addPropertyName(r'isActive');
     });
   }
 
   QueryBuilder<AllocationPlan, String, QQueryOperations> nameProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'name');
+    });
+  }
+
+  QueryBuilder<AllocationPlan, String?, QQueryOperations> noteProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'note');
     });
   }
 
