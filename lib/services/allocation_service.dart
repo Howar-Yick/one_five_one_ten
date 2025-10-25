@@ -1,215 +1,247 @@
 // File: lib/services/allocation_service.dart
-import 'dart:math';
+// Step 2 - Allocation Planner service (no changes to existing logic)
+
 import 'package:isar/isar.dart';
-import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/asset.dart';
-import 'package:one_five_one_ten/models/allocation_bucket.dart';
-import 'package:one_five_one_ten/models/allocation_plan.dart';
-import 'package:one_five_one_ten/models/allocation_plan_bucket.dart';
-import 'package:one_five_one_ten/models/asset_bucket_map.dart';
+import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 
-/// 仅做读取与计算，不改动原有资产/交易/快照数据
+import 'package:one_five_one_ten/models/allocation_models.dart';
+
 class AllocationService {
-  final Isar _isar;
-  final CalculatorService _calc;
+  final Isar _isar = DatabaseService().isar;
 
-  AllocationService({Isar? isar, CalculatorService? calculator})
-      : _isar = isar ?? DatabaseService().isar,
-        _calc = calculator ?? CalculatorService();
-
-  /// 读取默认方案；若没有默认，则返回任意一个方案（或 null）
-  Future<AllocationPlan?> getDefaultPlan() async {
-    final plans = await _isar.allocationPlans.where().findAll();
-    if (plans.isEmpty) return null;
-    final def = plans.firstWhere((p) => p.isDefault, orElse: () => plans.first);
-    return def;
+  // ============== CRUD: Scheme ==============
+  Future<AllocationScheme> createScheme(String name, {bool isDefault = false}) async {
+    final scheme = AllocationScheme()
+      ..name = name.trim()
+      ..isDefault = isDefault
+      ..createdAt = DateTime.now()
+      ..updatedAt = DateTime.now();
+    await _isar.writeTxn(() async {
+      await _isar.allocationSchemes.put(scheme);
+    });
+    return scheme;
   }
 
-  /// 获取某方案下的桶定义（含覆盖权重逻辑）
-  Future<List<_ResolvedBucket>> getResolvedBuckets(int planId) async {
-    final buckets = await _isar.allocationBuckets
-        .where()
-        .filter()
-        .isActiveEqualTo(true)
-        .sortByOrder()
-        .findAll();
-
-    final overrides = await _isar.allocationPlanBuckets
-        .where()
-        .filter()
-        .planIdEqualTo(planId)
-        .findAll();
-
-    final byId = {for (final b in buckets) b.id: b};
-    final List<_ResolvedBucket> result = [];
-    for (final b in buckets) {
-      final ov = overrides.firstWhere(
-        (x) => x.bucketId == b.id,
-        orElse: () => AllocationPlanBucket()
-          ..planId = planId
-          ..bucketId = b.id
-          ..targetWeightOverride = null,
-      );
-      result.add(_ResolvedBucket(
-        bucket: b,
-        targetWeight: ov.targetWeightOverride ?? b.targetWeight,
-      ));
-    }
-    return result;
+  Future<List<AllocationScheme>> listSchemes() async {
+    return _isar.allocationSchemes.where().sortByCreatedAt().findAll();
   }
 
-  /// 读取“资产→桶”映射（该 planId 下 + 默认映射）
-  Future<List<AssetBucketMap>> getAssetMappings({int? planId}) async {
-    final defaultMaps = await _isar.assetBucketMaps
-        .where()
-        .filter()
-        .planIdIsNull()
-        .findAll();
-    if (planId == null) return defaultMaps;
-
-    final planMaps = await _isar.assetBucketMaps
-        .where()
-        .filter()
-        .planIdEqualTo(planId)
-        .findAll();
-
-    // 同一资产在 plan 中映射优先覆盖默认映射
-    final key = (AssetBucketMap m) =>
-        '${m.assetSupabaseId ?? ''}#${m.assetId ?? -1}';
-    final merged = <String, AssetBucketMap>{};
-    for (final m in defaultMaps) merged[key(m)] = m;
-    for (final m in planMaps) merged[key(m)] = m;
-    return merged.values.toList();
+  Future<void> setDefaultScheme(AllocationScheme scheme) async {
+    await _isar.writeTxn(() async {
+      final all = await _isar.allocationSchemes.where().findAll();
+      for (final s in all) {
+        s.isDefault = (s.id == scheme.id);
+        s.updatedAt = DateTime.now();
+      }
+      await _isar.allocationSchemes.putAll(all);
+    });
   }
 
-  /// 计算当前配置情况（全局或按账户过滤）
-  ///
-  /// 返回：
-  /// - buckets: 每个桶当前金额 & 当前权重 & 目标权重 & 偏离
-  /// - total: 总额
-  Future<AllocationSummary> buildCurrentAllocation({
-    required int planId,
-    int? accountId, // 可选：按账户维度统计
+  Future<void> renameScheme(AllocationScheme scheme, String newName) async {
+    scheme
+      ..name = newName.trim()
+      ..updatedAt = DateTime.now();
+    await _isar.writeTxn(() async {
+      await _isar.allocationSchemes.put(scheme);
+    });
+  }
+
+  Future<void> deleteScheme(AllocationScheme scheme) async {
+    await _isar.writeTxn(() async {
+      // 先删桶和链接
+      final buckets = await scheme.buckets.filter().findAll();
+      for (final b in buckets) {
+        final links = await b.assetLinks.filter().findAll();
+        await _isar.assetAllocationLinks.deleteAll(links.map((e) => e.id).toList());
+      }
+      await _isar.allocationBuckets.deleteAll(buckets.map((e) => e.id).toList());
+      // 再删方案
+      await _isar.allocationSchemes.delete(scheme.id);
+    });
+  }
+
+  // ============== CRUD: Bucket ==============
+  Future<AllocationBucket> addBucket({
+    required AllocationScheme scheme,
+    required String name,
+    required double targetWeight, // 0~1
+    String tag = '',
   }) async {
-    final resolved = await getResolvedBuckets(planId);
-    final mappings = await getAssetMappings(planId: planId);
+    final bucket = AllocationBucket()
+      ..name = name.trim()
+      ..targetWeight = targetWeight
+      ..tag = tag
+      ..createdAt = DateTime.now()
+      ..updatedAt = DateTime.now();
 
-    // 构建 bucket 聚合容器
-    final byBucket = <int, _BucketAgg>{
-      for (final r in resolved) r.bucket.id: _BucketAgg(targetWeight: r.targetWeight)
-    };
+    await _isar.writeTxn(() async {
+      await _isar.allocationBuckets.put(bucket);
+      bucket.scheme.value = scheme;
+      await bucket.scheme.save();
 
-    // 读取资产 & 金额（只读，复用现有计算）
-    final isarAssets = await _isar.assets.where().findAll();
-    // 过滤账号
-    // 过滤账户：根据 supabaseId 关联
-    List<Asset> filtered = isarAssets;
-    if (accountId != null) {
-      // 先找到该账户对应的 supabaseId
-      final acc = await _isar.accounts.get(accountId);
-      final accSupa = acc?.supabaseId;
-      if (accSupa != null) {
-        filtered = isarAssets
-            .where((a) => a.accountSupabaseId == accSupa)
-            .toList();
-      } else {
-        // 没找到 supabaseId，就返回空（理论上不应出现）
-        filtered = [];
-      }
-    }
-    // 建索引：assetId/supabaseId -> bucketId
-    int? resolveBucketIdForAsset(Asset a) {
-      final hit = mappings.firstWhere(
-        (m) =>
-            (a.supabaseId != null && a.supabaseId == m.assetSupabaseId) ||
-            (a.id == m.assetId),
-        orElse: () => AssetBucketMap()..bucketId = -1,
-      );
-      return hit.bucketId == -1 ? null : hit.bucketId;
-    }
+      scheme.buckets.add(bucket);
+      await scheme.buckets.save();
 
-    // 逐资产累加现值
-    for (final a in filtered) {
-      final bId = resolveBucketIdForAsset(a);
-      if (bId == null) continue;
-      if (!byBucket.containsKey(bId)) {
-        // 映射到了“非激活/未在方案中”的桶：忽略（保证方案干净）
-        continue;
-      }
-      // shareBased -> marketValue, valueBased -> currentValue
-      final perf = a.trackingMethod == AssetTrackingMethod.shareBased
-          ? await _calc.calculateShareAssetPerformance(a)
-          : await _calc.calculateValueAssetPerformance(a);
-
-      final mv = a.trackingMethod == AssetTrackingMethod.shareBased
-          ? (perf['marketValue'] ?? 0.0) as double
-          : (perf['currentValue'] ?? 0.0) as double;
-
-      byBucket[bId]!.amount += mv;
-    }
-
-    // 计算权重与偏离
-    final total = byBucket.values.fold<double>(0.0, (s, x) => s + x.amount);
-    final items = <AllocationItem>[];
-    for (final entry in byBucket.entries) {
-      final bucket =
-          await _isar.allocationBuckets.where().idEqualTo(entry.key).findFirst();
-      if (bucket == null) continue;
-      final curW = total <= 0 ? 0.0 : (entry.value.amount / max(total, 1e-9));
-      items.add(AllocationItem(
-        bucket: bucket,
-        amount: entry.value.amount,
-        currentWeight: curW,
-        targetWeight: entry.value.targetWeight,
-        drift: curW - entry.value.targetWeight,
-      ));
-    }
-
-    // 按偏离绝对值倒序，便于 UI 展示
-    items.sort((a, b) => b.drift.abs().compareTo(a.drift.abs()));
-
-    return AllocationSummary(
-      items: items,
-      total: total,
-    );
+      await _isar.allocationBuckets.put(bucket); // 确保 link 持久化后再写
+      await _isar.allocationSchemes.put(scheme);
+    });
+    return bucket;
   }
-}
 
-/// —— 数据载体 ——
-/// 这些是计算层的纯 Dart 对象，不入库
-class AllocationSummary {
-  final List<AllocationItem> items;
-  final double total;
-  AllocationSummary({required this.items, required this.total});
-}
+  Future<void> updateBucket(AllocationBucket bucket,
+      {String? name, double? targetWeight, String? tag}) async {
+    if (name != null) bucket.name = name.trim();
+    if (targetWeight != null) bucket.targetWeight = targetWeight;
+    if (tag != null) bucket.tag = tag;
+    bucket.updatedAt = DateTime.now();
+    await _isar.writeTxn(() async {
+      await _isar.allocationBuckets.put(bucket);
+    });
+  }
 
-class AllocationItem {
-  final AllocationBucket bucket;
-  final double amount;
-  final double currentWeight;
-  final double targetWeight;
-  final double drift;
-  AllocationItem({
-    required this.bucket,
-    required this.amount,
-    required this.currentWeight,
-    required this.targetWeight,
-    required this.drift,
-  });
-}
+  Future<void> deleteBucket(AllocationBucket bucket) async {
+    await _isar.writeTxn(() async {
+      final links = await bucket.assetLinks.filter().findAll();
+      await _isar.assetAllocationLinks.deleteAll(links.map((e) => e.id).toList());
+      await _isar.allocationBuckets.delete(bucket.id);
+    });
+  }
 
-/// —— 内部使用的小结构 ——
-/// 解析覆盖权重后的桶
-class _ResolvedBucket {
-  final AllocationBucket bucket;
-  final double targetWeight;
-  _ResolvedBucket({required this.bucket, required this.targetWeight});
-}
+  // ============== Asset linking ==============
+  Future<AssetAllocationLink> linkAssetToBucket({
+    required AllocationBucket bucket,
+    required String assetSupabaseId,
+    double? weightOverride, // 0~1 (optional)
+  }) async {
+    final link = AssetAllocationLink()
+      ..assetSupabaseId = assetSupabaseId
+      ..weightOverride = weightOverride
+      ..createdAt = DateTime.now()
+      ..updatedAt = DateTime.now();
+    await _isar.writeTxn(() async {
+      await _isar.assetAllocationLinks.put(link);
+      link.bucket.value = bucket;
+      await link.bucket.save();
 
-class _BucketAgg {
-  double amount = 0.0;
-  final double targetWeight;
-  _BucketAgg({required this.targetWeight});
+      bucket.assetLinks.add(link);
+      await bucket.assetLinks.save();
+
+      await _isar.assetAllocationLinks.put(link);
+      await _isar.allocationBuckets.put(bucket);
+    });
+    return link;
+  }
+
+  Future<void> unlinkAsset(AssetAllocationLink link) async {
+    await _isar.writeTxn(() async {
+      await _isar.assetAllocationLinks.delete(link.id);
+    });
+  }
+
+  // ============== Compute ==============
+  /// 读取某个账户（可选）下的实际持仓分布（当前市值占比），用于与目标方案对比
+  /// accountId == null 表示全账户合并
+  Future<Map<int, double>> computeActualWeightsByBucket({
+    required AllocationScheme scheme,
+    int? accountId,
+  }) async {
+    // 1) 找出账户的 supabaseId（你的 Asset 用的是 accountSupabaseId）
+    String? accSupa;
+    if (accountId != null) {
+      final acc = await _isar.accounts.get(accountId);
+      accSupa = acc?.supabaseId;
+    }
+
+    // 2) 读取所有桶 & 对应的资产链接
+    final buckets = await scheme.buckets.filter().findAll();
+
+    // 3) 读取所有资产（按需过滤账户）
+    final isarAssets = await _isar.assets.where().findAll();
+    List<Asset> filtered = isarAssets;
+    if (accSupa != null) {
+      filtered = isarAssets
+          .where((a) => a.accountSupabaseId == accSupa)
+          .toList();
+    }
+
+    // 4) 计算每个资产当前市值（沿用 CalculatorService 的定义）
+    final calc = CalculatorService();
+    final Map<String, double> assetMv = {}; // key: asset.supabaseId, val: market value
+    for (final a in filtered) {
+      final perf = a.trackingMethod == AssetTrackingMethod.shareBased
+          ? await calc.calculateShareAssetPerformance(a)
+          : await calc.calculateValueAssetPerformance(a);
+      final mv = (a.trackingMethod == AssetTrackingMethod.shareBased
+              ? perf['marketValue']
+              : perf['currentValue']) ??
+          0.0;
+      if (a.supabaseId != null) {
+        assetMv[a.supabaseId!] = mv;
+      }
+    }
+
+    // 5) 汇总到 bucket
+    final Map<int, double> bucketValue = {}; // key: bucket.id
+    double total = 0.0;
+
+    for (final b in buckets) {
+      final links = await b.assetLinks.filter().findAll();
+      double sum = 0.0;
+      for (final l in links) {
+        final id = l.assetSupabaseId;
+        if (id == null) continue;
+        final mv = assetMv[id] ?? 0.0;
+        // 可选：按 weightOverride 调整
+        if (l.weightOverride != null && l.weightOverride! > 0) {
+          sum += mv * l.weightOverride!.clamp(0, 1);
+        } else {
+          sum += mv;
+        }
+      }
+      bucketValue[b.id] = sum;
+      total += sum;
+    }
+
+    // 6) 转换为权重（0~1）
+    final Map<int, double> bucketWeight = {};
+    if (total <= 0) {
+      for (final b in buckets) {
+        bucketWeight[b.id] = 0.0;
+      }
+    } else {
+      for (final entry in bucketValue.entries) {
+        bucketWeight[entry.key] = entry.value / total;
+      }
+    }
+    return bucketWeight;
+  }
+
+  /// 读取目标权重（0~1）：key 为 bucket.id
+  Future<Map<int, double>> readTargetWeights(AllocationScheme scheme) async {
+    final buckets = await scheme.buckets.filter().findAll();
+    final Map<int, double> target = {};
+    for (final b in buckets) {
+      target[b.id] = b.targetWeight;
+    }
+    return target;
+  }
+
+  /// Diff：实际 vs 目标
+  Future<Map<int, double>> compareActualVsTarget({
+    required AllocationScheme scheme,
+    int? accountId,
+  }) async {
+    final actual = await computeActualWeightsByBucket(scheme: scheme, accountId: accountId);
+    final target = await readTargetWeights(scheme);
+    final Map<int, double> diff = {};
+    for (final id in target.keys) {
+      final a = actual[id] ?? 0.0;
+      final t = target[id] ?? 0.0;
+      diff[id] = a - t; // >0 代表超配，<0 代表低配
+    }
+    return diff;
+  }
 }

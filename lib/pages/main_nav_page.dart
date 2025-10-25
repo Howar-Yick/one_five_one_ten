@@ -6,9 +6,12 @@ import 'package:one_five_one_ten/pages/accounts_page.dart';
 import 'package:one_five_one_ten/pages/dashboard_page.dart';
 import 'package:one_five_one_ten/pages/settings_page.dart';
 // 2. 导入我们的 providers
-import 'package:one_five_one_ten/providers/global_providers.dart'; 
+import 'package:one_five_one_ten/providers/global_providers.dart';
+// ★ 新增：配置规划器入口页
+import 'package:one_five_one_ten/pages/allocation_planner_page.dart';
+
 // 3. (移除) 不再需要旧的 sync_service
-// import 'package:one_five_one_ten/services/sync_service.dart'; 
+// import 'package:one_five_one_ten/services/sync_service.dart';
 
 // 4. 将 StatefulWidget 更改为 ConsumerStatefulWidget
 class MainNavPage extends ConsumerStatefulWidget {
@@ -22,9 +25,11 @@ class MainNavPage extends ConsumerStatefulWidget {
 class _MainNavPageState extends ConsumerState<MainNavPage> {
   int _selectedIndex = 0;
 
+  // ★ 顺序：概览 -> 账户 -> 配置 -> 我的
   static const List<Widget> _pages = <Widget>[
     DashboardPage(),
     AccountsPage(),
+    AllocationPlannerPage(), // ★ 新增：配置
     SettingsPage(),
   ];
 
@@ -33,7 +38,7 @@ class _MainNavPageState extends ConsumerState<MainNavPage> {
       _selectedIndex = index;
     });
   }
-  
+
   @override
   void initState() {
     super.initState();
@@ -46,11 +51,11 @@ class _MainNavPageState extends ConsumerState<MainNavPage> {
     // 9. (移除) 旧的启动器
     // SyncService.instance.start();
   }
-  
+
   @override
   void dispose() {
     // 10. (移除) 旧的 dispose 逻辑
-    // SyncService.instance.stop(); 
+    // SyncService.instance.stop();
     super.dispose();
   }
 
@@ -70,6 +75,12 @@ class _MainNavPageState extends ConsumerState<MainNavPage> {
             activeIcon: Icon(Icons.account_balance_wallet),
             label: '账户',
           ),
+          // ★ 新增的第三个 Tab：配置
+          BottomNavigationBarItem(
+            icon: Icon(Icons.tune_outlined),
+            activeIcon: Icon(Icons.tune),
+            label: '配置',
+          ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings_outlined),
             activeIcon: Icon(Icons.settings),
@@ -78,6 +89,7 @@ class _MainNavPageState extends ConsumerState<MainNavPage> {
         ],
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
+        type: BottomNavigationBarType.fixed, // 四个项目时保持固定样式
       ),
     );
   }
