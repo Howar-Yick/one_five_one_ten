@@ -16,6 +16,9 @@ import 'package:isar/isar.dart';
 
 import 'package:one_five_one_ten/providers/global_providers.dart';
 
+// ▼▼▼ 1. 引入我们刚创建的修复服务 ▼▼▼
+import 'package:one_five_one_ten/services/data_fix_service.dart';
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,6 +35,13 @@ Future<void> main() async {
   );
 
   await DatabaseService().init();
+
+  // ▼▼▼ 2. 在此处调用一次性的数据修复脚本 ▼▼▼
+  // ===============================================
+  //await DataFixService.fixNegativeTransactions();
+  // ===============================================
+  // ▲▲▲ 脚本运行一次后，请务必注释或删除此行 ▲▲▲
+
 
   if (kFeatureAllocation) {
     AllocationRegistry.register(() async {

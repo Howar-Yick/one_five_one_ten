@@ -1,5 +1,6 @@
 // 文件: lib/pages/add_edit_asset_page.dart
 // (*** 关键修复：修复了创建和编辑资产时的状态管理和保存逻辑 ***)
+// (*** V2：增加了对初始投入/份额/成本必须大于0的验证 ***)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -328,6 +329,9 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
       }
       final totalShares = double.tryParse(sharesText) ?? 0.0;
       final averageCost = double.tryParse(costText) ?? 0.0;
+      
+      // (此时验证已确保 totalShares 和 averageCost > 0)
+      
       final snapshot = PositionSnapshot()
         ..totalShares = totalShares
         ..averageCost = averageCost
@@ -351,6 +355,9 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     String initialInvestmentText, DateTime recordDate
   ) async {
     final initialInvestment = double.tryParse(initialInvestmentText) ?? 0.0;
+    
+    // (此时验证已确保 initialInvestment > 0)
+    
     try {
       final existingInvest = await isar.transactions
           .filter()
@@ -363,7 +370,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
       } else {
         final transaction = Transaction()
           ..type = TransactionType.invest
-          ..amount = initialInvestment
+          ..amount = initialInvestment // (这里现在一定是正数)
           ..date = recordDate
           ..createdAt = DateTime.now()
           ..assetSupabaseId = syncedAsset.supabaseId;
@@ -391,7 +398,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
       } else {
         final updateValueTxn = Transaction()
           ..type = TransactionType.updateValue
-          ..amount = initialInvestment
+          ..amount = initialInvestment // (这里现在一定是正数)
           ..date = recordDate.add(const Duration(minutes: 1))
           ..createdAt = DateTime.now().add(const Duration(seconds: 1))
           ..assetSupabaseId = syncedAsset.supabaseId;
@@ -634,11 +641,17 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           decoration:
               const InputDecoration(labelText: '总份额', border: OutlineInputBorder()),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) => (value == null ||
-                  value.isEmpty ||
-                  double.tryParse(value) == null)
-              ? '请输入有效的数字'
-              : null,
+          
+          // ▼▼▼ 关键修复：增加正数验证 ▼▼▼
+          validator: (value) {
+            if (value == null || value.isEmpty) return '请输入总份额';
+            final num = double.tryParse(value);
+            if (num == null) return '请输入有效的数字';
+            if (num <= 0) return '份额必须大于0';
+            return null;
+          },
+          // ▲▲▲ 修复结束 ▲▲▲
+          
         ),
         const SizedBox(height: 16),
         TextFormField(
@@ -646,11 +659,17 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           decoration: const InputDecoration(
               labelText: '单位成本', border: OutlineInputBorder()),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) => (value == null ||
-                  value.isEmpty ||
-                  double.tryParse(value) == null)
-              ? '请输入有效的数字'
-              : null,
+
+          // ▼▼▼ 关键修复：增加正数验证 ▼▼▼
+          validator: (value) {
+            if (value == null || value.isEmpty) return '请输入单位成本';
+            final num = double.tryParse(value);
+            if (num == null) return '请输入有效的数字';
+            if (num <= 0) return '成本必须大于0';
+            return null;
+          },
+          // ▲▲▲ 修复结束 ▲▲▲
+
         ),
         const SizedBox(height: 16),
         TextFormField(
@@ -706,11 +725,17 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           decoration: const InputDecoration(
               labelText: '初始投入金额 / 当前价值', border: OutlineInputBorder()), 
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) => (value == null ||
-                  value.isEmpty ||
-                  double.tryParse(value) == null)
-              ? '请输入有效的数字'
-              : null,
+
+          // ▼▼▼ 关键修复：增加正数验证 ▼▼▼
+          validator: (value) {
+            if (value == null || value.isEmpty) return '请输入金额';
+            final num = double.tryParse(value);
+            if (num == null) return '请输入有效的数字';
+            if (num <= 0) return '金额必须大于0';
+            return null;
+          },
+          // ▲▲▲ 修复结束 ▲▲▲
+
         ),
     ];
   }
