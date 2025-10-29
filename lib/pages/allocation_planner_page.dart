@@ -7,8 +7,35 @@ import 'package:intl/intl.dart';
 
 import 'package:one_five_one_ten/models/allocation_plan.dart';
 import 'package:one_five_one_ten/models/allocation_plan_item.dart';
+import 'package:one_five_one_ten/models/asset.dart';
+import 'package:one_five_one_ten/models/asset_bucket_map.dart';
 import 'package:one_five_one_ten/providers/allocation_providers.dart';
+import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/allocation_service.dart';
+
+final _activeAssetsProvider =
+    StreamProvider.autoDispose<List<Asset>>((ref) {
+  final isar = ref.watch(databaseServiceProvider).isar;
+  return isar.assets
+      .where()
+      .filter()
+      .isArchivedEqualTo(false)
+      .watch(fireImmediately: true)
+      .map((assets) {
+    final list = [...assets];
+    list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return list;
+  });
+});
+
+final _planMappingsProvider = StreamProvider.autoDispose
+    .family<List<AssetBucketMap>, int>((ref, planId) {
+  final isar = ref.watch(databaseServiceProvider).isar;
+  return isar.assetBucketMaps
+      .where()
+      .planIdEqualTo(planId)
+      .watch(fireImmediately: true);
+});
 
 class AllocationPlannerPage extends ConsumerStatefulWidget {
   final int? accountId; // 可选：用于查看某账户的实际分布
@@ -312,11 +339,9 @@ class _ItemTile extends ConsumerWidget {
   }
 
   void _showLinkAssetDialog(BuildContext context, WidgetRef ref, AllocationPlanItem it) {
-    showDialog(
-      context: context,
-      builder: (_) => const AlertDialog(
-        title: Text('映射资产（占位）'),
-        content: Text('下一步将提供：在你现有资产列表中选择资产映射到该条目，并可设置可选权重覆盖。'),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _AssetMappingPage(item: it),
       ),
     );
   }
@@ -339,5 +364,205 @@ class _ItemTile extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+class _AssetMappingPage extends ConsumerStatefulWidget {
+  final AllocationPlanItem item;
+  const _AssetMappingPage({required this.item});
+
+  @override
+  ConsumerState<_AssetMappingPage> createState() => _AssetMappingPageState();
+}
+
+class _AssetMappingPageState extends ConsumerState<_AssetMappingPage> {
+  late final TextEditingController _searchController;
+  String _keyword = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final assetsAsync = ref.watch(_activeAssetsProvider);
+    final mappingsAsync = ref.watch(_planMappingsProvider(widget.item.planId));
+    final planItemsAsync = ref.watch(allocationItemsProvider(widget.item.planId));
+
+    return Scaffold(
+      appBar: AppBar(title: Text('映射资产：${widget.item.label}')),
+      body: assetsAsync.when(
+        data: (assets) => mappingsAsync.when(
+          data: (mappings) => planItemsAsync.when(
+            data: (planItems) => _buildContent(context, assets, mappings, planItems),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (err, stack) => Center(child: Text('加载方案条目失败: $err')),
+          ),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (err, stack) => Center(child: Text('加载资产映射失败: $err')),
+        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, stack) => Center(child: Text('加载资产失败: $err')),
+      ),
+    );
+  }
+
+  Widget _buildContent(
+    BuildContext context,
+    List<Asset> assets,
+    List<AssetBucketMap> mappings,
+    List<AllocationPlanItem> planItems,
+  ) {
+    final keyword = _keyword.trim().toLowerCase();
+    final filtered = keyword.isEmpty
+        ? [...assets]
+        : assets
+            .where((asset) {
+              final name = asset.name.toLowerCase();
+              final code = asset.code.toLowerCase();
+              return name.contains(keyword) || code.contains(keyword);
+            })
+            .toList();
+
+    filtered.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    final bucketLabels = {
+      for (final item in planItems) item.id: item.label,
+    };
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              labelText: '搜索资产（名称/代码）',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _keyword.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _keyword = '');
+                      },
+                    ),
+            ),
+            onChanged: (value) => setState(() => _keyword = value.trim()),
+          ),
+        ),
+        Expanded(
+          child: filtered.isEmpty
+              ? const Center(child: Text('没有符合条件的资产'))
+              : ListView.separated(
+                  itemCount: filtered.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final asset = filtered[index];
+                    final mapping = _findMappingForAsset(mappings, asset);
+                    final isSelected = mapping?.bucketId == widget.item.id;
+                    final mappedElsewhere =
+                        mapping != null && mapping.bucketId != widget.item.id;
+                    final mappedLabel =
+                        mapping != null ? bucketLabels[mapping.bucketId] : null;
+
+                    final subtitleParts = <String>[];
+                    if (asset.code.isNotEmpty) {
+                      subtitleParts.add('代码：${asset.code}');
+                    }
+                    if (mappedElsewhere && mappedLabel != null) {
+                      subtitleParts.add('当前映射：$mappedLabel');
+                    }
+                    if (mapping?.note != null && mapping!.note!.isNotEmpty) {
+                      subtitleParts.add('备注：${mapping.note}');
+                    }
+
+                    return CheckboxListTile(
+                      value: isSelected,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(asset.name),
+                      subtitle: subtitleParts.isEmpty
+                          ? null
+                          : Text(subtitleParts.join('  •  ')),
+                      onChanged: (selected) async {
+                        if (selected == null) return;
+                        await _handleToggle(context, asset, selected);
+                      },
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  AssetBucketMap? _findMappingForAsset(
+    List<AssetBucketMap> mappings,
+    Asset asset,
+  ) {
+    final supa = asset.supabaseId?.toLowerCase();
+    if (supa != null && supa.isNotEmpty) {
+      for (final mapping in mappings) {
+        final mappedSupabase = mapping.assetSupabaseId?.toLowerCase();
+        if (mappedSupabase != null && mappedSupabase == supa) {
+          return mapping;
+        }
+      }
+    }
+
+    for (final mapping in mappings) {
+      if (mapping.assetId == asset.id) {
+        return mapping;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _handleToggle(
+    BuildContext context,
+    Asset asset,
+    bool selected,
+  ) async {
+    final svc = ref.read(allocationServiceProvider);
+    try {
+      if (selected) {
+        await svc.assignAssetToPlanBucket(
+          planId: widget.item.planId,
+          bucketId: widget.item.id,
+          asset: asset,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('已映射 ${asset.name} 至 ${widget.item.label}')),
+          );
+        }
+      } else {
+        await svc.removeAssetFromPlanBucket(
+          planId: widget.item.planId,
+          bucketId: widget.item.id,
+          asset: asset,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('已取消映射 ${asset.name}')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('操作失败: $e')),
+        );
+      }
+    }
   }
 }
