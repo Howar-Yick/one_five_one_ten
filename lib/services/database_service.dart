@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
 import 'package:one_five_one_ten/models/asset.dart';
+import 'package:one_five_one_ten/models/asset_bucket_map.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/models/deletion.dart';
@@ -43,6 +44,7 @@ class DatabaseService {
         // 新增：资产配置
         AllocationPlanSchema,
         AllocationPlanItemSchema,
+        AssetBucketMapSchema,
       ],
       directory: dir.path,
       name: 'one_five_one_ten_db',

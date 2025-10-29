@@ -12,6 +12,8 @@ import 'package:one_five_one_ten/services/database_service.dart';
 
 import 'package:one_five_one_ten/models/allocation_plan.dart';
 import 'package:one_five_one_ten/models/allocation_plan_item.dart';
+import 'package:one_five_one_ten/models/asset.dart';
+import 'package:one_five_one_ten/models/asset_bucket_map.dart';
 
 class AllocationService {
   AllocationService._(this.isar);
@@ -167,5 +169,108 @@ class AllocationService {
   Future<double> calcTotalWeight(int planId) async {
     final items = await listItems(planId);
     return items.fold<double>(0, (sum, e) => sum + (e.targetPercent));
+  }
+
+  // ---------------- Asset Mapping ----------------
+
+  Stream<List<AssetBucketMap>> watchPlanAssetMappings(int planId) {
+    return isar.assetBucketMaps
+        .where()
+        .planIdEqualTo(planId)
+        .watch(fireImmediately: true);
+  }
+
+  Future<List<AssetBucketMap>> listPlanAssetMappings(int planId) async {
+    return isar.assetBucketMaps.where().planIdEqualTo(planId).findAll();
+  }
+
+  Future<void> assignAssetToPlanBucket({
+    required int planId,
+    required int bucketId,
+    required Asset asset,
+  }) async {
+    final now = DateTime.now();
+    await isar.writeTxn(() async {
+      AssetBucketMap? record;
+      int? keepId;
+
+      if (asset.supabaseId != null && asset.supabaseId!.isNotEmpty) {
+        final supaMatches = await isar.assetBucketMaps
+            .where()
+            .planIdEqualTo(planId)
+            .filter()
+            .assetSupabaseIdEqualTo(asset.supabaseId!)
+            .findAll();
+        if (supaMatches.isNotEmpty) {
+          record = supaMatches.first;
+          keepId = record.id;
+          for (final extra in supaMatches.skip(1)) {
+            await isar.assetBucketMaps.delete(extra.id);
+          }
+        }
+      }
+
+      final idMatches = await isar.assetBucketMaps
+          .where()
+          .planIdEqualTo(planId)
+          .filter()
+          .assetIdEqualTo(asset.id)
+          .findAll();
+
+      if (idMatches.isNotEmpty) {
+        record ??= idMatches.first;
+        keepId ??= record.id;
+        for (final extra in idMatches) {
+          if (extra.id != keepId) {
+            await isar.assetBucketMaps.delete(extra.id);
+          }
+        }
+      }
+
+      record ??= AssetBucketMap()
+        ..createdAt = now;
+
+      record
+        ..assetSupabaseId = asset.supabaseId
+        ..assetId = asset.id
+        ..planId = planId
+        ..bucketId = bucketId
+        ..updatedAt = now;
+
+      await isar.assetBucketMaps.put(record);
+    });
+  }
+
+  Future<void> removeAssetFromPlanBucket({
+    required int planId,
+    required int bucketId,
+    required Asset asset,
+  }) async {
+    await isar.writeTxn(() async {
+      if (asset.supabaseId != null && asset.supabaseId!.isNotEmpty) {
+        final supaMatches = await isar.assetBucketMaps
+            .where()
+            .planIdEqualTo(planId)
+            .filter()
+            .assetSupabaseIdEqualTo(asset.supabaseId!)
+            .bucketIdEqualTo(bucketId)
+            .findAll();
+        for (final entry in supaMatches) {
+          await isar.assetBucketMaps.delete(entry.id);
+        }
+      }
+
+      final idMatches = await isar.assetBucketMaps
+          .where()
+          .planIdEqualTo(planId)
+          .filter()
+          .assetIdEqualTo(asset.id)
+          .bucketIdEqualTo(bucketId)
+          .findAll();
+
+      for (final entry in idMatches) {
+        await isar.assetBucketMaps.delete(entry.id);
+      }
+    });
   }
 }
