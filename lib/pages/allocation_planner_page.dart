@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:isar/isar.dart';
 
 import 'package:one_five_one_ten/models/allocation_plan.dart';
 import 'package:one_five_one_ten/models/allocation_plan_item.dart';
