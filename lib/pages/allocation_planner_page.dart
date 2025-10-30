@@ -494,7 +494,7 @@ class _ItemTile extends ConsumerWidget {
           TextSpan(
             style: Theme.of(context).textTheme.bodyMedium,
             children: [
-              const TextSpan(text: '时间占比：'),
+              const TextSpan(text: '实际占比：'),
               TextSpan(
                 text: _percentFormatter.format(actualPercent),
                 style: const TextStyle(fontWeight: FontWeight.bold),
@@ -550,7 +550,7 @@ class _ItemTile extends ConsumerWidget {
           TextSpan(
             style: Theme.of(context).textTheme.bodyMedium,
             children: [
-              const TextSpan(text: '时间占比：'),
+              const TextSpan(text: '实际占比：'),
               TextSpan(
                 text: _percentFormatter.format(0),
                 style: const TextStyle(fontWeight: FontWeight.bold),
