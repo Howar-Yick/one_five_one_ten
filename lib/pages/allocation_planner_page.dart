@@ -28,14 +28,13 @@ final NumberFormat _currencyFormatter =
 final _activeAssetsProvider =
     StreamProvider.autoDispose<List<Asset>>((ref) {
   final isar = ref.watch(databaseServiceProvider).isar;
-  return isar.assets
-      .where()
-      .filter()
-      .isArchivedEqualTo(false)
-      .watch(fireImmediately: true)
-      .map((assets) {
-    final list = [...assets];
-    list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  return isar.assets.watch(fireImmediately: true).map((assets) {
+    final list = assets
+        .where((asset) => !asset.isArchived)
+        .toList(growable: false)
+      ..sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
     return list;
   });
 });
@@ -865,6 +864,7 @@ class _AssetMappingPageState extends ConsumerState<_AssetMappingPage> {
     if (asset.code.isNotEmpty) {
       subtitle.add('代码：${asset.code}');
     }
+    subtitle.add('跟踪方式：${_trackingMethodLabel(asset)}');
     if ((mapping.note ?? '').isNotEmpty) {
       subtitle.add('备注：${mapping.note}');
     }
@@ -886,7 +886,13 @@ class _AssetMappingPageState extends ConsumerState<_AssetMappingPage> {
   }
 
   Widget _buildUnassignedAssetCard(BuildContext context, Asset asset) {
-    final subtitle = asset.code.isEmpty ? null : '代码：${asset.code}';
+    final subtitleParts = <String>[];
+    if (asset.code.isNotEmpty) {
+      subtitleParts.add('代码：${asset.code}');
+    }
+    subtitleParts.add('跟踪方式：${_trackingMethodLabel(asset)}');
+    final subtitle =
+        subtitleParts.isEmpty ? null : subtitleParts.join('  •  ');
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
@@ -906,6 +912,15 @@ class _AssetMappingPageState extends ConsumerState<_AssetMappingPage> {
     final trimmed = value.trim();
     if (trimmed.isEmpty) return '?';
     return trimmed.substring(0, 1).toUpperCase();
+  }
+
+  String _trackingMethodLabel(Asset asset) {
+    switch (asset.trackingMethod) {
+      case AssetTrackingMethod.valueBased:
+        return '价值法';
+      case AssetTrackingMethod.shareBased:
+        return '份额法';
+    }
   }
 
   AssetBucketMap? _findMappingForAsset(
