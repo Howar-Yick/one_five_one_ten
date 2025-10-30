@@ -28,7 +28,7 @@ final NumberFormat _currencyFormatter =
 final _activeAssetsProvider =
     StreamProvider.autoDispose<List<Asset>>((ref) {
   final isar = ref.watch(databaseServiceProvider).isar;
-  return isar.assets.watch(fireImmediately: true).map((assets) {
+  return isar.assets.where().watch(fireImmediately: true).map((assets) {
     final list = assets
         .where((asset) => !asset.isArchived)
         .toList(growable: false)
