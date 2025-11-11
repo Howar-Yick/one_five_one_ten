@@ -17,6 +17,13 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:one_five_one_ten/utils/timezone.dart'; // ☆
 
+const int kNavTabDashboard = 0;
+const int kNavTabAccounts = 1;
+const int kNavTabConfig = 2;
+const int kNavTabSettings = 3;
+
+final mainNavIndexProvider = StateProvider<int>((ref) => kNavTabDashboard);
+
 enum AssetSortCriteria {
   marketValue,
   totalProfit,
