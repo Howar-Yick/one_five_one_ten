@@ -11,7 +11,6 @@ import 'package:one_five_one_ten/utils/currency_formatter.dart';
 
 // (*** 1. 导入新模块 ***)
 import 'package:one_five_one_ten/allocation/feature_flags.dart';
-import 'package:one_five_one_ten/allocation/allocation_page.dart';
 // (*** 导入结束 ***)
 
 
@@ -67,9 +66,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             IconButton(
               tooltip: '资产配置',
               icon: const Icon(Icons.pie_chart_outline),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AllocationPage()),
-              ),
+              onPressed: () {
+                ref.read(mainNavIndexProvider.notifier).state = kNavTabConfig;
+              },
             ),
         ],
         // (*** 添加结束 ***)
