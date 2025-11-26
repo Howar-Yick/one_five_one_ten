@@ -26,7 +26,7 @@ class DatabaseService {
   static final _random = Random();
 
   static final _uuidRegex = RegExp(
-    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\$',
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
   );
 
   /// 本地生成一个符合 UUID v4 规范的占位符，确保离线/未登录时也能有稳定 ID
