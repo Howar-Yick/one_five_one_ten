@@ -641,9 +641,7 @@ class TransactionHistoryPage extends ConsumerWidget {
         .filter()
         .group((q) => q.typeEqualTo(TransactionType.invest).or().typeEqualTo(TransactionType.withdraw))
         .and()
-        .fxRateToCnyIsNull()
-        .and()
-        .baseAmountCnyIsNull()
+        .group((q) => q.fxRateToCnyIsNull().or().baseAmountCnyIsNull())
         .findAll();
 
     if (missingTxns.isEmpty) {
@@ -656,8 +654,8 @@ class TransactionHistoryPage extends ConsumerWidget {
     final rate = await ExchangeRateService().getRate(account.currency, 'CNY');
     final syncService = ref.read(syncServiceProvider);
     for (final txn in missingTxns) {
-      txn.fxRateToCny = rate;
-      txn.baseAmountCny = txn.amount * rate;
+      txn.fxRateToCny ??= rate;
+      txn.baseAmountCny ??= txn.amount * (txn.fxRateToCny ?? rate);
       await syncService.saveAccountTransaction(txn);
     }
 
