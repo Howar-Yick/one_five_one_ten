@@ -33,6 +33,19 @@ class TransactionHistoryPage extends ConsumerWidget {
       // (*** 修复：AppBar 依赖 asyncAccount ***)
       appBar: AppBar(
         title: Text(asyncAccount.asData?.value?.name ?? '更新记录'),
+        actions: [
+          asyncAccount.maybeWhen(
+            data: (account) => account != null && account.currency != 'CNY'
+                ? IconButton(
+                    icon: const Icon(Icons.currency_exchange_outlined),
+                    tooltip: '补录缺失汇率',
+                    onPressed: () =>
+                        _backfillMissingFxRates(context, ref, account),
+                  )
+                : const SizedBox.shrink(),
+            orElse: () => const SizedBox.shrink(),
+          ),
+        ],
       ),
       // (*** 修复：body 依赖 asyncAccount ***)
       body: asyncAccount.when(
@@ -607,6 +620,50 @@ class TransactionHistoryPage extends ConsumerWidget {
           },
         );
       },
+    );
+  }
+
+  Future<void> _backfillMissingFxRates(
+      BuildContext context, WidgetRef ref, Account account) async {
+    if (account.currency == 'CNY') return;
+    final supabaseId = account.supabaseId;
+    if (supabaseId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('账户尚未完成同步，无法补录汇率')),
+      );
+      return;
+    }
+
+    final isar = DatabaseService().isar;
+    final missingTxns = await isar.accountTransactions
+        .where()
+        .accountSupabaseIdEqualTo(supabaseId)
+        .filter()
+        .group((q) => q.typeEqualTo(TransactionType.invest).or().typeEqualTo(TransactionType.withdraw))
+        .and()
+        .group((q) => q.fxRateToCnyIsNull().or().baseAmountCnyIsNull())
+        .findAll();
+
+    if (missingTxns.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('没有需要补录汇率的记录')),
+      );
+      return;
+    }
+
+    final rate = await ExchangeRateService().getRate(account.currency, 'CNY');
+    final syncService = ref.read(syncServiceProvider);
+    for (final txn in missingTxns) {
+      txn.fxRateToCny ??= rate;
+      txn.baseAmountCny ??= txn.amount * (txn.fxRateToCny ?? rate);
+      await syncService.saveAccountTransaction(txn);
+    }
+
+    ref.invalidate(accountPerformanceProvider(account.id));
+    ref.invalidate(dashboardDataProvider);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已补录 ${missingTxns.length} 条交易的汇率')),
     );
   }
   // --- (*** 新增函数结束 ***) ---

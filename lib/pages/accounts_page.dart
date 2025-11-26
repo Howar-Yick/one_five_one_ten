@@ -16,6 +16,7 @@ import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 import 'package:one_five_one_ten/widgets/account_card.dart';
 import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
+import 'package:one_five_one_ten/services/exchangerate_service.dart';
 
 // ★ 新增导入
 import 'package:one_five_one_ten/pages/archived_assets_page.dart';
@@ -61,8 +62,8 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
           ),
           IconButton(
             icon: const Icon(Icons.add),
-            tooltip: '添加账户',
-            onPressed: () => _showAddAccountDialog(context, ref),
+            tooltip: '添加账户或美元子账户',
+            onPressed: () => _showAddAccountOptions(context, ref),
           ),
         ],
       ),
@@ -247,10 +248,51 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     );
   }
 
-  void _showAddAccountDialog(BuildContext context, WidgetRef ref) {
-    final TextEditingController nameController = TextEditingController();
+  void _showAddAccountOptions(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.account_balance_wallet_outlined),
+                title: const Text('新增账户（默认人民币）'),
+                subtitle: const Text('适合日常人民币资金账户'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _showAddAccountDialog(context, ref);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.attach_money_outlined),
+                title: const Text('新增 USD 子账户'),
+                subtitle: const Text('用于美元理财/基金，便于拆分汇率影响'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _showAddAccountDialog(context, ref,
+                      initialCurrency: 'USD', suggestedSuffix: ' (USD)');
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAddAccountDialog(
+    BuildContext context,
+    WidgetRef ref, {
+    String initialCurrency = 'CNY',
+    String? suggestedSuffix,
+    String? initialName,
+  }) {
+    final TextEditingController nameController = TextEditingController(
+      text: initialName ?? (suggestedSuffix != null ? '美元账户$suggestedSuffix' : ''),
+    );
     final TextEditingController descriptionController = TextEditingController();
-    String selectedCurrency = 'CNY';
+    String selectedCurrency = initialCurrency;
 
     showDialog(
       context: context,
@@ -357,6 +399,20 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
         return Wrap(
           children: <Widget>[
             ListTile(
+              leading: const Icon(Icons.currency_exchange_outlined),
+              title: const Text('新增外币子账户'),
+              subtitle: const Text('为该银行新增 USD / 其他外币子账户'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _showAddAccountDialog(
+                  context,
+                  ref,
+                  initialCurrency: 'USD',
+                  initialName: '${account.name} (USD)',
+                );
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.edit_outlined),
               title: const Text('编辑账户'),
               onTap: () {
@@ -364,6 +420,16 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
                 _showEditAccountDialog(context, ref, account);
               },
             ),
+            if (account.currency != 'CNY')
+              ListTile(
+                leading: const Icon(Icons.history_toggle_off_outlined),
+                title: const Text('补录该账户的汇率'),
+                subtitle: const Text('为缺失汇率/折算金额的资金操作补齐数据'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _backfillMissingFxRates(context, ref, account);
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.red),
               title: const Text('删除账户', style: TextStyle(color: Colors.red)),
@@ -620,5 +686,56 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
         }
       }
     });
+  }
+
+  Future<void> _backfillMissingFxRates(
+      BuildContext context, WidgetRef ref, Account account) async {
+    if (account.currency == 'CNY') return;
+    final supabaseId = account.supabaseId;
+    if (supabaseId == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('账户缺少同步编号，无法补录汇率，请先同步或重新启动后重试。')),
+        );
+      }
+      return;
+    }
+
+    final isar = DatabaseService().isar;
+    final missingTxns = await isar.accountTransactions
+        .where()
+        .accountSupabaseIdEqualTo(supabaseId)
+        .filter()
+        .group((q) => q.typeEqualTo(TransactionType.invest).or().typeEqualTo(TransactionType.withdraw))
+        .and()
+        .group((q) => q.fxRateToCnyIsNull().or().baseAmountCnyIsNull())
+        .findAll();
+
+    if (missingTxns.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('没有需要补录汇率的记录')),
+        );
+      }
+      return;
+    }
+
+    final rate = await ExchangeRateService().getRate(account.currency, 'CNY');
+    final syncService = ref.read(syncServiceProvider);
+
+    for (final txn in missingTxns) {
+      txn.fxRateToCny ??= rate;
+      txn.baseAmountCny ??= txn.amount * (txn.fxRateToCny ?? rate);
+      await syncService.saveAccountTransaction(txn);
+    }
+
+    ref.invalidate(accountPerformanceProvider(account.id));
+    ref.invalidate(dashboardDataProvider);
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已补录 ${missingTxns.length} 条交易的汇率')),
+      );
+    }
   }
 }
