@@ -382,8 +382,14 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     String selectedCurrency = account.currency;
     final isar = DatabaseService().isar;
 
-    final txCount = await isar.accountTransactions.where().filter().accountSupabaseIdEqualTo(account.supabaseId).count();
-    final assetCount = await isar.assets.where().filter().accountSupabaseIdEqualTo(account.supabaseId).count();
+    final txCount = await isar.accountTransactions
+        .where()
+        .accountSupabaseIdEqualTo(account.supabaseId)
+        .count();
+    final assetCount = await isar.assets
+        .where()
+        .accountSupabaseIdEqualTo(account.supabaseId)
+        .count();
     
     final bool hasTransactions = txCount > 0;
     final bool hasAssets = assetCount > 0;
@@ -560,16 +566,25 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
         } else {
           final accountSupaId = account.supabaseId!;
           
-          final assetsToDelete = await isar.assets.where().filter().accountSupabaseIdEqualTo(accountSupaId).findAll();
+          final assetsToDelete = await isar.assets
+              .where()
+              .accountSupabaseIdEqualTo(accountSupaId)
+              .findAll();
           
           for (final asset in assetsToDelete) {
             if (asset.supabaseId != null) {
               final assetSupaId = asset.supabaseId!;
-              final txs = await isar.transactions.where().filter().assetSupabaseIdEqualTo(assetSupaId).findAll();
+              final txs = await isar.transactions
+                  .where()
+                  .assetSupabaseIdEqualTo(assetSupaId)
+                  .findAll();
               for (final tx in txs) {
                 await syncService.deleteTransaction(tx);
               }
-              final snaps = await isar.positionSnapshots.where().filter().assetSupabaseIdEqualTo(assetSupaId).findAll();
+              final snaps = await isar.positionSnapshots
+                  .where()
+                  .assetSupabaseIdEqualTo(assetSupaId)
+                  .findAll();
               for (final snap in snaps) {
                 await syncService.deletePositionSnapshot(snap);
               }
@@ -577,7 +592,10 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
             await syncService.deleteAsset(asset);
           }
 
-          final accTxsToDelete = await isar.accountTransactions.where().filter().accountSupabaseIdEqualTo(accountSupaId).findAll();
+          final accTxsToDelete = await isar.accountTransactions
+              .where()
+              .accountSupabaseIdEqualTo(accountSupaId)
+              .findAll();
           for (final tx in accTxsToDelete) {
             await syncService.deleteAccountTransaction(tx);
           }

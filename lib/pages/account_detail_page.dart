@@ -911,14 +911,14 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
 
       } else if (result == 'delete') {
         if (asset.supabaseId != null) {
-            final txs = await isar.transactions.where()
-                                .filter()
-                                .assetSupabaseIdEqualTo(asset.supabaseId)
-                                .findAll();
-            final snaps = await isar.positionSnapshots.where()
-                                      .filter()
-                                      .assetSupabaseIdEqualTo(asset.supabaseId)
-                                      .findAll();
+            final txs = await isar.transactions
+                .where()
+                .assetSupabaseIdEqualTo(asset.supabaseId)
+                .findAll();
+            final snaps = await isar.positionSnapshots
+                .where()
+                .assetSupabaseIdEqualTo(asset.supabaseId)
+                .findAll();
             
             for (final tx in txs) { await syncService.deleteTransaction(tx); }
             for (final snap in snaps) { await syncService.deletePositionSnapshot(snap); }

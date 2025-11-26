@@ -194,10 +194,16 @@ class ArchivedAssetsPage extends ConsumerWidget {
 
                   if (asset.supabaseId != null) {
                     await isar.writeTxn(() async {
-                      final txs = await isar.transactions.filter().assetSupabaseIdEqualTo(asset.supabaseId).findAll();
+                      final txs = await isar.transactions
+                          .where()
+                          .assetSupabaseIdEqualTo(asset.supabaseId)
+                          .findAll();
                       for (final tx in txs) { await syncService.deleteTransaction(tx); }
-                      
-                      final snaps = await isar.positionSnapshots.filter().assetSupabaseIdEqualTo(asset.supabaseId).findAll();
+
+                      final snaps = await isar.positionSnapshots
+                          .where()
+                          .assetSupabaseIdEqualTo(asset.supabaseId)
+                          .findAll();
                       for (final snap in snaps) { await syncService.deletePositionSnapshot(snap); }
                     });
                   }

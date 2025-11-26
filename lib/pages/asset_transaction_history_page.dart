@@ -28,7 +28,7 @@ final assetTransactionHistoryProvider =
   final assetSupabaseId = asset.supabaseId!;
 
   final transactionStream = isar.transactions
-      .filter() 
+      .where()
       .assetSupabaseIdEqualTo(assetSupabaseId)
       .sortByDateDesc() // 按日期降序排序
       .watch(fireImmediately: true);

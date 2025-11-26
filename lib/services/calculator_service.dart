@@ -767,7 +767,9 @@ class CalculatorService {
   
   Future<List<FlSpot>> getGlobalValueHistory() async {
     final isar = _isar;
-    final allTransactions = await isar.collection<AccountTransaction>().where().filter()
+    final allTransactions = await isar
+        .collection<AccountTransaction>()
+        .filter()
         .typeEqualTo(TransactionType.updateValue)
         .findAll();
     if (allTransactions.isEmpty) return [];

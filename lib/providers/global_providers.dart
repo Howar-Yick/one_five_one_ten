@@ -301,7 +301,7 @@ final transactionHistoryProvider =
   }
   final accountSupabaseId = account.supabaseId!;
   final transactionStream = isar.accountTransactions
-      .filter()
+      .where()
       .accountSupabaseIdEqualTo(accountSupabaseId)
       .sortByDateDesc()
       .watch(fireImmediately: true);
@@ -351,7 +351,7 @@ final snapshotHistoryProvider =
   }
   final assetSupabaseId = asset.supabaseId!;
   final snapshotStream = isar.positionSnapshots
-      .filter()
+      .where()
       .assetSupabaseIdEqualTo(assetSupabaseId)
       .sortByDateDesc()
       .watch(fireImmediately: true);
@@ -574,8 +574,10 @@ final archivedAssetsProvider =
   final isar = ref.watch(databaseServiceProvider).isar;
   final calculator = CalculatorService();
 
-  final archivedAssets =
-      await isar.assets.where().filter().isArchivedEqualTo(true).findAll();
+  final archivedAssets = await isar.assets
+      .where()
+      .isArchivedEqualTo(true)
+      .findAll();
 
   final allAccounts = await isar.accounts.where().findAll();
   final accountMap = {for (var acc in allAccounts) acc.supabaseId: acc.name};
