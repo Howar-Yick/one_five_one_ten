@@ -170,7 +170,6 @@ final trackedAssetsWithPerformanceProvider =
 
   final assetStream = isar.assets
       .where()
-      .filter()
       .accountSupabaseIdEqualTo(accountSupabaseId)
       .watch(fireImmediately: true);
 

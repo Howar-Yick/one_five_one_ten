@@ -52,7 +52,7 @@ class CalculatorService {
   Future<Map<String, dynamic>> calculateAccountPerformance(Account account) async {
     if (account.supabaseId == null) return {'currentValue': 0.0, 'netInvestment': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0};
     final originalTransactions = await _isar.accountTransactions
-        .filter()
+        .where()
         .accountSupabaseIdEqualTo(account.supabaseId)
         .sortByDate()
         .findAll();
@@ -551,11 +551,11 @@ class CalculatorService {
     if (account.supabaseId == null) {
         return {'totalValue': [], 'totalProfit': [], 'profitRate': []};
     }
-    final transactions = await _isar.accountTransactions
-        .filter()
-        .accountSupabaseIdEqualTo(account.supabaseId)
-        .sortByDate()
-        .findAll();
+      final transactions = await _isar.accountTransactions
+          .where()
+          .accountSupabaseIdEqualTo(account.supabaseId)
+          .sortByDate()
+          .findAll();
     final points = _buildAccountHistoryPoints(transactions);
     final perf = await calculateAccountPerformance(account);
     final today = DateTime.now();
@@ -615,7 +615,8 @@ class CalculatorService {
 
   Future<Map<AssetSubType, double>> calculateAssetAllocation() async {
     final isar = _isar;
-    final allAssets = await isar.assets.where().filter().isArchivedEqualTo(false).findAll(); // 只统计未归档的
+    final allAssets =
+        await isar.assets.where().isArchivedEqualTo(false).findAll(); // 只统计未归档的
     final fx = ExchangeRateService();
     final Map<AssetSubType, double> allocationCNY = {};
     for (final asset in allAssets) {
@@ -651,7 +652,8 @@ class CalculatorService {
 
   Future<Map<AssetClass, double>> calculateAssetClassAllocation() async {
     final isar = _isar;
-    final allAssets = await isar.assets.where().filter().isArchivedEqualTo(false).findAll(); // 只统计未归档的
+    final allAssets =
+        await isar.assets.where().isArchivedEqualTo(false).findAll(); // 只统计未归档的
     final fx = ExchangeRateService();
     final Map<AssetClass, double> allocationCNY = {};
     for (final asset in allAssets) {
@@ -702,7 +704,7 @@ class CalculatorService {
 
       if (account.supabaseId != null) {
         final accTransactions = await isar.accountTransactions
-            .filter()
+            .where()
             .accountSupabaseIdEqualTo(account.supabaseId)
             .findAll();
         for (final txn in accTransactions) {
