@@ -156,6 +156,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final double annualizedReturn =
         (performance['annualizedReturn'] ?? 0.0) as double;
     final double netInvestment = (performance['netInvestment'] ?? 0.0) as double;
+    final double fxProfit = (performance['fxProfit'] ?? 0.0) as double;
 
     Color profitColor =
         totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade400;
@@ -191,6 +192,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               '总收益:',
               '${currencyFormat.format(totalProfit)} (${percentFormat.format(profitRate)})',
               color: profitColor,
+            ),
+            _buildMetricRow(
+              context,
+              '其中汇率影响:',
+              currencyFormat.format(fxProfit),
+              color: fxProfit >= 0
+                  ? Colors.red.shade400
+                  : Colors.green.shade400,
             ),
             _buildMetricRow(
               context,

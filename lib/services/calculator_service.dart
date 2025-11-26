@@ -686,6 +686,7 @@ class CalculatorService {
     double totalValueCNY = 0;
     double totalNetInvestmentCNY = 0;
     double totalInvestedCNY = 0;
+    double totalFxProfitCNY = 0;
     final globalCashflows = <double>[];
     final globalDates = <DateTime>[];
     for (final account in allAccounts) {
@@ -693,25 +694,50 @@ class CalculatorService {
       final double rate = await fx.getRate(account.currency, 'CNY');
       final accValue = (performance['currentValue'] ?? 0.0) as double;
       final accNetInv = (performance['netInvestment'] ?? 0.0) as double;
-      totalValueCNY += accValue * rate;
-      totalNetInvestmentCNY += accNetInv * rate;
-      if (account.supabaseId == null) continue;
-      final accTransactions = await isar.accountTransactions
-          .filter()
-          .accountSupabaseIdEqualTo(account.supabaseId)
-          .findAll();
-      for (final txn in accTransactions) {
-        if (txn.type == TransactionType.invest) {
-          double amountCNY = txn.amount * rate;
-          globalCashflows.add(-amountCNY);
-          globalDates.add(txn.date);
-          totalInvestedCNY += amountCNY;
-        } else if (txn.type == TransactionType.withdraw) {
-          double amountCNY = txn.amount * rate;
-          globalCashflows.add(amountCNY);
-          globalDates.add(txn.date);
+      final currentValueCNY = accValue * rate;
+
+      double recordedNetInvestmentCNY = 0;
+      double recordedInvestedCNY = 0;
+      double recordedCashflowProfitCNY = 0;
+
+      if (account.supabaseId != null) {
+        final accTransactions = await isar.accountTransactions
+            .filter()
+            .accountSupabaseIdEqualTo(account.supabaseId)
+            .findAll();
+        for (final txn in accTransactions) {
+          if (txn.type == TransactionType.updateValue) continue;
+          final txnRate = txn.fxRateToCny ?? rate;
+          final amountCNY = txn.baseAmountCny ?? txn.amount * txnRate;
+          if (txn.type == TransactionType.invest) {
+            recordedNetInvestmentCNY += amountCNY;
+            recordedInvestedCNY += amountCNY;
+            globalCashflows.add(-amountCNY);
+            globalDates.add(txn.date);
+          } else if (txn.type == TransactionType.withdraw) {
+            recordedNetInvestmentCNY -= amountCNY;
+            globalCashflows.add(amountCNY);
+            globalDates.add(txn.date);
+          }
         }
       }
+
+      // 如果没有记录汇率，使用当前汇率保证净值不为0
+      if (recordedNetInvestmentCNY == 0 && accNetInv != 0) {
+        recordedNetInvestmentCNY = accNetInv * rate;
+      }
+      if (recordedInvestedCNY == 0 && accNetInv > 0) {
+        recordedInvestedCNY = accNetInv * rate;
+      }
+
+      totalValueCNY += currentValueCNY;
+      totalNetInvestmentCNY += recordedNetInvestmentCNY;
+      totalInvestedCNY += recordedInvestedCNY;
+
+      final totalProfitCNY = currentValueCNY - recordedNetInvestmentCNY;
+      final baseProfitCNY = (accValue - accNetInv) * rate;
+      recordedCashflowProfitCNY = totalProfitCNY - baseProfitCNY;
+      totalFxProfitCNY += recordedCashflowProfitCNY;
     }
     final double totalProfit = totalValueCNY - totalNetInvestmentCNY;
     final double totalProfitRate = totalInvestedCNY == 0 ? 0 : totalProfit / totalInvestedCNY;
@@ -731,6 +757,7 @@ class CalculatorService {
       'totalValue': totalValueCNY,
       'totalProfit': totalProfit,
       'netInvestment': totalNetInvestmentCNY,
+      'fxProfit': totalFxProfitCNY,
       'profitRate': totalProfitRate,
       'annualizedReturn': globalAnnualizedReturn,
     };

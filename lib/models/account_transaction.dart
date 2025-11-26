@@ -18,6 +18,12 @@ class AccountTransaction {
 
   late double amount;
 
+  /// 记录在发生交易时对应的 CNY 汇率，用于拆分汇率影响（可选）
+  double? fxRateToCny;
+
+  /// 记录在发生交易时折算后的人民币金额（可选，便于直观核对）
+  double? baseAmountCny;
+
   // --- 关键变更：替换 IsarLink 为 SupabaseId 引用 ---
   // final account = IsarLink<Account>(); // <-- 旧的
   @Index()

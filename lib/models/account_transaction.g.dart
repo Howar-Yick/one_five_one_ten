@@ -28,6 +28,11 @@ const AccountTransactionSchema = CollectionSchema(
       name: r'amount',
       type: IsarType.double,
     ),
+    r'baseAmountCny': PropertySchema(
+      id: 8,
+      name: r'baseAmountCny',
+      type: IsarType.double,
+    ),
     r'createdAt': PropertySchema(
       id: 2,
       name: r'createdAt',
@@ -37,6 +42,11 @@ const AccountTransactionSchema = CollectionSchema(
       id: 3,
       name: r'date',
       type: IsarType.dateTime,
+    ),
+    r'fxRateToCny': PropertySchema(
+      id: 7,
+      name: r'fxRateToCny',
+      type: IsarType.double,
     ),
     r'supabaseId': PropertySchema(
       id: 4,
@@ -126,11 +136,13 @@ void _accountTransactionSerialize(
 ) {
   writer.writeString(offsets[0], object.accountSupabaseId);
   writer.writeDouble(offsets[1], object.amount);
-  writer.writeDateTime(offsets[2], object.createdAt);
-  writer.writeDateTime(offsets[3], object.date);
-  writer.writeString(offsets[4], object.supabaseId);
-  writer.writeString(offsets[5], object.type.name);
-  writer.writeDateTime(offsets[6], object.updatedAt);
+  writer.writeDouble(offsets[2], object.baseAmountCny);
+  writer.writeDateTime(offsets[3], object.createdAt);
+  writer.writeDateTime(offsets[4], object.date);
+  writer.writeDouble(offsets[5], object.fxRateToCny);
+  writer.writeString(offsets[6], object.supabaseId);
+  writer.writeString(offsets[7], object.type.name);
+  writer.writeDateTime(offsets[8], object.updatedAt);
 }
 
 AccountTransaction _accountTransactionDeserialize(
@@ -142,14 +154,16 @@ AccountTransaction _accountTransactionDeserialize(
   final object = AccountTransaction();
   object.accountSupabaseId = reader.readStringOrNull(offsets[0]);
   object.amount = reader.readDouble(offsets[1]);
-  object.createdAt = reader.readDateTime(offsets[2]);
-  object.date = reader.readDateTime(offsets[3]);
+  object.baseAmountCny = reader.readDoubleOrNull(offsets[2]);
+  object.createdAt = reader.readDateTime(offsets[3]);
+  object.date = reader.readDateTime(offsets[4]);
   object.id = id;
-  object.supabaseId = reader.readStringOrNull(offsets[4]);
+  object.fxRateToCny = reader.readDoubleOrNull(offsets[5]);
+  object.supabaseId = reader.readStringOrNull(offsets[6]);
   object.type = _AccountTransactiontypeValueEnumMap[
-          reader.readStringOrNull(offsets[5])] ??
+          reader.readStringOrNull(offsets[7])] ??
       TransactionType.invest;
-  object.updatedAt = reader.readDateTimeOrNull(offsets[6]);
+  object.updatedAt = reader.readDateTimeOrNull(offsets[8]);
   return object;
 }
 
@@ -176,6 +190,10 @@ P _accountTransactionDeserializeProp<P>(
           TransactionType.invest) as P;
     case 6:
       return (reader.readDateTimeOrNull(offset)) as P;
+    case 7:
+      return (reader.readDoubleOrNull(offset)) as P;
+    case 8:
+      return (reader.readDoubleOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -1639,10 +1657,24 @@ extension AccountTransactionQueryProperty
     });
   }
 
+  QueryBuilder<AccountTransaction, double?, QQueryOperations>
+      baseAmountCnyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'baseAmountCny');
+    });
+  }
+
   QueryBuilder<AccountTransaction, DateTime, QQueryOperations>
       createdAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'createdAt');
+    });
+  }
+
+  QueryBuilder<AccountTransaction, double?, QQueryOperations>
+      fxRateToCnyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'fxRateToCny');
     });
   }
 
