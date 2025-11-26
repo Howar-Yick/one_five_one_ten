@@ -23,8 +23,6 @@ class MainNavPage extends ConsumerStatefulWidget {
 
 // 6. 将 State 更改为 ConsumerState
 class _MainNavPageState extends ConsumerState<MainNavPage> {
-  int _selectedIndex = 0;
-
   // ★ 顺序：概览 -> 账户 -> 配置 -> 我的
   static const List<Widget> _pages = <Widget>[
     DashboardPage(),
@@ -34,9 +32,7 @@ class _MainNavPageState extends ConsumerState<MainNavPage> {
   ];
 
   void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+    ref.read(mainNavIndexProvider.notifier).state = index;
   }
 
   @override
@@ -61,8 +57,9 @@ class _MainNavPageState extends ConsumerState<MainNavPage> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedIndex = ref.watch(mainNavIndexProvider);
     return Scaffold(
-      body: _pages.elementAt(_selectedIndex),
+      body: _pages.elementAt(selectedIndex),
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
@@ -87,7 +84,7 @@ class _MainNavPageState extends ConsumerState<MainNavPage> {
             label: '我的',
           ),
         ],
-        currentIndex: _selectedIndex,
+        currentIndex: selectedIndex,
         onTap: _onItemTapped,
         type: BottomNavigationBarType.fixed, // 四个项目时保持固定样式
       ),

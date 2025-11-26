@@ -3,6 +3,7 @@
 
 import 'dart:async';
 
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -19,11 +20,38 @@ import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/allocation_service.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/exchangerate_service.dart';
+import 'package:one_five_one_ten/allocation/allocation_service.dart'
+    as legacy_allocation;
+import 'package:one_five_one_ten/allocation/mapping.dart'
+    as allocation_mapping;
 
 final NumberFormat _percentFormatter =
     NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 1;
 final NumberFormat _currencyFormatter =
     NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
+
+const Map<allocation_mapping.AllocationBucket, double>
+    _defaultTargetAllocations = {
+  allocation_mapping.AllocationBucket.us: 0.55,
+  allocation_mapping.AllocationBucket.cn: 0.10,
+  allocation_mapping.AllocationBucket.hk: 0.05,
+  allocation_mapping.AllocationBucket.gold: 0.10,
+  allocation_mapping.AllocationBucket.oil: 0.03,
+  allocation_mapping.AllocationBucket.bondCash: 0.17,
+  allocation_mapping.AllocationBucket.other: 0.0,
+};
+
+final _currentAllocationSnapshotProvider =
+    FutureProvider.autoDispose<legacy_allocation.AllocationSnapshot?>((ref) async {
+  final source = legacy_allocation.AllocationRegistry.source;
+  if (source == null) {
+    return null;
+  }
+
+  final items = await source();
+  final service = legacy_allocation.AllocationService();
+  return service.buildSnapshot(items);
+});
 
 final _activeAssetsProvider =
     StreamProvider.autoDispose<List<Asset>>((ref) {
@@ -249,6 +277,218 @@ final _planBucketStatsProvider = StreamProvider.autoDispose
   });
 });
 
+class _CurrentAllocationOverview extends ConsumerStatefulWidget {
+  const _CurrentAllocationOverview();
+
+  @override
+  ConsumerState<_CurrentAllocationOverview> createState() =>
+      _CurrentAllocationOverviewState();
+}
+
+class _CurrentAllocationOverviewState
+    extends ConsumerState<_CurrentAllocationOverview> {
+  int _touchedIndex = -1;
+
+  @override
+  Widget build(BuildContext context) {
+    final allocationAsync = ref.watch(_currentAllocationSnapshotProvider);
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '当前资产配置',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                IconButton(
+                  tooltip: '刷新',
+                  onPressed: () {
+                    setState(() {
+                      _touchedIndex = -1;
+                    });
+                    ref.refresh(_currentAllocationSnapshotProvider);
+                  },
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            allocationAsync.when(
+              data: (snapshot) {
+                if (snapshot == null) {
+                  return const Text('暂未连接资产配置数据源，请在应用启动时注册 AllocationRegistry。');
+                }
+
+                final entries = snapshot.weights.entries
+                    .where((element) => element.value > 0)
+                    .toList()
+                  ..sort((a, b) => b.value.compareTo(a.value));
+
+                if (entries.isEmpty) {
+                  return const Text('暂无资产数据，先去新增或同步资产吧。');
+                }
+
+                final colors = Colors.primaries;
+
+                List<PieChartSectionData> buildSections() {
+                  return List.generate(entries.length, (index) {
+                    final bucket = entries[index].key;
+                    final share = entries[index].value;
+                    final percent = share * 100;
+                    final color = colors[index % colors.length];
+                    final isTouched = index == _touchedIndex;
+                    final radius = isTouched ? 86.0 : 76.0;
+                    final titleVisible = percent >= 4.0;
+
+                    return PieChartSectionData(
+                      color: color,
+                      value: share,
+                      title: titleVisible
+                          ? '${allocation_mapping.bucketLabel(bucket)}\n${percent.toStringAsFixed(1)}%'
+                          : '',
+                      radius: radius,
+                      titleStyle: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    );
+                  });
+                }
+
+                final legendRows = <Widget>[];
+                for (var i = 0; i < entries.length; i++) {
+                  final bucket = entries[i].key;
+                  final share = entries[i].value;
+                  final percent = share * 100;
+                  final color = colors[i % colors.length];
+                  final bucketValue = snapshot.values[bucket] ?? 0.0;
+                  final target =
+                      (_defaultTargetAllocations[bucket] ?? 0.0) * 100.0;
+                  final diff = percent - target;
+                  final diffColor = diff.abs() < 0.1
+                      ? theme.textTheme.bodySmall?.color ?? Colors.grey
+                      : (diff >= 0 ? Colors.redAccent : Colors.green);
+
+                  legendRows.add(
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6.0),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  allocation_mapping.bucketLabel(bucket),
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '金额：${_currencyFormatter.format(bucketValue)} · 目标 ${target.toStringAsFixed(0)}%',
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '${percent.toStringAsFixed(1)}%',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                diff >= 0
+                                    ? '+${diff.toStringAsFixed(1)}%'
+                                    : '${diff.toStringAsFixed(1)}%',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: diffColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '总资产：${_currencyFormatter.format(snapshot.total)}',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 260,
+                      child: PieChart(
+                        PieChartData(
+                          pieTouchData: PieTouchData(
+                            touchCallback: (event, response) {
+                              setState(() {
+                                if (!event.isInterestedForInteractions ||
+                                    response == null ||
+                                    response.touchedSection == null) {
+                                  _touchedIndex = -1;
+                                } else {
+                                  _touchedIndex = response
+                                      .touchedSection!.touchedSectionIndex;
+                                }
+                              });
+                            },
+                          ),
+                          sectionsSpace: 2,
+                          centerSpaceRadius: 60,
+                          sections: buildSections(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...legendRows,
+                  ],
+                );
+              },
+              loading: () => const SizedBox(
+                height: 160,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (err, stack) => Text(
+                '加载资产配置失败：$err',
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.error),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class AllocationPlannerPage extends ConsumerStatefulWidget {
   final int? accountId; // 可选：用于查看某账户的实际分布
   const AllocationPlannerPage({super.key, this.accountId});
@@ -278,38 +518,49 @@ class _AllocationPlannerPageState extends ConsumerState<AllocationPlannerPage> {
   }
 
   Widget _buildPlanList(BuildContext context, List<AllocationPlan> plans) {
-    if (plans.isEmpty) {
-      return const Center(child: Text('暂无方案，点击右下角 “新建方案”'));
-    }
-    return ListView.builder(
+    return ListView(
       padding: const EdgeInsets.all(12),
-      itemCount: plans.length,
-      itemBuilder: (context, i) {
-        final p = plans[i];
-        return Card(
-          child: ListTile(
-            title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(p.isActive ? '当前启用' : '未启用'),
-            trailing: PopupMenuButton<String>(
-              onSelected: (v) async {
-                final service = ref.read(allocationServiceProvider);
-                if (v == 'rename') {
-                  _showRenamePlanDialog(context, p);
-                } else if (v == 'delete') {
-                  _confirmDeletePlan(context, p);
-                }
-              },
-              itemBuilder: (c) => const [
-                PopupMenuItem(value: 'rename', child: Text('重命名')),
-                PopupMenuItem(value: 'delete', child: Text('删除')),
-              ],
+      children: [
+        const _CurrentAllocationOverview(),
+        const SizedBox(height: 12),
+        if (plans.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text('暂无方案，点击右下角 “新建方案”'),
             ),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => _PlanDetailPage(plan: p, accountId: widget.accountId),
-            )),
-          ),
-        );
-      },
+          )
+        else
+          ...plans.map((p) => Card(
+                child: ListTile(
+                  title: Text(
+                    p.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(p.isActive ? '当前启用' : '未启用'),
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (v) {
+                      if (v == 'rename') {
+                        _showRenamePlanDialog(context, p);
+                      } else if (v == 'delete') {
+                        _confirmDeletePlan(context, p);
+                      }
+                    },
+                    itemBuilder: (c) => const [
+                      PopupMenuItem(value: 'rename', child: Text('重命名')),
+                      PopupMenuItem(value: 'delete', child: Text('删除')),
+                    ],
+                  ),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          _PlanDetailPage(plan: p, accountId: widget.accountId),
+                    ),
+                  ),
+                ),
+              )),
+        const SizedBox(height: 80),
+      ],
     );
   }
 
