@@ -1,6 +1,8 @@
 // File: lib/services/database_service.dart
 // Version: CHATGPT-ALLOC-STEP2-DB-SCHEMAS-ADD
 
+import 'dart:math';
+
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -20,6 +22,15 @@ class DatabaseService {
   DatabaseService._();
   static final DatabaseService _instance = DatabaseService._();
   factory DatabaseService() => _instance;
+
+  static final _random = Random();
+
+  /// 本地生成一个可作为 Supabase 主键的占位符，确保离线/未登录时也能有稳定 ID
+  static String generateLocalSupabaseId(String prefix) {
+    final timestamp = DateTime.now().microsecondsSinceEpoch;
+    final salt = _random.nextInt(0xFFFFFF);
+    return '$prefix-$timestamp-$salt';
+  }
 
   late Isar isar;
 
@@ -49,5 +60,21 @@ class DatabaseService {
       directory: dir.path,
       name: 'one_five_one_ten_db',
     );
+
+    await _backfillLocalSupabaseIds();
+  }
+
+  /// 兼容老数据：为缺失 supabaseId 的账户生成本地 ID，避免页面依赖非空字段时崩溃
+  Future<void> _backfillLocalSupabaseIds() async {
+    final accountsWithoutId =
+        await isar.accounts.filter().supabaseIdIsNull().findAll();
+    if (accountsWithoutId.isEmpty) return;
+
+    await isar.writeTxn(() async {
+      for (final acc in accountsWithoutId) {
+        acc.supabaseId = generateLocalSupabaseId('acc');
+        await isar.accounts.put(acc);
+      }
+    });
   }
 }
