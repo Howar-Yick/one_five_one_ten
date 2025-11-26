@@ -71,6 +71,7 @@ class DatabaseService {
     );
 
     await _backfillLocalSupabaseIds();
+    await _repairOrphanRelations();
   }
 
   /// 兼容老数据：为缺失 supabaseId 的账户生成本地 ID，避免页面依赖非空字段时崩溃
@@ -131,6 +132,75 @@ class DatabaseService {
         }
       }
     });
+  }
+
+  /// 修复旧版本遗留的“无账户标记”记录，避免资产/交易找不到所属账户
+  ///
+  /// 策略：
+  /// - 只有 1 个账户时，全部归入唯一账户；
+  /// - 多账户时，按 currency 唯一匹配（同币种仅 1 个账户时归入该账户）；
+  /// - 其它无法判定的记录保持空，避免错配。
+  Future<void> _repairOrphanRelations() async {
+    final accounts = await isar.accounts.where().findAll();
+    if (accounts.isEmpty) return;
+
+    final soleAccount = accounts.length == 1 ? accounts.first : null;
+    final uniqueCurrencyAccount = <String, Account>{};
+    final multiCurrencyFlag = <String, bool>{};
+
+    for (final acc in accounts) {
+      final lowerCurrency = acc.currency.toLowerCase();
+      if (uniqueCurrencyAccount.containsKey(lowerCurrency)) {
+        multiCurrencyFlag[lowerCurrency] = true;
+      } else {
+        uniqueCurrencyAccount[lowerCurrency] = acc;
+      }
+    }
+
+    final orphanAssets = await isar.assets.where().accountSupabaseIdIsNull().findAll();
+    final orphanAccountTxns =
+        await isar.accountTransactions.where().accountSupabaseIdIsNull().findAll();
+
+    if (orphanAssets.isEmpty && orphanAccountTxns.isEmpty) return;
+
+    await isar.writeTxn(() async {
+      for (final asset in orphanAssets) {
+        final account = _resolveAccountForCurrency(
+          currency: asset.currency,
+          soleAccount: soleAccount,
+          uniqueCurrencyAccount: uniqueCurrencyAccount,
+          multiCurrencyFlag: multiCurrencyFlag,
+        );
+        if (account == null || account.supabaseId == null) continue;
+        asset.accountSupabaseId = account.supabaseId;
+        await isar.assets.put(asset);
+      }
+
+      for (final accTxn in orphanAccountTxns) {
+        final account = _resolveAccountForCurrency(
+          currency: null, // 账户交易无币种，只用兜底策略
+          soleAccount: soleAccount,
+          uniqueCurrencyAccount: uniqueCurrencyAccount,
+          multiCurrencyFlag: multiCurrencyFlag,
+        );
+        if (account == null || account.supabaseId == null) continue;
+        accTxn.accountSupabaseId = account.supabaseId;
+        await isar.accountTransactions.put(accTxn);
+      }
+    });
+  }
+
+  Account? _resolveAccountForCurrency({
+    required String? currency,
+    required Account? soleAccount,
+    required Map<String, Account> uniqueCurrencyAccount,
+    required Map<String, bool> multiCurrencyFlag,
+  }) {
+    if (soleAccount != null) return soleAccount;
+    if (currency == null) return null;
+    final key = currency.toLowerCase();
+    if (multiCurrencyFlag[key] == true) return null;
+    return uniqueCurrencyAccount[key];
   }
 }
 
