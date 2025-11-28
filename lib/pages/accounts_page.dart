@@ -256,7 +256,7 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     String? initialName,
   }) {
     final TextEditingController nameController = TextEditingController(
-      text: initialName ?? (suggestedSuffix != null ? '美元账户$suggestedSuffix' : ''),
+      text: initialName ?? '',
     );
     final TextEditingController descriptionController = TextEditingController();
     String selectedCurrency = initialCurrency;
