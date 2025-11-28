@@ -361,8 +361,7 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
                         ..name = name
                         ..description = descriptionController.text.trim()
                         ..createdAt = DateTime.now()
-                        ..currency = selectedCurrency
-                        ..supabaseId = DatabaseService.generateLocalSupabaseId();
+                        ..currency = selectedCurrency;
 
                       final isar = DatabaseService().isar;
                       await isar.writeTxn(() async {

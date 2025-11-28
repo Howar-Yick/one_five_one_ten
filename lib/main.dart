@@ -1,9 +1,8 @@
 // 文件: lib/main.dart
 // (这是最终的、基于你现有完整代码的修复版本)
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:one_five_one_ten/pages/main_nav_page.dart'; 
+import 'package:one_five_one_ten/pages/main_nav_page.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:one_five_one_ten/allocation/allocation_service.dart';
@@ -18,6 +17,7 @@ import 'package:one_five_one_ten/providers/global_providers.dart';
 
 // ▼▼▼ 1. 引入我们刚创建的修复服务 ▼▼▼
 import 'package:one_five_one_ten/services/data_fix_service.dart';
+import 'package:one_five_one_ten/services/supabase_id_migration_service.dart';
 
 
 Future<void> main() async {
@@ -35,6 +35,15 @@ Future<void> main() async {
   );
 
   await DatabaseService().init();
+
+  // ▼▼▼ 一次性：回写服务器分配的账户 Supabase ID，修复占位 UUID ▼▼▼
+  await SupabaseIdMigrationService(
+    syncService: container.read(syncServiceProvider),
+  ).runAccountIdMigration(
+    manualNameCurrencyMap: const {
+      // '账户名|币种': '服务器真实 UUID',
+    },
+  );
 
   // ▼▼▼ 2. 在此处调用一次性的数据修复脚本 ▼▼▼
   // ===============================================
