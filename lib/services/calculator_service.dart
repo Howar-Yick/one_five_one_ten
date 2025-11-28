@@ -356,6 +356,8 @@ class CalculatorService {
     double netInvestment = 0;
     double totalInvested = 0;
     double currentValue = 0;
+    double netForeign = 0;
+    double netCny = 0;
     DateTime lastDate = transactions.first.date;
     
     final Map<DateTime, List<Transaction>> dailyTransactions = {};
@@ -383,8 +385,12 @@ class CalculatorService {
           if (txn.type == TransactionType.invest) {
             netInvestment += txn.amount.abs();
             totalInvested += txn.amount.abs();
+            netForeign += txn.amount.abs();
+            if (txn.amountCny != null) netCny += txn.amountCny!;
           } else if (txn.type == TransactionType.withdraw) {
             netInvestment -= txn.amount.abs();
+            netForeign -= txn.amount.abs();
+            if (txn.amountCny != null) netCny -= txn.amountCny!;
           }
         }
         currentValue = updateTxn.amount;
@@ -396,9 +402,13 @@ class CalculatorService {
             netInvestment += txn.amount.abs();
             totalInvested += txn.amount.abs();
             currentValue += txn.amount.abs();
+            netForeign += txn.amount.abs();
+            if (txn.amountCny != null) netCny += txn.amountCny!;
           } else if (txn.type == TransactionType.withdraw) {
             netInvestment -= txn.amount.abs();
             currentValue -= txn.amount.abs();
+            netForeign -= txn.amount.abs();
+            if (txn.amountCny != null) netCny -= txn.amountCny!;
           }
         }
 
@@ -464,12 +474,41 @@ class CalculatorService {
       annualizedReturn = 0.0;
     }
 
+    double? currentValueCny;
+    double? totalProfitCny;
+    double? assetProfitCny;
+    double? fxProfitCny;
+    double? netInvestmentCny;
+    if (asset.currency != 'CNY') {
+      final fxNow = await ExchangeRateService().getRate(asset.currency, 'CNY');
+      final effectiveNetForeign = netForeign == 0 ? null : netForeign;
+      final effectiveNetCny = netCny == 0 ? null : netCny;
+      if (effectiveNetForeign != null && effectiveNetCny != null) {
+        final avgFx = effectiveNetCny / effectiveNetForeign;
+        final valueCnyNoFx = currentValue * avgFx;
+        currentValueCny = currentValue * fxNow;
+        assetProfitCny = valueCnyNoFx - effectiveNetCny;
+        fxProfitCny = currentValueCny - valueCnyNoFx;
+        totalProfitCny = assetProfitCny + fxProfitCny;
+        netInvestmentCny = effectiveNetCny;
+      } else {
+        currentValueCny = currentValue * fxNow;
+        totalProfitCny = totalProfit * fxNow;
+        netInvestmentCny = netInvestment * fxNow;
+      }
+    }
+
     return {
       'currentValue': currentValue,
       'netInvestment': netInvestment,
       'totalProfit': totalProfit,
       'profitRate': profitRate,
       'annualizedReturn': annualizedReturn,
+      'currentValueCny': currentValueCny,
+      'totalProfitCny': totalProfitCny,
+      'assetProfitCny': assetProfitCny,
+      'fxProfitCny': fxProfitCny,
+      'netInvestmentCny': netInvestmentCny,
     };
   }
   

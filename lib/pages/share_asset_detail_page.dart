@@ -148,6 +148,37 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                     TextField(controller: sharesController, decoration: const InputDecoration(labelText: '最新总份额'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                     TextField(controller: costController, decoration: InputDecoration(labelText: '最新单位成本', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                     TextField(controller: priceController, decoration: InputDecoration(labelText: '最新价格 (可选)', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                    if (asset.currency != 'CNY') ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: fxRateController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: '汇率（资产币种→CNY，可选）',
+                          helperText: '用于记录快照成本对应的人民币成本',
+                        ),
+                        onChanged: (_) {
+                          final cost = double.tryParse(costController.text);
+                          final fx = double.tryParse(fxRateController.text);
+                          if (cost != null && fx != null && sharesController.text.isNotEmpty) {
+                            final shares = double.tryParse(sharesController.text);
+                            if (shares != null) {
+                              costCnyController.text =
+                                  (cost * shares * fx).toStringAsFixed(2);
+                            }
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: costCnyController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: '人民币成本（可选）',
+                          helperText: '记录该快照对应的累计人民币成本',
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Row(
                       children: [
@@ -475,7 +506,9 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
     final costController = TextEditingController(
        text: performance.asData?.value['averageCost']?.toString() ?? ''
     );
-    final priceController = TextEditingController(text: asset.latestPrice > 0 ? asset.latestPrice.toString() : ''); 
+    final fxRateController = TextEditingController();
+    final costCnyController = TextEditingController();
+    final priceController = TextEditingController(text: asset.latestPrice > 0 ? asset.latestPrice.toString() : '');
     DateTime selectedDate = DateTime.now();
 
     showDialog(
@@ -492,6 +525,37 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                     TextField(controller: sharesController, decoration: const InputDecoration(labelText: '最新总份额'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                     TextField(controller: costController, decoration: InputDecoration(labelText: '最新单位成本', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                     TextField(controller: priceController, decoration: InputDecoration(labelText: '最新价格 (可选)', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                    if (asset.currency != 'CNY') ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: fxRateController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: '汇率（资产币种→CNY，可选）',
+                          helperText: '用于记录快照成本对应的人民币成本',
+                        ),
+                        onChanged: (_) {
+                          final cost = double.tryParse(costController.text);
+                          final fx = double.tryParse(fxRateController.text);
+                          if (cost != null && fx != null && sharesController.text.isNotEmpty) {
+                            final shares = double.tryParse(sharesController.text);
+                            if (shares != null) {
+                              costCnyController.text =
+                                  (cost * shares * fx).toStringAsFixed(2);
+                            }
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: costCnyController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: '人民币成本（可选）',
+                          helperText: '记录该快照对应的累计人民币成本',
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Row(
                       children: [
@@ -536,12 +600,24 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                         assetUpdated = true;
                       }
 
+                      double? fxRate;
+                      double? costCny;
+                      if (asset.currency != 'CNY') {
+                        fxRate = double.tryParse(fxRateController.text);
+                        costCny = double.tryParse(costCnyController.text);
+                        if (fxRate != null && costCny == null) {
+                          costCny = shares != null ? shares * cost * fxRate : null;
+                        }
+                      }
+
                       final newSnapshot = PositionSnapshot()
                         ..totalShares = shares
                         ..averageCost = cost
                         ..date = selectedDate
                         ..createdAt = DateTime.now()
-                        ..assetSupabaseId = widget.asset.supabaseId; 
+                        ..assetSupabaseId = widget.asset.supabaseId
+                        ..fxRateToCny = fxRate
+                        ..costBasisCny = costCny;
                       
                       await syncService.savePositionSnapshot(newSnapshot);
                       
