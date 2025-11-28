@@ -12,6 +12,7 @@ import 'package:isar/isar.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
+import 'package:one_five_one_ten/services/exchangerate_service.dart';
 
 
 // (Provider 逻辑已正确)

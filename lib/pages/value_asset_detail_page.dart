@@ -11,6 +11,7 @@ import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
+import 'package:one_five_one_ten/services/exchangerate_service.dart';
 import 'package:one_five_one_ten/pages/asset_transaction_history_page.dart';
 import 'package:isar/isar.dart';
 

@@ -131,7 +131,9 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
     final costController = TextEditingController(
        text: performance.asData?.value['averageCost']?.toString() ?? ''
     );
-    final priceController = TextEditingController(text: asset.latestPrice > 0 ? asset.latestPrice.toString() : ''); 
+    final fxRateController = TextEditingController();
+    final costCnyController = TextEditingController();
+    final priceController = TextEditingController(text: asset.latestPrice > 0 ? asset.latestPrice.toString() : '');
     DateTime selectedDate = DateTime.now();
 
     showDialog(
@@ -214,8 +216,8 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                     }
 
                     try {
-                      final syncService = ref.read(syncServiceProvider); 
-                      
+                      final syncService = ref.read(syncServiceProvider);
+
                       bool assetUpdated = false;
                       if (priceText.isNotEmpty) {
                         asset.latestPrice = double.tryParse(priceText) ?? asset.latestPrice;
@@ -223,12 +225,24 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                         assetUpdated = true;
                       }
 
+                      double? fxRate;
+                      double? costCny;
+                      if (asset.currency != 'CNY') {
+                        fxRate = double.tryParse(fxRateController.text);
+                        costCny = double.tryParse(costCnyController.text);
+                        if (fxRate != null && costCny == null) {
+                          costCny = shares * cost * fxRate;
+                        }
+                      }
+
                       final newSnapshot = PositionSnapshot()
                         ..totalShares = shares
                         ..averageCost = cost
                         ..date = selectedDate
                         ..createdAt = DateTime.now()
-                        ..assetSupabaseId = asset.supabaseId; 
+                        ..assetSupabaseId = asset.supabaseId
+                        ..fxRateToCny = fxRate
+                        ..costBasisCny = costCny;
                       
                       await syncService.savePositionSnapshot(newSnapshot);
                       
@@ -493,169 +507,8 @@ class _ShareAssetDetailView extends ConsumerStatefulWidget { // (*** 1. 转换�
 }
 
 class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
-  
   // (*** 3. 新增状态变量 ***)
   ShareAssetChartType _selectedChartType = ShareAssetChartType.price;
-  
-  // (*** 4. _showUpdateSnapshotDialog 移到这里 ***)
-  void _showUpdateSnapshotDialog(BuildContext context, WidgetRef ref, Asset asset) {
-    final performance = ref.read(shareAssetPerformanceProvider(asset.id));
-    final sharesController = TextEditingController(
-      text: performance.asData?.value['totalShares']?.toString() ?? ''
-    );
-    final costController = TextEditingController(
-       text: performance.asData?.value['averageCost']?.toString() ?? ''
-    );
-    final fxRateController = TextEditingController();
-    final costCnyController = TextEditingController();
-    final priceController = TextEditingController(text: asset.latestPrice > 0 ? asset.latestPrice.toString() : '');
-    DateTime selectedDate = DateTime.now();
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('更新持仓快照'),
-              content: SingleChildScrollView( 
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(controller: sharesController, decoration: const InputDecoration(labelText: '最新总份额'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                    TextField(controller: costController, decoration: InputDecoration(labelText: '最新单位成本', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                    TextField(controller: priceController, decoration: InputDecoration(labelText: '最新价格 (可选)', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                    if (asset.currency != 'CNY') ...[
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: fxRateController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: '汇率（资产币种→CNY，可选）',
-                          helperText: '用于记录快照成本对应的人民币成本',
-                        ),
-                        onChanged: (_) {
-                          final cost = double.tryParse(costController.text);
-                          final fx = double.tryParse(fxRateController.text);
-                          if (cost != null && fx != null && sharesController.text.isNotEmpty) {
-                            final shares = double.tryParse(sharesController.text);
-                            if (shares != null) {
-                              costCnyController.text =
-                                  (cost * shares * fx).toStringAsFixed(2);
-                            }
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: costCnyController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: '人民币成本（可选）',
-                          helperText: '记录该快照对应的累计人民币成本',
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        const Text("快照日期:", style: TextStyle(fontSize: 16)),
-                        const Spacer(),
-                        TextButton(
-                          child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
-                          onPressed: () async {
-                            final pickedDate = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime.now());
-                            if (pickedDate != null) setState(() => selectedDate = pickedDate);
-                          },
-                        )
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
-                TextButton(
-                  onPressed: () async {
-                    final shares = double.tryParse(sharesController.text);
-                    final cost = double.tryParse(costController.text);
-                    final priceText = priceController.text.trim();
-                    
-                    if (shares == null || cost == null) {
-                       if (context.mounted) {
-                         ScaffoldMessenger.of(context).showSnackBar(
-                           const SnackBar(content: Text('请输入有效的份额和成本'))
-                         );
-                       }
-                       return;
-                    }
-
-                    try {
-                      final syncService = ref.read(syncServiceProvider); 
-                      
-                      bool assetUpdated = false;
-                      if (priceText.isNotEmpty) {
-                        widget.asset.latestPrice = double.tryParse(priceText) ?? widget.asset.latestPrice;
-                        widget.asset.priceUpdateDate = DateTime.now();
-                        assetUpdated = true;
-                      }
-
-                      double? fxRate;
-                      double? costCny;
-                      if (asset.currency != 'CNY') {
-                        fxRate = double.tryParse(fxRateController.text);
-                        costCny = double.tryParse(costCnyController.text);
-                        if (fxRate != null && costCny == null) {
-                          costCny = shares != null ? shares * cost * fxRate : null;
-                        }
-                      }
-
-                      final newSnapshot = PositionSnapshot()
-                        ..totalShares = shares
-                        ..averageCost = cost
-                        ..date = selectedDate
-                        ..createdAt = DateTime.now()
-                        ..assetSupabaseId = widget.asset.supabaseId
-                        ..fxRateToCny = fxRate
-                        ..costBasisCny = costCny;
-                      
-                      await syncService.savePositionSnapshot(newSnapshot);
-                      
-                      if(assetUpdated) {
-                        await syncService.saveAsset(widget.asset);
-                      }
-
-                      ref.invalidate(shareAssetPerformanceProvider(widget.asset.id));
-                      ref.invalidate(dashboardDataProvider);
-
-                      if (dialogContext.mounted) {
-                        Navigator.of(dialogContext).pop(); 
-                      }
-                      
-                      if (context.mounted) {
-                         Navigator.of(context).push(MaterialPageRoute(
-                           builder: (_) => SnapshotHistoryPage(assetId: widget.asset.id),
-                         ));
-                      }
-
-                    } catch (e) {
-                       print('更新快照失败: $e');
-                       if (context.mounted) {
-                         ScaffoldMessenger.of(context).showSnackBar(
-                           SnackBar(content: Text('保存失败: $e'))
-                         );
-                       }
-                    }
-                  },
-                  child: const Text('保存并查看历史'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
