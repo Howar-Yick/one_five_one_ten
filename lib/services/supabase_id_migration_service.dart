@@ -1,6 +1,7 @@
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
+import 'package:isar/isar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// 一次性：修正因占位 UUID 产生的账户 ID 分裂问题
