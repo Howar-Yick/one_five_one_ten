@@ -62,8 +62,8 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
           ),
           IconButton(
             icon: const Icon(Icons.add),
-            tooltip: '添加账户或美元子账户',
-            onPressed: () => _showAddAccountOptions(context, ref),
+            tooltip: '添加账户',
+            onPressed: () => _showAddAccountDialog(context, ref),
           ),
         ],
       ),
@@ -248,39 +248,6 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     );
   }
 
-  void _showAddAccountOptions(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet(
-      context: context,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Wrap(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.account_balance_wallet_outlined),
-                title: const Text('新增账户（默认人民币）'),
-                subtitle: const Text('适合日常人民币资金账户'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _showAddAccountDialog(context, ref);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.attach_money_outlined),
-                title: const Text('新增 USD 子账户'),
-                subtitle: const Text('用于美元理财/基金，便于拆分汇率影响'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _showAddAccountDialog(context, ref,
-                      initialCurrency: 'USD', suggestedSuffix: ' (USD)');
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   void _showAddAccountDialog(
     BuildContext context,
     WidgetRef ref, {
@@ -396,20 +363,6 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
       builder: (sheetContext) {
         return Wrap(
           children: <Widget>[
-            ListTile(
-              leading: const Icon(Icons.currency_exchange_outlined),
-              title: const Text('新增外币子账户'),
-              subtitle: const Text('为该银行新增 USD / 其他外币子账户'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _showAddAccountDialog(
-                  context,
-                  ref,
-                  initialCurrency: 'USD',
-                  initialName: '${account.name} (USD)',
-                );
-              },
-            ),
             ListTile(
               leading: const Icon(Icons.edit_outlined),
               title: const Text('编辑账户'),
