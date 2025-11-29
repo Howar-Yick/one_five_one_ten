@@ -15,6 +15,12 @@ class PositionSnapshot {
 
   late double averageCost; // 单位成本 (Dart 内部使用的名字)
 
+  /// 快照记录时的资产币种 -> 人民币汇率（便于后续收益拆分）
+  double? fxRateToCny;
+
+  /// 快照对应的人民币成本（如有）
+  double? costBasisCny;
+
   @Index()
   String? assetSupabaseId; 
 
@@ -40,10 +46,13 @@ class PositionSnapshot {
 
     snap.date = DateTime.parse(json['date']).toLocal();
     snap.totalShares = (json['total_shares'] as num?)?.toDouble() ?? 0.0;
-    
+
     // --- 关键修复：从 'cost_basis' 读取 ---
     snap.averageCost = (json['cost_basis'] as num?)?.toDouble() ?? 0.0; // <-- 修正
     // --- 修复结束 ---
+
+    snap.fxRateToCny = (json['fx_rate_to_cny'] as num?)?.toDouble();
+    snap.costBasisCny = (json['cost_basis_cny'] as num?)?.toDouble();
     
     snap.assetSupabaseId = json['asset_id']; 
     return snap;
@@ -57,8 +66,11 @@ class PositionSnapshot {
       // --- 关键修复：写入到 'cost_basis' ---
       'cost_basis': averageCost, // <-- 修正: Dart 属性 'averageCost' 映射到数据库列 'cost_basis'
       // --- 修复结束 ---
-      
-      'asset_id': assetSupabaseId, 
+
+      'fx_rate_to_cny': fxRateToCny,
+      'cost_basis_cny': costBasisCny,
+
+      'asset_id': assetSupabaseId,
       'created_at': createdAt.toIso8601String(),
     };
   }

@@ -11,6 +11,7 @@ import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
+import 'package:one_five_one_ten/services/exchangerate_service.dart';
 import 'package:one_five_one_ten/pages/asset_transaction_history_page.dart';
 import 'package:isar/isar.dart';
 
@@ -125,14 +126,34 @@ class _ValueAssetDetailPageState extends ConsumerState<ValueAssetDetailPage> {
 
   void _showAddTransactionDialog(BuildContext context, WidgetRef ref, Asset asset) {
     final amountController = TextEditingController();
+    final fxRateController = TextEditingController();
+    final cnyAmountController = TextEditingController();
     DateTime selectedDate = DateTime.now();
-    TransactionType selectedType = TransactionType.invest; 
+    TransactionType selectedType = TransactionType.invest;
+    bool rateRequested = false;
 
     showDialog(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setState) {
+            if (asset.currency != 'CNY' && !rateRequested) {
+              rateRequested = true;
+              ExchangeRateService()
+                  .getRate(asset.currency, 'CNY')
+                  .then((rate) {
+                if (dialogContext.mounted && fxRateController.text.isEmpty) {
+                  setState(() {
+                    fxRateController.text = rate.toStringAsFixed(4);
+                    final amount = double.tryParse(amountController.text);
+                    if (amount != null) {
+                      cnyAmountController.text =
+                          (amount * rate).toStringAsFixed(2);
+                    }
+                  });
+                }
+              });
+            }
             return AlertDialog(
               title: Text('添加 ${asset.name} 记录'),
               content: SingleChildScrollView(
@@ -161,6 +182,34 @@ class _ValueAssetDetailPageState extends ConsumerState<ValueAssetDetailPage> {
                         prefixText: getCurrencySymbol(asset.currency)
                       ),
                     ),
+                    if (asset.currency != 'CNY' && selectedType != TransactionType.updateValue) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: fxRateController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: '汇率（资产币种→CNY）',
+                          helperText: '默认拉取当前汇率，可手动调整',
+                        ),
+                        onChanged: (_) {
+                          final amount = double.tryParse(amountController.text);
+                          final rate = double.tryParse(fxRateController.text);
+                          if (amount != null && rate != null) {
+                            cnyAmountController.text =
+                                (amount * rate).toStringAsFixed(2);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: cnyAmountController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: '折算人民币金额',
+                          helperText: '买入为正，卖出为负',
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Row(
                       children: [
@@ -203,13 +252,28 @@ class _ValueAssetDetailPageState extends ConsumerState<ValueAssetDetailPage> {
                       }
 
                       final syncService = ref.read(syncServiceProvider);
-                      
+
+                      double? fxRate;
+                      double? amountCny;
+                      if (asset.currency != 'CNY' && selectedType != TransactionType.updateValue) {
+                        fxRate = double.tryParse(fxRateController.text);
+                        amountCny = double.tryParse(cnyAmountController.text);
+                        if (fxRate == null && amountCny != null && amount > 0) {
+                          fxRate = amountCny / amount;
+                        }
+                        if (amountCny == null && fxRate != null) {
+                          amountCny = amount * fxRate;
+                        }
+                      }
+
                       final newTxn = Transaction()
                         ..type = selectedType
                         ..date = selectedDate
-                        ..amount = (selectedType == TransactionType.invest) ? -amount : amount 
+                        ..amount = (selectedType == TransactionType.invest) ? -amount : amount
                         ..createdAt = DateTime.now()
-                        ..assetSupabaseId = asset.supabaseId; 
+                        ..assetSupabaseId = asset.supabaseId
+                        ..fxRateToCny = fxRate
+                        ..amountCny = amountCny;
 
                       if (selectedType == TransactionType.updateValue) {
                         newTxn.amount = amount;
@@ -290,6 +354,13 @@ class _ValueAssetDetailView extends ConsumerWidget {
       final double totalProfit = (performance['totalProfit'] ?? 0.0) as double;
       final double profitRate = (performance['profitRate'] ?? 0.0) as double;
       final double annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
+      final double? totalProfitCny = performance['totalProfitCny'] as double?;
+      final double? fxProfitCny = performance['fxProfitCny'] as double?;
+      final double? assetProfitCny = performance['assetProfitCny'] as double?;
+      final double? netInvestmentCny = performance['netInvestmentCny'] as double?;
+      final double? cnyProfitRate = (totalProfitCny != null && netInvestmentCny != null && netInvestmentCny != 0)
+          ? totalProfitCny / netInvestmentCny
+          : null;
       final percentFormat =
           NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
       Color profitColor =
@@ -321,6 +392,32 @@ class _ValueAssetDetailView extends ConsumerWidget {
                     ? Colors.red.shade400
                     : Colors.green.shade400,
               ),
+              if (currencyCode != 'CNY' && totalProfitCny != null) ...[
+                const SizedBox(height: 8),
+                const Divider(),
+                buildMetricRow(
+                  context,
+                  '总收益（CNY）:',
+                  cnyProfitRate != null
+                      ? '${formatCurrency(totalProfitCny, 'CNY')} (${percentFormat.format(cnyProfitRate)})'
+                      : formatCurrency(totalProfitCny, 'CNY'),
+                  color: totalProfitCny >= 0
+                      ? Colors.red.shade400
+                      : Colors.green.shade400,
+                ),
+                if (assetProfitCny != null)
+                  buildMetricRow(
+                    context,
+                    '标的收益（CNY）:',
+                    formatCurrency(assetProfitCny, 'CNY'),
+                  ),
+                if (fxProfitCny != null)
+                  buildMetricRow(
+                    context,
+                    '汇率收益（CNY）:',
+                    formatCurrency(fxProfitCny, 'CNY'),
+                  ),
+              ],
             ],
           ),
         ),

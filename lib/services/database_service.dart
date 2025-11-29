@@ -1,10 +1,9 @@
 // File: lib/services/database_service.dart
 // Version: CHATGPT-ALLOC-STEP2-DB-SCHEMAS-ADD
 
-import 'dart:math';
-
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/account_transaction.dart';
@@ -23,23 +22,9 @@ class DatabaseService {
   static final DatabaseService _instance = DatabaseService._();
   factory DatabaseService() => _instance;
 
-  static final _random = Random();
-
   static final _uuidRegex = RegExp(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
   );
-
-  /// 本地生成一个符合 UUID v4 规范的占位符，确保离线/未登录时也能有稳定 ID
-  static String generateLocalSupabaseId() {
-    final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
-
-    // 设置版本与变种位
-    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
-    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xx
-
-    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
-  }
 
   late Isar isar;
 
@@ -74,62 +59,103 @@ class DatabaseService {
     await _repairOrphanRelations();
   }
 
-  /// 兼容老数据：为缺失 supabaseId 的账户生成本地 ID，避免页面依赖非空字段时崩溃
+  String _nameCurrencyKey(String name, String currency) =>
+      '${name.trim().toLowerCase()}|${currency.trim().toLowerCase()}';
+
+  /// 回填本地账户缺失的 Supabase ID
+  ///
+  /// 规则：
+  /// - 仅在「已登录」且 Supabase SDK 可用时运行；
+  /// - 优先使用线上账户（按“名称+币种”唯一匹配）写回本地 ID；
+  /// - 不再离线生成占位 UUID，避免与服务器产生冲突。
   Future<void> _backfillLocalSupabaseIds() async {
-    final accounts = await isar.accounts.where().findAll();
-
-    final migrations = <_SupabaseIdMigration>[];
-    for (final acc in accounts) {
-      final oldId = acc.supabaseId;
-      final isValid = oldId != null && _uuidRegex.hasMatch(oldId);
-      if (isValid) continue;
-
-      final newId = generateLocalSupabaseId();
-      migrations.add(
-        _SupabaseIdMigration(
-          account: acc,
-          oldSupabaseId: oldId,
-          newSupabaseId: newId,
-        ),
-      );
+    SupabaseClient? client;
+    try {
+      client = Supabase.instance.client;
+    } catch (_) {
+      // 未初始化 Supabase 时不做回填
     }
 
-    if (migrations.isEmpty) return;
+    final user = client?.auth.currentUser;
+    if (client == null || user == null) {
+      print('[DatabaseService] 跳过 Supabase ID 回填：未登录或 Supabase 未初始化。');
+      return;
+    }
 
-    final relatedAssets = <String, List<Asset>>{};
-    final relatedAccountTxns = <String, List<AccountTransaction>>{};
+    final remoteResponse = await client.from('Account').select();
+    final remoteAccounts = (remoteResponse as List<dynamic>)
+        .map((json) => Account.fromSupabaseJson(json as Map<String, dynamic>))
+        .where((acc) => acc.supabaseId != null)
+        .toList();
 
-    for (final migration in migrations) {
-      final oldId = migration.oldSupabaseId;
-      if (oldId == null) continue;
-      relatedAssets[oldId] = await isar.assets
+    final remoteIds = remoteAccounts.map((e) => e.supabaseId!).toSet();
+    final remoteKeyMap = <String, Account>{};
+    final multiKeyFlags = <String, bool>{};
+
+    for (final acc in remoteAccounts) {
+      final key = _nameCurrencyKey(acc.name, acc.currency);
+      if (remoteKeyMap.containsKey(key)) {
+        multiKeyFlags[key] = true;
+      } else {
+        remoteKeyMap[key] = acc;
+      }
+    }
+
+    final accounts = await isar.accounts.where().findAll();
+
+    for (final acc in accounts) {
+      final oldId = acc.supabaseId;
+      final hasValidRemoteId =
+          oldId != null && _uuidRegex.hasMatch(oldId) && remoteIds.contains(oldId);
+      if (hasValidRemoteId) continue;
+
+      final key = _nameCurrencyKey(acc.name, acc.currency);
+      if (multiKeyFlags[key] == true) continue; // 同名同币种多条，避免误配
+
+      final remote = remoteKeyMap[key];
+      final newId = remote?.supabaseId;
+      if (newId == null || newId == oldId) continue;
+
+      await applySupabaseIdMigration(
+        account: acc,
+        oldSupabaseId: oldId,
+        newSupabaseId: newId,
+      );
+    }
+  }
+
+  /// 在本地更新账户的 Supabase ID，并同步修正关联的资产与账户流水
+  Future<void> applySupabaseIdMigration({
+    required Account account,
+    required String? oldSupabaseId,
+    required String newSupabaseId,
+  }) async {
+    final relatedAssets = <Asset>[];
+    final relatedAccountTxns = <AccountTransaction>[];
+
+    if (oldSupabaseId != null) {
+      relatedAssets.addAll(await isar.assets
           .where()
-          .accountSupabaseIdEqualTo(oldId)
-          .findAll();
-      relatedAccountTxns[oldId] = await isar.accountTransactions
+          .accountSupabaseIdEqualTo(oldSupabaseId)
+          .findAll());
+      relatedAccountTxns.addAll(await isar.accountTransactions
           .where()
-          .accountSupabaseIdEqualTo(oldId)
-          .findAll();
+          .accountSupabaseIdEqualTo(oldSupabaseId)
+          .findAll());
     }
 
     await isar.writeTxn(() async {
-      for (final migration in migrations) {
-        final oldId = migration.oldSupabaseId;
-        final newId = migration.newSupabaseId;
+      account.supabaseId = newSupabaseId;
+      await isar.accounts.put(account);
 
-        migration.account.supabaseId = newId;
-        await isar.accounts.put(migration.account);
+      for (final asset in relatedAssets) {
+        asset.accountSupabaseId = newSupabaseId;
+        await isar.assets.put(asset);
+      }
 
-        if (oldId != null) {
-          for (final asset in relatedAssets[oldId] ?? const <Asset>[]) {
-            asset.accountSupabaseId = newId;
-            await isar.assets.put(asset);
-          }
-          for (final txn in relatedAccountTxns[oldId] ?? const <AccountTransaction>[]) {
-            txn.accountSupabaseId = newId;
-            await isar.accountTransactions.put(txn);
-          }
-        }
+      for (final txn in relatedAccountTxns) {
+        txn.accountSupabaseId = newSupabaseId;
+        await isar.accountTransactions.put(txn);
       }
     });
   }
@@ -202,16 +228,4 @@ class DatabaseService {
     if (multiCurrencyFlag[key] == true) return null;
     return uniqueCurrencyAccount[key];
   }
-}
-
-class _SupabaseIdMigration {
-  _SupabaseIdMigration({
-    required this.account,
-    required this.oldSupabaseId,
-    required this.newSupabaseId,
-  });
-
-  final Account account;
-  final String? oldSupabaseId;
-  final String newSupabaseId;
 }

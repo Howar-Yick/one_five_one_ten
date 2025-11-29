@@ -56,6 +56,8 @@ class AccountTransaction {
     accTx.date = DateTime.parse(json['date']).toLocal();
     accTx.type = TransactionType.values.byName(json['type'] ?? 'invest');
     accTx.amount = (json['amount'] as num?)?.toDouble() ?? 0.0;
+    accTx.fxRateToCny = (json['fx_rate_to_cny'] as num?)?.toDouble();
+    accTx.baseAmountCny = (json['base_amount_cny'] as num?)?.toDouble();
     
     accTx.accountSupabaseId = json['account_id']; // 关联 Account 的 UUID
     return accTx;
@@ -68,6 +70,8 @@ class AccountTransaction {
       'amount': amount,
       'account_id': accountSupabaseId, // 同步关系链接
       'created_at': createdAt.toIso8601String(),
+      'fx_rate_to_cny': fxRateToCny,
+      'base_amount_cny': baseAmountCny,
     };
   }
   // --- 新增结束 ---

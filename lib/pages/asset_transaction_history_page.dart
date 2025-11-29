@@ -12,6 +12,7 @@ import 'package:isar/isar.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
+import 'package:one_five_one_ten/services/exchangerate_service.dart';
 
 
 // (Provider 逻辑已正确)
@@ -117,14 +118,44 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
         title = txn.type.name; icon = Icons.help_outline; color = Colors.grey;
     }
 
+    final theme = Theme.of(context);
+    final subtitleStyle = theme.textTheme.bodySmall;
+    final showFxRate =
+        currencyCode != 'CNY' && (txn.fxRateToCny != null && txn.fxRateToCny! > 0);
+    final showAmountCny = currencyCode != 'CNY' && txn.amountCny != null;
+
+    final List<Widget> subtitleLines = [
+      Text(DateFormat('yyyy-MM-dd').format(txn.date), style: subtitleStyle),
+    ];
+
+    if (showFxRate) {
+      subtitleLines.add(
+        Text(
+          '汇率: ${txn.fxRateToCny!.toStringAsFixed(4)} ($currencyCode→CNY)',
+          style: subtitleStyle,
+        ),
+      );
+    }
+    if (showAmountCny) {
+      subtitleLines.add(
+        Text(
+          '折算人民币金额: ${formatCurrency(txn.amountCny!, 'CNY')}',
+          style: subtitleStyle,
+        ),
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: ListTile(
         leading: Icon(icon, color: color),
         title: Text(title),
-        subtitle: Text(DateFormat('yyyy-MM-dd').format(txn.date)),
-        trailing: Text(formattedAmount, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)), // 使用 formattedAmount
-        onTap: () => _showEditTransactionDialog(context, ref, txn, currencyCode), 
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: subtitleLines,
+        ),
+        trailing: Text(formattedAmount, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
+        onTap: () => _showEditTransactionDialog(context, ref, txn, currencyCode),
         onLongPress: () => _showDeleteConfirmation(context, ref, txn),
       ),
     );
@@ -167,14 +198,34 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
   void _showInvestWithdrawDialog(
       BuildContext context, WidgetRef ref, Asset asset) {
     final amountController = TextEditingController();
+    final fxRateController = TextEditingController();
+    final cnyAmountController = TextEditingController();
     final List<bool> isSelected = [true, false];
     DateTime selectedDate = DateTime.now();
+    bool rateRequested = false;
 
     showDialog(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setState) {
+            if (asset.currency != 'CNY' && !rateRequested) {
+              rateRequested = true;
+              ExchangeRateService()
+                  .getRate(asset.currency, 'CNY')
+                  .then((rate) {
+                if (dialogContext.mounted && fxRateController.text.isEmpty) {
+                  setState(() {
+                    fxRateController.text = rate.toStringAsFixed(4);
+                    final amount = double.tryParse(amountController.text);
+                    if (amount != null) {
+                      cnyAmountController.text =
+                          (amount * rate).toStringAsFixed(2);
+                    }
+                  });
+                }
+              });
+            }
             return AlertDialog(
               title: const Text('资金操作'),
               content: /* ... 内容不变 ... */ Column(
@@ -191,6 +242,33 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   TextField(controller: amountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: '金额', prefixText: getCurrencySymbol(asset.currency))),
+                  if (asset.currency != 'CNY') ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: fxRateController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: '汇率（资产币种→CNY，可选）',
+                        helperText: '留空将尝试自动拉取或按金额推算',
+                      ),
+                      onChanged: (_) {
+                        final amount = double.tryParse(amountController.text);
+                        final rate = double.tryParse(fxRateController.text);
+                        if (amount != null && rate != null) {
+                          cnyAmountController.text = (amount * rate).toStringAsFixed(2);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: cnyAmountController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: '折算人民币金额（可选）',
+                        helperText: '填写后便于汇率盈亏拆分',
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -222,16 +300,31 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
                            }
                            return;
                       }
-                      
-                      final syncService = ref.read(syncServiceProvider); 
-                      
+
+                      final syncService = ref.read(syncServiceProvider);
+
+                      double? fxRate;
+                      double? amountCny;
+                      if (asset.currency != 'CNY') {
+                        fxRate = double.tryParse(fxRateController.text);
+                        amountCny = double.tryParse(cnyAmountController.text);
+                        if (fxRate == null && amountCny != null && amount > 0) {
+                          fxRate = amountCny / amount;
+                        }
+                        if (amountCny == null && fxRate != null) {
+                          amountCny = amount * fxRate;
+                        }
+                      }
+
                       // 1. 创建新对象
                       final newTxn = Transaction()
                         ..amount = amount
                         ..date = selectedDate
-                        ..createdAt = DateTime.now() 
+                        ..createdAt = DateTime.now()
                         ..type = isSelected[0] ? TransactionType.invest : TransactionType.withdraw
-                        ..assetSupabaseId = asset.supabaseId;
+                        ..assetSupabaseId = asset.supabaseId
+                        ..fxRateToCny = fxRate
+                        ..amountCny = amountCny;
                       
                       // 2. (!!! 关键修复：先在本地写入以获取 Isar ID !!!)
                       final isar = DatabaseService().isar;
@@ -362,8 +455,12 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
 
   // (*** 这是修复后的 _showEditTransactionDialog ***)
   void _showEditTransactionDialog(
-      BuildContext context, WidgetRef ref, Transaction txn, String currencyCode) { 
+      BuildContext context, WidgetRef ref, Transaction txn, String currencyCode) {
     final amountController = TextEditingController(text: txn.amount.toString());
+    final fxRateController =
+        TextEditingController(text: txn.fxRateToCny?.toStringAsFixed(4) ?? '');
+    final cnyAmountController =
+        TextEditingController(text: txn.amountCny?.toStringAsFixed(2) ?? '');
     DateTime selectedDate = txn.date;
     final List<bool> isSelected = [
       txn.type == TransactionType.invest,
@@ -401,9 +498,35 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: InputDecoration(
                       labelText: txn.type == TransactionType.updateValue ? '总资产金额' : '金额',
-                      prefixText: getCurrencySymbol(currencyCode), 
+                      prefixText: getCurrencySymbol(currencyCode),
                     ),
                   ),
+                  if (txn.type != TransactionType.updateValue && currencyCode != 'CNY') ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: fxRateController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: '汇率（资产币种→CNY，可选）',
+                        helperText: '留空将尝试自动推算',
+                      ),
+                      onChanged: (_) {
+                        final amount = double.tryParse(amountController.text);
+                        final rate = double.tryParse(fxRateController.text);
+                        if (amount != null && rate != null) {
+                          cnyAmountController.text = (amount * rate).toStringAsFixed(2);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: cnyAmountController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: '折算人民币金额（可选）',
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -451,6 +574,21 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
                       txn.date = selectedDate;
                       if (txn.type != TransactionType.updateValue) {
                         txn.type = isSelected[0] ? TransactionType.invest : TransactionType.withdraw;
+                        if (currencyCode != 'CNY') {
+                          double? fxRate = double.tryParse(fxRateController.text);
+                          double? amountCny = double.tryParse(cnyAmountController.text);
+                          if (fxRate == null && amountCny != null && amount > 0) {
+                            fxRate = amountCny / amount;
+                          }
+                          if (amountCny == null && fxRate != null) {
+                            amountCny = amount * fxRate;
+                          }
+                          txn.fxRateToCny = fxRate;
+                          txn.amountCny = amountCny;
+                        } else {
+                          txn.fxRateToCny = null;
+                          txn.amountCny = null;
+                        }
                       }
                       
                       // 2. 使用 SyncService 保存 (它已经有 Isar ID, 所以不需要本地保存)

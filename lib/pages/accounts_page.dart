@@ -62,8 +62,8 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
           ),
           IconButton(
             icon: const Icon(Icons.add),
-            tooltip: '添加账户或美元子账户',
-            onPressed: () => _showAddAccountOptions(context, ref),
+            tooltip: '添加账户',
+            onPressed: () => _showAddAccountDialog(context, ref),
           ),
         ],
       ),
@@ -160,6 +160,7 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     final totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final profitRate = (performance['profitRate'] ?? 0.0) as double;
     final annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
+    final fxProfit = (performance['fxProfit'] ?? performance['fxProfitCny'] ?? 0.0) as double;
 
     Color profitColor = totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade400;
     if (totalProfit == 0) {
@@ -202,6 +203,15 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
                       const SizedBox(height: 12),
                       _buildSummaryMetric('累计收益', formatValue(totalProfit, 'currency'), context,
                           valueColor: _isAmountVisible ? profitColor : null),
+                      const SizedBox(height: 12),
+                      _buildSummaryMetric(
+                        '其中汇率影响',
+                        formatValue(fxProfit, 'currency'),
+                        context,
+                        valueColor: _isAmountVisible
+                            ? (fxProfit >= 0 ? Colors.red.shade400 : Colors.green.shade400)
+                            : null,
+                      ),
                     ],
                   ),
                 ),
@@ -248,39 +258,6 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     );
   }
 
-  void _showAddAccountOptions(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet(
-      context: context,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Wrap(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.account_balance_wallet_outlined),
-                title: const Text('新增账户（默认人民币）'),
-                subtitle: const Text('适合日常人民币资金账户'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _showAddAccountDialog(context, ref);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.attach_money_outlined),
-                title: const Text('新增 USD 子账户'),
-                subtitle: const Text('用于美元理财/基金，便于拆分汇率影响'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _showAddAccountDialog(context, ref,
-                      initialCurrency: 'USD', suggestedSuffix: ' (USD)');
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   void _showAddAccountDialog(
     BuildContext context,
     WidgetRef ref, {
@@ -289,7 +266,7 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     String? initialName,
   }) {
     final TextEditingController nameController = TextEditingController(
-      text: initialName ?? (suggestedSuffix != null ? '美元账户$suggestedSuffix' : ''),
+      text: initialName ?? '',
     );
     final TextEditingController descriptionController = TextEditingController();
     String selectedCurrency = initialCurrency;
@@ -361,8 +338,7 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
                         ..name = name
                         ..description = descriptionController.text.trim()
                         ..createdAt = DateTime.now()
-                        ..currency = selectedCurrency
-                        ..supabaseId = DatabaseService.generateLocalSupabaseId();
+                        ..currency = selectedCurrency;
 
                       final isar = DatabaseService().isar;
                       await isar.writeTxn(() async {
@@ -397,20 +373,6 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
       builder: (sheetContext) {
         return Wrap(
           children: <Widget>[
-            ListTile(
-              leading: const Icon(Icons.currency_exchange_outlined),
-              title: const Text('新增外币子账户'),
-              subtitle: const Text('为该银行新增 USD / 其他外币子账户'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _showAddAccountDialog(
-                  context,
-                  ref,
-                  initialCurrency: 'USD',
-                  initialName: '${account.name} (USD)',
-                );
-              },
-            ),
             ListTile(
               leading: const Icon(Icons.edit_outlined),
               title: const Text('编辑账户'),

@@ -23,9 +23,15 @@ class Transaction {
 
   late DateTime date;
 
-  late double amount; 
-  double? shares;   
-  double? price;    
+  late double amount;
+  double? shares;
+  double? price;
+
+  /// 资产交易发生时的资产币种 -> 人民币汇率
+  double? fxRateToCny;
+
+  /// 该笔交易折算成人民币的金额（买入为正，卖出为负）
+  double? amountCny;
 
   String? note; 
 
@@ -64,6 +70,9 @@ class Transaction {
     tx.shares = (json['quantity'] as num?)?.toDouble(); // 修正：从 'quantity' 字段读取
     tx.price = (json['price'] as num?)?.toDouble();
     tx.note = json['notes']; // 修正：从 'notes' 字段读取
+
+    tx.fxRateToCny = (json['fx_rate_to_cny'] as num?)?.toDouble();
+    tx.amountCny = (json['amount_cny'] as num?)?.toDouble();
     
     tx.assetSupabaseId = json['asset_id']; // 关联 Asset 的 UUID
     return tx;
@@ -79,6 +88,13 @@ class Transaction {
     json['asset_id'] = assetSupabaseId;
     json['created_at'] = createdAt.toIso8601String();
     json['updated_at'] = (updatedAt ?? DateTime.now()).toIso8601String();
+
+    if (fxRateToCny != null) {
+      json['fx_rate_to_cny'] = fxRateToCny;
+    }
+    if (amountCny != null) {
+      json['amount_cny'] = amountCny;
+    }
     
     // 可选字段 - 只在有值时才添加，避免null值问题
     if (shares != null) {

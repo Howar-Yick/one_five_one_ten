@@ -182,6 +182,13 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
     final totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final profitRate = (performance['profitRate'] ?? 0.0) as double;
     final annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
+    final double? totalProfitCny = performance['totalProfitCny'] as double?;
+    final double? netInvestmentCny = performance['netInvestmentCny'] as double?;
+    final double? fxProfitCny = performance['fxProfitCny'] as double?;
+    final double? currentValueCny = performance['currentValueCny'] as double?;
+    final double? cnyProfitRate = (totalProfitCny != null && netInvestmentCny != null && netInvestmentCny != 0)
+        ? totalProfitCny / netInvestmentCny
+        : null;
     Color profitColor =
         totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade400;
     if (totalProfit == 0) {
@@ -240,6 +247,38 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                   ? Colors.red.shade400
                   : Colors.green.shade400,
             ),
+            if (account.currency != 'CNY' && totalProfitCny != null) ...[
+              const Divider(height: 24),
+              _buildMetricRow(
+                context,
+                '总值（CNY）:',
+                formatCurrency(currentValueCny ?? 0, 'CNY'),
+              ),
+              _buildMetricRow(
+                context,
+                '净投入（CNY）:',
+                formatCurrency(netInvestmentCny ?? 0, 'CNY'),
+              ),
+              _buildMetricRow(
+                context,
+                '总收益（CNY）:',
+                cnyProfitRate != null
+                    ? '${formatCurrency(totalProfitCny, 'CNY')} (${percentFormat.format(cnyProfitRate)})'
+                    : formatCurrency(totalProfitCny, 'CNY'),
+                color: totalProfitCny >= 0
+                    ? Colors.red.shade400
+                    : Colors.green.shade400,
+              ),
+              if (fxProfitCny != null)
+                _buildMetricRow(
+                  context,
+                  '其中汇率影响:',
+                  formatCurrency(fxProfitCny, 'CNY'),
+                  color: fxProfitCny >= 0
+                      ? Colors.red.shade400
+                      : Colors.green.shade400,
+                ),
+            ],
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
