@@ -105,16 +105,24 @@ class SnapshotHistoryPage extends ConsumerWidget {
           children: subtitleLines,
         ),
         trailing: Text(DateFormat('yyyy-MM-dd').format(snapshot.date)),
-        onTap: () => _showEditSnapshotDialog(context, ref, snapshot),
+        onTap: () =>
+            _showEditSnapshotDialog(context, ref, snapshot, currencyCode),
         onLongPress: () => _showDeleteConfirmation(context, ref, snapshot),
       ),
     );
   }
 
   // 3. (*** 关键修复：编辑逻辑 ***)
-  void _showEditSnapshotDialog(BuildContext context, WidgetRef ref, PositionSnapshot snapshot) {
+  void _showEditSnapshotDialog(BuildContext context, WidgetRef ref,
+      PositionSnapshot snapshot, String currencyCode) {
     final sharesController = TextEditingController(text: snapshot.totalShares.toString());
     final costController = TextEditingController(text: snapshot.averageCost.toString());
+    final fxRateController =
+        TextEditingController(text: snapshot.fxRateToCny?.toStringAsFixed(4) ?? '');
+    final costCnyController = TextEditingController(
+        text: snapshot.costBasisCny != null
+            ? snapshot.costBasisCny!.toStringAsFixed(2)
+            : '');
     DateTime selectedDate = snapshot.date;
 
     showDialog(
@@ -129,7 +137,44 @@ class SnapshotHistoryPage extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(controller: sharesController, decoration: const InputDecoration(labelText: '总份额')),
-                  TextField(controller: costController, decoration: const InputDecoration(labelText: '单位成本')),
+                  TextField(
+                    controller: costController,
+                    decoration: InputDecoration(
+                      labelText: '单位成本',
+                      prefixText: getCurrencySymbol(currencyCode),
+                    ),
+                  ),
+                  if (currencyCode != 'CNY') ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: fxRateController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: '汇率（资产币种→CNY）',
+                        helperText: '用于记录该快照的人民币成本',
+                      ),
+                      onChanged: (_) {
+                        final cost = double.tryParse(costController.text);
+                        final shares = double.tryParse(sharesController.text);
+                        final fx = double.tryParse(fxRateController.text);
+                        if (cost != null && shares != null && fx != null) {
+                          costCnyController.text =
+                              (cost * shares * fx).toStringAsFixed(2);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: costCnyController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: '人民币成本（可选）',
+                        helperText: '空白时会用汇率自动计算',
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -150,24 +195,38 @@ class SnapshotHistoryPage extends ConsumerWidget {
                 TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
                 TextButton(
                   onPressed: () async {
-                    final shares = double.tryParse(sharesController.text);
-                    final cost = double.tryParse(costController.text);
-                    if (shares != null && cost != null) {
-                      
-                      // 4. (修改) 更新本地对象
-                      snapshot.totalShares = shares;
-                      snapshot.averageCost = cost;
-                      snapshot.date = selectedDate;
+                      final shares = double.tryParse(sharesController.text);
+                      final cost = double.tryParse(costController.text);
+                      if (shares != null && cost != null) {
+                        double? fxRate;
+                        double? costCny;
 
-                      // 5. (关键) 使用 SyncService 保存更新
-                      final syncService = ref.read(syncServiceProvider);
-                      await syncService.savePositionSnapshot(snapshot); 
-                      // (旧的 isar.writeTxn 已删除)
-                      
-                      ref.invalidate(shareAssetPerformanceProvider(assetId));
-                      // (invalidate snapshotHistoryProvider 不再需要，因为它是 Stream)
-                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
-                    }
+                        if (currencyCode != 'CNY') {
+                          fxRate = double.tryParse(fxRateController.text);
+                          costCny = double.tryParse(costCnyController.text);
+                          if (costCny == null && fxRate != null) {
+                            costCny = shares * cost * fxRate;
+                          } else if (fxRate == null && costCny != null && shares > 0 && cost > 0) {
+                            fxRate = costCny / (shares * cost);
+                          }
+                        }
+
+                        // 4. (修改) 更新本地对象
+                        snapshot.totalShares = shares;
+                        snapshot.averageCost = cost;
+                        snapshot.fxRateToCny = fxRate;
+                        snapshot.costBasisCny = costCny;
+                        snapshot.date = selectedDate;
+
+                        // 5. (关键) 使用 SyncService 保存更新
+                        final syncService = ref.read(syncServiceProvider);
+                        await syncService.savePositionSnapshot(snapshot);
+                        // (旧的 isar.writeTxn 已删除)
+
+                        ref.invalidate(shareAssetPerformanceProvider(assetId));
+                        // (invalidate snapshotHistoryProvider 不再需要，因为它是 Stream)
+                        if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                      }
                   },
                   child: const Text('保存修改'),
                 ),
@@ -184,6 +243,8 @@ class SnapshotHistoryPage extends ConsumerWidget {
     // (这个函数与 share_asset_detail_page 中的完全相同)
     final sharesController = TextEditingController();
     final costController = TextEditingController();
+    final fxRateController = TextEditingController();
+    final costCnyController = TextEditingController();
     final priceController = TextEditingController(text: asset.latestPrice > 0 ? asset.latestPrice.toString() : '');
     DateTime selectedDate = DateTime.now();
 
@@ -199,8 +260,53 @@ class SnapshotHistoryPage extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(controller: sharesController, decoration: const InputDecoration(labelText: '最新总份额'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                  TextField(controller: costController, decoration: const InputDecoration(labelText: '最新单位成本'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                  TextField(controller: priceController, decoration: const InputDecoration(labelText: '最新价格 (可选)'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                  TextField(
+                    controller: costController,
+                    decoration: InputDecoration(
+                      labelText: '最新单位成本',
+                      prefixText: getCurrencySymbol(asset.currency),
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  TextField(
+                    controller: priceController,
+                    decoration: InputDecoration(
+                      labelText: '最新价格 (可选)',
+                      prefixText: getCurrencySymbol(asset.currency),
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  if (asset.currency != 'CNY') ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: fxRateController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: '汇率（资产币种→CNY，可选）',
+                        helperText: '便于记录人民币成本',
+                      ),
+                      onChanged: (_) {
+                        final cost = double.tryParse(costController.text);
+                        final shares = double.tryParse(sharesController.text);
+                        final fx = double.tryParse(fxRateController.text);
+                        if (cost != null && shares != null && fx != null) {
+                          costCnyController.text =
+                              (cost * shares * fx).toStringAsFixed(2);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: costCnyController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: '人民币成本（可选）',
+                        helperText: '留空时将根据汇率计算',
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -227,12 +333,24 @@ class SnapshotHistoryPage extends ConsumerWidget {
 
                     if (shares != null && cost != null) {
                       final syncService = ref.read(syncServiceProvider); // 7. 获取服务
-                      
+
                       bool assetUpdated = false;
                       if (priceText.isNotEmpty) {
                         asset.latestPrice = double.tryParse(priceText) ?? asset.latestPrice;
                         asset.priceUpdateDate = DateTime.now();
                         assetUpdated = true;
+                      }
+
+                      double? fxRate;
+                      double? costCny;
+                      if (asset.currency != 'CNY') {
+                        fxRate = double.tryParse(fxRateController.text);
+                        costCny = double.tryParse(costCnyController.text);
+                        if (costCny == null && fxRate != null) {
+                          costCny = shares * cost * fxRate;
+                        } else if (fxRate == null && costCny != null && shares > 0 && cost > 0) {
+                          fxRate = costCny / (shares * cost);
+                        }
                       }
 
                       final newSnapshot = PositionSnapshot()
@@ -241,11 +359,13 @@ class SnapshotHistoryPage extends ConsumerWidget {
                         ..date = selectedDate
                         ..createdAt = DateTime.now() // (设置 createdAt)
                         // 8. (关键) 设置 SUPABASE ID 关系
-                        ..assetSupabaseId = asset.supabaseId; 
-                      
+                        ..assetSupabaseId = asset.supabaseId
+                        ..fxRateToCny = fxRate
+                        ..costBasisCny = costCny;
+
                       // 9. (关键) 保存快照
                       await syncService.savePositionSnapshot(newSnapshot);
-                      
+
                       if(assetUpdated) {
                         await syncService.saveAsset(asset); // 同时保存资产价格更新
                       }
