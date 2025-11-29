@@ -15,7 +15,7 @@ extension GetPositionSnapshotCollection on Isar {
 
 const PositionSnapshotSchema = CollectionSchema(
   name: r'PositionSnapshot',
-  id: 4249771063589786325,
+  id: 5854316806528970880,
   properties: {
     r'assetSupabaseId': PropertySchema(
       id: 0,
@@ -51,6 +51,16 @@ const PositionSnapshotSchema = CollectionSchema(
       id: 6,
       name: r'updatedAt',
       type: IsarType.dateTime,
+    ),
+    r'fxRateToCny': PropertySchema(
+      id: 7,
+      name: r'fxRateToCny',
+      type: IsarType.double,
+    ),
+    r'costBasisCny': PropertySchema(
+      id: 8,
+      name: r'costBasisCny',
+      type: IsarType.double,
     )
   },
   estimateSize: _positionSnapshotEstimateSize,
@@ -128,6 +138,8 @@ void _positionSnapshotSerialize(
   writer.writeString(offsets[4], object.supabaseId);
   writer.writeDouble(offsets[5], object.totalShares);
   writer.writeDateTime(offsets[6], object.updatedAt);
+  writer.writeDouble(offsets[7], object.fxRateToCny);
+  writer.writeDouble(offsets[8], object.costBasisCny);
 }
 
 PositionSnapshot _positionSnapshotDeserialize(
@@ -145,6 +157,8 @@ PositionSnapshot _positionSnapshotDeserialize(
   object.supabaseId = reader.readStringOrNull(offsets[4]);
   object.totalShares = reader.readDouble(offsets[5]);
   object.updatedAt = reader.readDateTimeOrNull(offsets[6]);
+  object.fxRateToCny = reader.readDoubleOrNull(offsets[7]);
+  object.costBasisCny = reader.readDoubleOrNull(offsets[8]);
   return object;
 }
 
@@ -169,6 +183,10 @@ P _positionSnapshotDeserializeProp<P>(
       return (reader.readDouble(offset)) as P;
     case 6:
       return (reader.readDateTimeOrNull(offset)) as P;
+    case 7:
+      return (reader.readDoubleOrNull(offset)) as P;
+    case 8:
+      return (reader.readDoubleOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -1540,6 +1558,13 @@ extension PositionSnapshotQueryProperty
     });
   }
 
+  QueryBuilder<PositionSnapshot, double?, QQueryOperations>
+      costBasisCnyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'costBasisCny');
+    });
+  }
+
   QueryBuilder<PositionSnapshot, DateTime, QQueryOperations>
       createdAtProperty() {
     return QueryBuilder.apply(this, (query) {
@@ -1571,6 +1596,13 @@ extension PositionSnapshotQueryProperty
       updatedAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'updatedAt');
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, double?, QQueryOperations>
+      fxRateToCnyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'fxRateToCny');
     });
   }
 }

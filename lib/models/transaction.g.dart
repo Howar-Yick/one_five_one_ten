@@ -15,7 +15,7 @@ extension GetTransactionCollection on Isar {
 
 const TransactionSchema = CollectionSchema(
   name: r'Transaction',
-  id: 5320225499417954855,
+  id: 8916914379526931471,
   properties: {
     r'amount': PropertySchema(
       id: 0,
@@ -67,6 +67,16 @@ const TransactionSchema = CollectionSchema(
       id: 9,
       name: r'updatedAt',
       type: IsarType.dateTime,
+    ),
+    r'fxRateToCny': PropertySchema(
+      id: 10,
+      name: r'fxRateToCny',
+      type: IsarType.double,
+    ),
+    r'amountCny': PropertySchema(
+      id: 11,
+      name: r'amountCny',
+      type: IsarType.double,
     )
   },
   estimateSize: _transactionEstimateSize,
@@ -154,6 +164,8 @@ void _transactionSerialize(
   writer.writeString(offsets[7], object.supabaseId);
   writer.writeString(offsets[8], object.type.name);
   writer.writeDateTime(offsets[9], object.updatedAt);
+  writer.writeDouble(offsets[10], object.fxRateToCny);
+  writer.writeDouble(offsets[11], object.amountCny);
 }
 
 Transaction _transactionDeserialize(
@@ -176,6 +188,8 @@ Transaction _transactionDeserialize(
       _TransactiontypeValueEnumMap[reader.readStringOrNull(offsets[8])] ??
           TransactionType.invest;
   object.updatedAt = reader.readDateTimeOrNull(offsets[9]);
+  object.fxRateToCny = reader.readDoubleOrNull(offsets[10]);
+  object.amountCny = reader.readDoubleOrNull(offsets[11]);
   return object;
 }
 
@@ -207,6 +221,10 @@ P _transactionDeserializeProp<P>(
           TransactionType.invest) as P;
     case 9:
       return (reader.readDateTimeOrNull(offset)) as P;
+    case 10:
+      return (reader.readDoubleOrNull(offset)) as P;
+    case 11:
+      return (reader.readDoubleOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -2008,6 +2026,12 @@ extension TransactionQueryProperty
     });
   }
 
+  QueryBuilder<Transaction, double?, QQueryOperations> amountCnyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'amountCny');
+    });
+  }
+
   QueryBuilder<Transaction, String?, QQueryOperations>
       assetSupabaseIdProperty() {
     return QueryBuilder.apply(this, (query) {
@@ -2024,6 +2048,12 @@ extension TransactionQueryProperty
   QueryBuilder<Transaction, DateTime, QQueryOperations> dateProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'date');
+    });
+  }
+
+  QueryBuilder<Transaction, double?, QQueryOperations> fxRateToCnyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'fxRateToCny');
     });
   }
 
