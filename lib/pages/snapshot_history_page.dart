@@ -72,7 +72,10 @@ class SnapshotHistoryPage extends ConsumerWidget {
     ];
 
     final fx = snapshot.fxRateToCny;
-    final costBasisCny = snapshot.costBasisCny;
+    final costBasisCny = snapshot.costBasisCny ??
+        (fx != null
+            ? snapshot.averageCost * snapshot.totalShares * fx
+            : null); // 兼容旧记录缺少 costBasisCny 的情况
     final hasFx = currencyCode != 'CNY' && fx != null && fx > 0 && costBasisCny != null;
 
     final fxTextStyle = Theme.of(context)

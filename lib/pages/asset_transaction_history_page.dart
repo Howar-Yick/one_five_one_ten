@@ -124,7 +124,10 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
     ];
 
     final fx = txn.fxRateToCny;
-    final amountCny = txn.amountCny;
+    final amountCny = txn.amountCny ??
+        (fx != null
+            ? txn.amount * fx
+            : null); // 旧数据可能缺少 amountCny，按汇率回推一次
     final isNonCnyAsset = currencyCode.toUpperCase() != 'CNY';
     final hasFx =
         isNonCnyAsset && fx != null && fx > 0 && amountCny != null;
