@@ -125,6 +125,7 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
     final fx = txn.fxRateToCny;
     final amountCny = txn.amountCny;
     final hasFx = fx != null && fx > 0 && amountCny != null;
+<<<<<<< HEAD
     final subtitleStyle = Theme.of(context)
         .textTheme
         .bodySmall
@@ -140,6 +141,13 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
           '折算人民币金额: ${formatCurrency(amountCny!, 'CNY')}',
           style: subtitleStyle,
         ),
+=======
+
+    if (currencyCode != 'CNY' && hasFx) {
+      subtitleLines.addAll([
+        Text('汇率: ${fx!.toStringAsFixed(4)} ($currencyCode→CNY)'),
+        Text('折算人民币金额: ${formatCurrency(amountCny!, 'CNY')}'),
+>>>>>>> 199927a3d76e0003dd050ec38d80cb4c1f74619a
       ]);
     }
 

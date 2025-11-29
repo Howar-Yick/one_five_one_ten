@@ -81,6 +81,7 @@ class SnapshotHistoryPage extends ConsumerWidget {
       Text('份额: ${snapshot.totalShares.toStringAsFixed(2)}'),
     ];
 
+<<<<<<< HEAD
     if (currencyCode != 'CNY') {
       if (hasFx) {
         subtitleLines.add(
@@ -88,14 +89,29 @@ class SnapshotHistoryPage extends ConsumerWidget {
             '成本汇率: ${fx.toStringAsFixed(4)} ($currencyCode→CNY)',
             style: subtitleStyle,
           ),
+=======
+    final fx = snapshot.fxRateToCny;
+    final costCny = snapshot.costBasisCny;
+    final hasFx = fx != null && fx > 0;
+    final hasCostCny = costCny != null;
+
+    if (currencyCode != 'CNY' && (hasFx || hasCostCny)) {
+      if (hasFx) {
+        subtitleLines.add(
+          Text('成本汇率: ${fx!.toStringAsFixed(4)} ($currencyCode→CNY)'),
+>>>>>>> 199927a3d76e0003dd050ec38d80cb4c1f74619a
         );
       }
       if (hasCostCny) {
         subtitleLines.add(
+<<<<<<< HEAD
           Text(
             '人民币成本: ${formatCurrency(costCny!, 'CNY')}',
             style: subtitleStyle,
           ),
+=======
+          Text('人民币成本: ${formatCurrency(costCny!, 'CNY')}'),
+>>>>>>> 199927a3d76e0003dd050ec38d80cb4c1f74619a
         );
       }
     }
