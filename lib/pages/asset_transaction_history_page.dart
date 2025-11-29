@@ -125,8 +125,9 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
 
     final fx = txn.fxRateToCny;
     final amountCny = txn.amountCny;
+    final isNonCnyAsset = currencyCode.toUpperCase() != 'CNY';
     final hasFx =
-        currencyCode != 'CNY' && fx != null && fx > 0 && amountCny != null;
+        isNonCnyAsset && fx != null && fx > 0 && amountCny != null;
 
     final fxTextStyle = Theme.of(context)
         .textTheme
@@ -156,6 +157,7 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: subtitleLines,
         ),
+        isThreeLine: hasFx,
         trailing: Text(formattedAmount, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
         onTap: () => _showEditTransactionDialog(context, ref, txn, currencyCode),
         onLongPress: () => _showDeleteConfirmation(context, ref, txn),
