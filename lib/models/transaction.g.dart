@@ -37,6 +37,11 @@ const TransactionSchema = CollectionSchema(
       name: r'date',
       type: IsarType.dateTime,
     ),
+    r'fxRateToCny': PropertySchema(
+      id: 10,
+      name: r'fxRateToCny',
+      type: IsarType.double,
+    ),
     r'note': PropertySchema(
       id: 4,
       name: r'note',
@@ -50,6 +55,11 @@ const TransactionSchema = CollectionSchema(
     r'shares': PropertySchema(
       id: 6,
       name: r'shares',
+      type: IsarType.double,
+    ),
+    r'amountCny': PropertySchema(
+      id: 11,
+      name: r'amountCny',
       type: IsarType.double,
     ),
     r'supabaseId': PropertySchema(
@@ -148,12 +158,14 @@ void _transactionSerialize(
   writer.writeString(offsets[1], object.assetSupabaseId);
   writer.writeDateTime(offsets[2], object.createdAt);
   writer.writeDateTime(offsets[3], object.date);
-  writer.writeString(offsets[4], object.note);
-  writer.writeDouble(offsets[5], object.price);
-  writer.writeDouble(offsets[6], object.shares);
-  writer.writeString(offsets[7], object.supabaseId);
-  writer.writeString(offsets[8], object.type.name);
-  writer.writeDateTime(offsets[9], object.updatedAt);
+  writer.writeDouble(offsets[4], object.fxRateToCny);
+  writer.writeString(offsets[5], object.note);
+  writer.writeDouble(offsets[6], object.price);
+  writer.writeDouble(offsets[7], object.shares);
+  writer.writeDouble(offsets[8], object.amountCny);
+  writer.writeString(offsets[9], object.supabaseId);
+  writer.writeString(offsets[10], object.type.name);
+  writer.writeDateTime(offsets[11], object.updatedAt);
 }
 
 Transaction _transactionDeserialize(
@@ -168,14 +180,16 @@ Transaction _transactionDeserialize(
   object.createdAt = reader.readDateTime(offsets[2]);
   object.date = reader.readDateTime(offsets[3]);
   object.id = id;
-  object.note = reader.readStringOrNull(offsets[4]);
-  object.price = reader.readDoubleOrNull(offsets[5]);
-  object.shares = reader.readDoubleOrNull(offsets[6]);
-  object.supabaseId = reader.readStringOrNull(offsets[7]);
+  object.fxRateToCny = reader.readDoubleOrNull(offsets[4]);
+  object.note = reader.readStringOrNull(offsets[5]);
+  object.price = reader.readDoubleOrNull(offsets[6]);
+  object.shares = reader.readDoubleOrNull(offsets[7]);
+  object.amountCny = reader.readDoubleOrNull(offsets[8]);
+  object.supabaseId = reader.readStringOrNull(offsets[9]);
   object.type =
-      _TransactiontypeValueEnumMap[reader.readStringOrNull(offsets[8])] ??
+      _TransactiontypeValueEnumMap[reader.readStringOrNull(offsets[10])] ??
           TransactionType.invest;
-  object.updatedAt = reader.readDateTimeOrNull(offsets[9]);
+  object.updatedAt = reader.readDateTimeOrNull(offsets[11]);
   return object;
 }
 
@@ -207,6 +221,10 @@ P _transactionDeserializeProp<P>(
           TransactionType.invest) as P;
     case 9:
       return (reader.readDateTimeOrNull(offset)) as P;
+    case 10:
+      return (reader.readDoubleOrNull(offset)) as P;
+    case 11:
+      return (reader.readDoubleOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
