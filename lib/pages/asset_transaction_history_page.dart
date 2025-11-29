@@ -122,19 +122,30 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
       Text(DateFormat('yyyy-MM-dd').format(txn.date)),
     ];
 
-    final double? effectiveFxRate = txn.fxRateToCny ??
-        ((txn.amountCny != null && txn.amount != 0)
-            ? txn.amountCny! / txn.amount
-            : null);
+    final fxRateToCny = txn.fxRateToCny;
+    final amountCny = txn.amountCny;
+    final hasFx = currencyCode != 'CNY' &&
+        fxRateToCny != null &&
+        fxRateToCny > 0 &&
+        amountCny != null;
 
-    if (effectiveFxRate != null) {
+    if (hasFx) {
+      final subtitleStyle = Theme.of(context)
+          .textTheme
+          .bodySmall
+          ?.copyWith(color: Colors.grey);
+
       subtitleLines.add(
-        Text('汇率: ${effectiveFxRate.toStringAsFixed(4)} ($currencyCode→CNY)'),
+        Text(
+          '汇率: ${fxRateToCny!.toStringAsFixed(4)} ($currencyCode→CNY)',
+          style: subtitleStyle,
+        ),
       );
-    }
-    if (txn.amountCny != null) {
       subtitleLines.add(
-        Text('折算人民币金额: ${formatCurrency(txn.amountCny!, 'CNY')}'),
+        Text(
+          '折算人民币金额: ${formatCurrency(amountCny!, 'CNY')}',
+          style: subtitleStyle,
+        ),
       );
     }
 
