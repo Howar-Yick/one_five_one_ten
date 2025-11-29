@@ -44,9 +44,43 @@ class _AccountHistoryPoint {
   });
 }
 
+class FxBreakdown {
+  final double assetProfitCny;
+  final double fxProfitCny;
+  final double totalProfitCny;
+
+  FxBreakdown({
+    required this.assetProfitCny,
+    required this.fxProfitCny,
+  }) : totalProfitCny = assetProfitCny + fxProfitCny;
+}
+
 
 class CalculatorService {
   Isar get _isar => DatabaseService().isar;
+
+  FxBreakdown? _calculateFxBreakdown({
+    required double netForeign,
+    required double netCny,
+    required double currentValueForeign,
+    required double fxNow,
+  }) {
+    if (netForeign == 0 || netCny == 0) {
+      return null;
+    }
+
+    final avgFx = netCny / netForeign;
+    final valueCnyNoFx = currentValueForeign * avgFx;
+    final valueCnyReal = currentValueForeign * fxNow;
+
+    final assetProfitCny = valueCnyNoFx - netCny;
+    final fxProfitCny = valueCnyReal - valueCnyNoFx;
+
+    return FxBreakdown(
+      assetProfitCny: assetProfitCny,
+      fxProfitCny: fxProfitCny,
+    );
+  }
 
   // ... (calculateAccountPerformance, _buildAccountHistoryPoints, _ensureChartHasStart 等方法保持不变) ...
   Future<Map<String, dynamic>> calculateAccountPerformance(Account account) async {
@@ -154,7 +188,7 @@ class CalculatorService {
   }
 
   Future<Map<String, dynamic>> calculateShareAssetPerformance(Asset asset) async {
-    if (asset.supabaseId == null) return {'marketValue': 0.0, 'totalCost': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0, 'totalShares': 0.0, 'averageCost': 0.0, 'latestPrice': 0.0};
+    if (asset.supabaseId == null) return {'marketValue': 0.0, 'totalCost': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0, 'totalShares': 0.0, 'averageCost': 0.0, 'latestPrice': 0.0, 'marketValueCny': null, 'totalCostCny': null, 'totalProfitCny': null, 'assetProfitCny': null, 'fxProfitCny': null};
     
     final snapshots = await _isar.positionSnapshots
         .filter()
@@ -167,6 +201,8 @@ class CalculatorService {
         'marketValue': 0.0, 'totalCost': 0.0, 'totalProfit': 0.0,
         'profitRate': 0.0, 'annualizedReturn': 0.0,
         'totalShares': 0.0, 'averageCost': 0.0, 'latestPrice': 0.0,
+        'marketValueCny': null, 'totalCostCny': null, 'totalProfitCny': null,
+        'assetProfitCny': null, 'fxProfitCny': null,
       };
     }
 
@@ -195,6 +231,11 @@ class CalculatorService {
           'totalShares': 0.0,
           'averageCost': 0.0,
           'latestPrice': salePrice,
+          'marketValueCny': null,
+          'totalCostCny': null,
+          'totalProfitCny': null,
+          'assetProfitCny': null,
+          'fxProfitCny': null,
         };
       }
     }
@@ -239,7 +280,35 @@ class CalculatorService {
         profitRate = 0.0;
       }
     }
-    
+
+    double? marketValueCny;
+    double? totalCostCny;
+    double? totalProfitCny;
+    double? assetProfitCny;
+    double? fxProfitCny;
+
+    if (asset.currency != 'CNY') {
+      final fxNow = await ExchangeRateService().getRate(asset.currency, 'CNY');
+      marketValueCny = marketValue * fxNow;
+      totalCostCny = totalCost * fxNow;
+
+      final costBasisCny = latestSnapshot.costBasisCny;
+      final fxBreakdown = _calculateFxBreakdown(
+        netForeign: totalCost,
+        netCny: costBasisCny ?? 0,
+        currentValueForeign: marketValue,
+        fxNow: fxNow,
+      );
+
+      if (fxBreakdown != null) {
+        assetProfitCny = fxBreakdown.assetProfitCny;
+        fxProfitCny = fxBreakdown.fxProfitCny;
+        totalProfitCny = fxBreakdown.totalProfitCny;
+      } else {
+        totalProfitCny = totalProfit * fxNow;
+      }
+    }
+
     double annualizedReturn = 0.0;
     if (snapshots.length >= 1) {
       final dates = <DateTime>[];
@@ -287,6 +356,11 @@ class CalculatorService {
       'totalShares': totalShares,
       'averageCost': averageCost,
       'latestPrice': latestPrice,
+      'marketValueCny': marketValueCny,
+      'totalCostCny': totalCostCny,
+      'totalProfitCny': totalProfitCny,
+      'assetProfitCny': assetProfitCny,
+      'fxProfitCny': fxProfitCny,
     };
   }
   
@@ -481,18 +555,20 @@ class CalculatorService {
     double? netInvestmentCny;
     if (asset.currency != 'CNY') {
       final fxNow = await ExchangeRateService().getRate(asset.currency, 'CNY');
-      final effectiveNetForeign = netForeign == 0 ? null : netForeign;
-      final effectiveNetCny = netCny == 0 ? null : netCny;
-      if (effectiveNetForeign != null && effectiveNetCny != null) {
-        final avgFx = effectiveNetCny / effectiveNetForeign;
-        final valueCnyNoFx = currentValue * avgFx;
-        currentValueCny = currentValue * fxNow;
-        assetProfitCny = valueCnyNoFx - effectiveNetCny;
-        fxProfitCny = currentValueCny - valueCnyNoFx;
-        totalProfitCny = assetProfitCny + fxProfitCny;
-        netInvestmentCny = effectiveNetCny;
+      currentValueCny = currentValue * fxNow;
+      final fxBreakdown = _calculateFxBreakdown(
+        netForeign: netForeign,
+        netCny: netCny,
+        currentValueForeign: currentValue,
+        fxNow: fxNow,
+      );
+
+      if (fxBreakdown != null) {
+        assetProfitCny = fxBreakdown.assetProfitCny;
+        fxProfitCny = fxBreakdown.fxProfitCny;
+        totalProfitCny = fxBreakdown.totalProfitCny;
+        netInvestmentCny = netCny;
       } else {
-        currentValueCny = currentValue * fxNow;
         totalProfitCny = totalProfit * fxNow;
         netInvestmentCny = netInvestment * fxNow;
       }

@@ -625,6 +625,12 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
     final double totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final double profitRate = (performance['profitRate'] ?? 0.0) as double;
     final double annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
+    final double? totalProfitCny = performance['totalProfitCny'] as double?;
+    final double? fxProfitCny = performance['fxProfitCny'] as double?;
+    final double? totalCostCny = performance['totalCostCny'] as double?;
+    final double? cnyProfitRate = (totalProfitCny != null && totalCostCny != null && totalCostCny != 0)
+        ? totalProfitCny / totalCostCny
+        : null;
     final percentFormat =
         NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
     Color profitColor =
@@ -649,13 +655,35 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                color: profitColor,
             ),
             _buildMetricRow(
-              context, 
+              context,
               '年化收益率:',
               percentFormat.format(annualizedReturn),
-              color: annualizedReturn > 0 
+              color: annualizedReturn > 0
                   ? Colors.red.shade400
                   : Colors.green.shade400,
             ),
+            if (currencyCode != 'CNY' && totalProfitCny != null) ...[
+              const Divider(height: 24),
+              _buildMetricRow(
+                context,
+                '总收益（CNY）:',
+                cnyProfitRate != null
+                    ? '${formatCurrency(totalProfitCny, 'CNY')} (${percentFormat.format(cnyProfitRate)})'
+                    : formatCurrency(totalProfitCny, 'CNY'),
+                color: totalProfitCny >= 0
+                    ? Colors.red.shade400
+                    : Colors.green.shade400,
+              ),
+              if (fxProfitCny != null)
+                _buildMetricRow(
+                  context,
+                  '汇率收益（CNY）:',
+                  formatCurrency(fxProfitCny, 'CNY'),
+                  color: fxProfitCny >= 0
+                      ? Colors.red.shade400
+                      : Colors.green.shade400,
+                ),
+            ],
           ],
         ),
       ),

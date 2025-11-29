@@ -118,14 +118,32 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
         title = txn.type.name; icon = Icons.help_outline; color = Colors.grey;
     }
 
+    final List<Widget> subtitleLines = [
+      Text(DateFormat('yyyy-MM-dd').format(txn.date)),
+    ];
+
+    if (currencyCode != 'CNY' && txn.fxRateToCny != null) {
+      subtitleLines.add(
+        Text('汇率: ${txn.fxRateToCny!.toStringAsFixed(4)} ($currencyCode→CNY)'),
+      );
+    }
+    if (currencyCode != 'CNY' && txn.amountCny != null) {
+      subtitleLines.add(
+        Text('折算人民币金额: ${formatCurrency(txn.amountCny!, 'CNY')}'),
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: ListTile(
         leading: Icon(icon, color: color),
         title: Text(title),
-        subtitle: Text(DateFormat('yyyy-MM-dd').format(txn.date)),
-        trailing: Text(formattedAmount, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)), // 使用 formattedAmount
-        onTap: () => _showEditTransactionDialog(context, ref, txn, currencyCode), 
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: subtitleLines,
+        ),
+        trailing: Text(formattedAmount, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
+        onTap: () => _showEditTransactionDialog(context, ref, txn, currencyCode),
         onLongPress: () => _showDeleteConfirmation(context, ref, txn),
       ),
     );

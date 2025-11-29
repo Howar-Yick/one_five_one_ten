@@ -6,6 +6,7 @@ import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/pages/share_asset_detail_page.dart'; // 引入Provider
 import 'package:one_five_one_ten/services/database_service.dart';
+import 'package:one_five_one_ten/utils/currency_formatter.dart';
 
 // 1. (*** 新增：导入 Providers 和新服务 ***)
 import 'package:one_five_one_ten/providers/global_providers.dart';
@@ -35,7 +36,14 @@ class SnapshotHistoryPage extends ConsumerWidget {
             itemCount: snapshots.length,
             itemBuilder: (context, index) {
               final snapshot = snapshots[index];
-              return _buildSnapshotTile(context, ref, snapshot);
+              final currencyCode =
+                  asyncAsset.asData?.value?.currency ?? 'CNY';
+              return _buildSnapshotTile(
+                context,
+                ref,
+                snapshot,
+                currencyCode,
+              );
             },
           );
         },
@@ -54,14 +62,35 @@ class SnapshotHistoryPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildSnapshotTile(
-      BuildContext context, WidgetRef ref, PositionSnapshot snapshot) {
+  Widget _buildSnapshotTile(BuildContext context, WidgetRef ref,
+      PositionSnapshot snapshot, String currencyCode) {
+    final List<Widget> subtitleLines = [
+      Text(
+        '单位成本: ${formatCurrency(snapshot.averageCost, currencyCode)}',
+      ),
+      Text('份额: ${snapshot.totalShares.toStringAsFixed(2)}'),
+    ];
+
+    if (currencyCode != 'CNY' && snapshot.costBasisCny != null) {
+      subtitleLines.add(
+        Text('人民币成本: ${formatCurrency(snapshot.costBasisCny!, 'CNY')}'),
+      );
+    }
+    if (currencyCode != 'CNY' && snapshot.fxRateToCny != null) {
+      subtitleLines.add(
+        Text('成本汇率: ${snapshot.fxRateToCny!.toStringAsFixed(4)} ($currencyCode→CNY)'),
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: ListTile(
         leading: const Icon(Icons.history_toggle_off),
-        title: Text('份额: ${snapshot.totalShares.toStringAsFixed(2)}'),
-        subtitle: Text('单位成本: ¥${snapshot.averageCost.toStringAsFixed(3)}'),
+        title: Text('快照日期: ${DateFormat('yyyy-MM-dd').format(snapshot.date)}'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: subtitleLines,
+        ),
         trailing: Text(DateFormat('yyyy-MM-dd').format(snapshot.date)),
         onTap: () => _showEditSnapshotDialog(context, ref, snapshot),
         onLongPress: () => _showDeleteConfirmation(context, ref, snapshot),

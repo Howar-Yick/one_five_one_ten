@@ -357,6 +357,10 @@ class _ValueAssetDetailView extends ConsumerWidget {
       final double? totalProfitCny = performance['totalProfitCny'] as double?;
       final double? fxProfitCny = performance['fxProfitCny'] as double?;
       final double? assetProfitCny = performance['assetProfitCny'] as double?;
+      final double? netInvestmentCny = performance['netInvestmentCny'] as double?;
+      final double? cnyProfitRate = (totalProfitCny != null && netInvestmentCny != null && netInvestmentCny != 0)
+          ? totalProfitCny / netInvestmentCny
+          : null;
       final percentFormat =
           NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
       Color profitColor =
@@ -394,7 +398,9 @@ class _ValueAssetDetailView extends ConsumerWidget {
                 buildMetricRow(
                   context,
                   '总收益（CNY）:',
-                  formatCurrency(totalProfitCny, 'CNY'),
+                  cnyProfitRate != null
+                      ? '${formatCurrency(totalProfitCny, 'CNY')} (${percentFormat.format(cnyProfitRate)})'
+                      : formatCurrency(totalProfitCny, 'CNY'),
                   color: totalProfitCny >= 0
                       ? Colors.red.shade400
                       : Colors.green.shade400,
