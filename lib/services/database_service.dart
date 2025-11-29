@@ -16,6 +16,8 @@ import 'package:one_five_one_ten/models/deletion.dart';
 // ▼ 新增：资产配置模型
 import 'package:one_five_one_ten/models/allocation_plan.dart';
 import 'package:one_five_one_ten/models/allocation_plan_item.dart';
+import 'package:one_five_one_ten/models/allocation_models.dart'
+    as allocation_models;
 
 class DatabaseService {
   DatabaseService._();
@@ -50,6 +52,11 @@ class DatabaseService {
         AllocationPlanSchema,
         AllocationPlanItemSchema,
         AssetBucketMapSchema,
+
+        // 历史遗留：本地资产配置试验模型（若旧版本用户已生成 Isar 数据，需保留以保证数据库能正常打开）
+        allocation_models.AllocationSchemeSchema,
+        allocation_models.AllocationBucketSchema,
+        allocation_models.AssetAllocationLinkSchema,
       ],
       directory: dir.path,
       name: 'one_five_one_ten_db',
