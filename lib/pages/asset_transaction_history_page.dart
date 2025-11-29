@@ -59,7 +59,8 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
             itemCount: transactions.length,
             itemBuilder: (context, index) {
               final txn = transactions[index];
-              final currencyCode = asyncAsset.asData?.value?.currency ?? 'CNY';
+              final currencyCode =
+                  asyncAsset.asData?.value?.currency?.toUpperCase() ?? 'CNY';
               return _buildTransactionTile(context, ref, txn, currencyCode);
             },
           );
@@ -124,7 +125,8 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
 
     final fx = txn.fxRateToCny;
     final amountCny = txn.amountCny;
-    final hasFx = currencyCode != 'CNY' && fx != null && fx > 0 && amountCny != null;
+    final hasFx =
+        currencyCode != 'CNY' && fx != null && fx > 0 && amountCny != null;
 
     final fxTextStyle = Theme.of(context)
         .textTheme
@@ -151,6 +153,7 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
         title: Text(title),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: subtitleLines,
         ),
         trailing: Text(formattedAmount, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),

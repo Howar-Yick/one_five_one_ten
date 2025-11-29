@@ -37,7 +37,7 @@ class SnapshotHistoryPage extends ConsumerWidget {
             itemBuilder: (context, index) {
               final snapshot = snapshots[index];
               final currencyCode =
-                  asyncAsset.asData?.value?.currency ?? 'CNY';
+                  asyncAsset.asData?.value?.currency?.toUpperCase() ?? 'CNY';
               return _buildSnapshotTile(
                 context,
                 ref,
@@ -100,6 +100,7 @@ class SnapshotHistoryPage extends ConsumerWidget {
         title: Text('快照日期: ${DateFormat('yyyy-MM-dd').format(snapshot.date)}'),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: subtitleLines,
         ),
         trailing: Text(DateFormat('yyyy-MM-dd').format(snapshot.date)),
