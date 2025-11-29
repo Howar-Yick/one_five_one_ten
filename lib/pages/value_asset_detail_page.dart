@@ -181,8 +181,18 @@ class _ValueAssetDetailPageState extends ConsumerState<ValueAssetDetailPage> {
                         labelText: selectedType == TransactionType.updateValue ? '资产总值' : '金额',
                         prefixText: getCurrencySymbol(asset.currency)
                       ),
+                      onChanged: (_) {
+                        if (asset.currency != 'CNY') {
+                          final amount = double.tryParse(amountController.text);
+                          final rate = double.tryParse(fxRateController.text);
+                          if (amount != null && rate != null) {
+                            cnyAmountController.text =
+                                (amount.abs() * rate).toStringAsFixed(2);
+                          }
+                        }
+                      },
                     ),
-                    if (asset.currency != 'CNY' && selectedType != TransactionType.updateValue) ...[
+                    if (asset.currency != 'CNY') ...[
                       const SizedBox(height: 12),
                       TextField(
                         controller: fxRateController,
@@ -196,7 +206,7 @@ class _ValueAssetDetailPageState extends ConsumerState<ValueAssetDetailPage> {
                           final rate = double.tryParse(fxRateController.text);
                           if (amount != null && rate != null) {
                             cnyAmountController.text =
-                                (amount * rate).toStringAsFixed(2);
+                                (amount.abs() * rate).toStringAsFixed(2);
                           }
                         },
                       ),
@@ -204,9 +214,11 @@ class _ValueAssetDetailPageState extends ConsumerState<ValueAssetDetailPage> {
                       TextField(
                         controller: cnyAmountController,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: '折算人民币金额',
-                          helperText: '买入为正，卖出为负',
+                          helperText: selectedType == TransactionType.updateValue
+                              ? '记录当前总值对应的人民币金额'
+                              : '买入为正，卖出为负',
                         ),
                       ),
                     ],
@@ -255,14 +267,15 @@ class _ValueAssetDetailPageState extends ConsumerState<ValueAssetDetailPage> {
 
                       double? fxRate;
                       double? amountCny;
-                      if (asset.currency != 'CNY' && selectedType != TransactionType.updateValue) {
+                      if (asset.currency != 'CNY') {
                         fxRate = double.tryParse(fxRateController.text);
                         amountCny = double.tryParse(cnyAmountController.text);
-                        if (fxRate == null && amountCny != null && amount > 0) {
-                          fxRate = amountCny / amount;
+                        final double amountForFx = (amount ?? 0).abs();
+                        if (fxRate == null && amountCny != null && amountForFx > 0) {
+                          fxRate = amountCny / amountForFx;
                         }
                         if (amountCny == null && fxRate != null) {
-                          amountCny = amount * fxRate;
+                          amountCny = amountForFx * fxRate;
                         }
                       }
 
