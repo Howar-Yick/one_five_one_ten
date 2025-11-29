@@ -37,7 +37,7 @@ class SnapshotHistoryPage extends ConsumerWidget {
             itemBuilder: (context, index) {
               final snapshot = snapshots[index];
               final currencyCode =
-                  asyncAsset.asData?.value?.currency ?? 'CNY';
+                  asyncAsset.asData?.value?.currency?.toUpperCase() ?? 'CNY';
               return _buildSnapshotTile(
                 context,
                 ref,
@@ -71,15 +71,29 @@ class SnapshotHistoryPage extends ConsumerWidget {
       Text('份额: ${snapshot.totalShares.toStringAsFixed(2)}'),
     ];
 
-    if (currencyCode != 'CNY' && snapshot.costBasisCny != null) {
-      subtitleLines.add(
-        Text('人民币成本: ${formatCurrency(snapshot.costBasisCny!, 'CNY')}'),
-      );
-    }
-    if (currencyCode != 'CNY' && snapshot.fxRateToCny != null) {
-      subtitleLines.add(
-        Text('成本汇率: ${snapshot.fxRateToCny!.toStringAsFixed(4)} ($currencyCode→CNY)'),
-      );
+    final fx = snapshot.fxRateToCny;
+    final costBasisCny = snapshot.costBasisCny ??
+        (fx != null
+            ? snapshot.averageCost * snapshot.totalShares * fx
+            : null); // 兼容旧记录缺少 costBasisCny 的情况
+    final hasFx = currencyCode != 'CNY' && fx != null && fx > 0 && costBasisCny != null;
+
+    final fxTextStyle = Theme.of(context)
+        .textTheme
+        .bodySmall
+        ?.copyWith(color: Colors.grey.shade600);
+
+    if (hasFx) {
+      subtitleLines.addAll([
+        Text(
+          '成本汇率: ${fx.toStringAsFixed(4)} ($currencyCode→CNY)',
+          style: fxTextStyle,
+        ),
+        Text(
+          '人民币成本: ${formatCurrency(costBasisCny, 'CNY')}',
+          style: fxTextStyle,
+        ),
+      ]);
     }
 
     return Card(
@@ -89,6 +103,7 @@ class SnapshotHistoryPage extends ConsumerWidget {
         title: Text('快照日期: ${DateFormat('yyyy-MM-dd').format(snapshot.date)}'),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: subtitleLines,
         ),
         trailing: Text(DateFormat('yyyy-MM-dd').format(snapshot.date)),

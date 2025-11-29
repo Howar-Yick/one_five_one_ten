@@ -59,7 +59,8 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
             itemCount: transactions.length,
             itemBuilder: (context, index) {
               final txn = transactions[index];
-              final currencyCode = asyncAsset.asData?.value?.currency ?? 'CNY';
+              final currencyCode =
+                  asyncAsset.asData?.value?.currency?.toUpperCase() ?? 'CNY';
               return _buildTransactionTile(context, ref, txn, currencyCode);
             },
           );
@@ -122,15 +123,31 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
       Text(DateFormat('yyyy-MM-dd').format(txn.date)),
     ];
 
-    if (currencyCode != 'CNY' && txn.fxRateToCny != null) {
-      subtitleLines.add(
-        Text('汇率: ${txn.fxRateToCny!.toStringAsFixed(4)} ($currencyCode→CNY)'),
-      );
-    }
-    if (currencyCode != 'CNY' && txn.amountCny != null) {
-      subtitleLines.add(
-        Text('折算人民币金额: ${formatCurrency(txn.amountCny!, 'CNY')}'),
-      );
+    final fx = txn.fxRateToCny;
+    final amountCny = txn.amountCny ??
+        (fx != null
+            ? txn.amount * fx
+            : null); // 旧数据可能缺少 amountCny，按汇率回推一次
+    final isNonCnyAsset = currencyCode.toUpperCase() != 'CNY';
+    final hasFx =
+        isNonCnyAsset && fx != null && fx > 0 && amountCny != null;
+
+    final fxTextStyle = Theme.of(context)
+        .textTheme
+        .bodySmall
+        ?.copyWith(color: Colors.grey.shade600);
+
+    if (hasFx) {
+      subtitleLines.addAll([
+        Text(
+          '汇率: ${fx.toStringAsFixed(4)} ($currencyCode→CNY)',
+          style: fxTextStyle,
+        ),
+        Text(
+          '折算人民币金额: ${formatCurrency(amountCny, 'CNY')}',
+          style: fxTextStyle,
+        ),
+      ]);
     }
 
     return Card(
@@ -140,8 +157,10 @@ class AssetTransactionHistoryPage extends ConsumerWidget {
         title: Text(title),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: subtitleLines,
         ),
+        isThreeLine: hasFx,
         trailing: Text(formattedAmount, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
         onTap: () => _showEditTransactionDialog(context, ref, txn, currencyCode),
         onLongPress: () => _showDeleteConfirmation(context, ref, txn),
