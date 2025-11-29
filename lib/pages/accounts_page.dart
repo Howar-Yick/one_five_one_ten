@@ -160,6 +160,7 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     final totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final profitRate = (performance['profitRate'] ?? 0.0) as double;
     final annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
+    final fxProfit = (performance['fxProfit'] ?? performance['fxProfitCny'] ?? 0.0) as double;
 
     Color profitColor = totalProfit >= 0 ? Colors.red.shade400 : Colors.green.shade400;
     if (totalProfit == 0) {
@@ -202,6 +203,15 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
                       const SizedBox(height: 12),
                       _buildSummaryMetric('累计收益', formatValue(totalProfit, 'currency'), context,
                           valueColor: _isAmountVisible ? profitColor : null),
+                      const SizedBox(height: 12),
+                      _buildSummaryMetric(
+                        '其中汇率影响',
+                        formatValue(fxProfit, 'currency'),
+                        context,
+                        valueColor: _isAmountVisible
+                            ? (fxProfit >= 0 ? Colors.red.shade400 : Colors.green.shade400)
+                            : null,
+                      ),
                     ],
                   ),
                 ),

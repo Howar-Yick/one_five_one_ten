@@ -84,7 +84,19 @@ class CalculatorService {
 
   // ... (calculateAccountPerformance, _buildAccountHistoryPoints, _ensureChartHasStart 等方法保持不变) ...
   Future<Map<String, dynamic>> calculateAccountPerformance(Account account) async {
-    if (account.supabaseId == null) return {'currentValue': 0.0, 'netInvestment': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0};
+    if (account.supabaseId == null) {
+      return {
+        'currentValue': 0.0,
+        'netInvestment': 0.0,
+        'totalProfit': 0.0,
+        'profitRate': 0.0,
+        'annualizedReturn': 0.0,
+        'currentValueCny': null,
+        'netInvestmentCny': null,
+        'totalProfitCny': null,
+        'fxProfitCny': null,
+      };
+    }
     final originalTransactions = await _isar.accountTransactions
         .where()
         .accountSupabaseIdEqualTo(account.supabaseId)
@@ -122,12 +134,53 @@ class CalculatorService {
         }
       }
     }
+    double? currentValueCny;
+    double? netInvestmentCny;
+    double? totalProfitCny;
+    double? fxProfitCny;
+    if (account.currency != 'CNY') {
+      final fx = ExchangeRateService();
+      final rate = await fx.getRate(account.currency, 'CNY');
+
+      currentValueCny = currentValue * rate;
+      double recordedNetInvestmentCNY = 0;
+      double recordedInvestedCNY = 0;
+
+      for (final txn in originalTransactions) {
+        if (txn.type == TransactionType.updateValue) continue;
+        final txnRate = txn.fxRateToCny ?? rate;
+        final amountCNY = txn.baseAmountCny ?? txn.amount * txnRate;
+        if (txn.type == TransactionType.invest) {
+          recordedNetInvestmentCNY += amountCNY;
+          recordedInvestedCNY += amountCNY;
+        } else if (txn.type == TransactionType.withdraw) {
+          recordedNetInvestmentCNY -= amountCNY;
+        }
+      }
+
+      if (recordedNetInvestmentCNY == 0 && netInvestment != 0) {
+        recordedNetInvestmentCNY = netInvestment * rate;
+      }
+      if (recordedInvestedCNY == 0 && totalInvested != 0) {
+        recordedInvestedCNY = totalInvested * rate;
+      }
+
+      totalProfitCny = currentValueCny - recordedNetInvestmentCNY;
+      final baseProfitCny = (currentValue - netInvestment) * rate;
+      fxProfitCny = totalProfitCny - baseProfitCny;
+      netInvestmentCny = recordedNetInvestmentCNY;
+    }
+
     return {
       'currentValue': currentValue,
       'netInvestment': netInvestment,
       'totalProfit': totalProfit,
       'profitRate': profitRate,
       'annualizedReturn': annualizedReturn,
+      'currentValueCny': currentValueCny,
+      'netInvestmentCny': netInvestmentCny,
+      'totalProfitCny': totalProfitCny,
+      'fxProfitCny': fxProfitCny,
     };
   }
 
