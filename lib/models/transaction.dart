@@ -4,14 +4,14 @@ import 'package:one_five_one_ten/models/asset.dart';
 
 part 'transaction.g.dart';
 
-// Enum 保持不变
+/// 交易类型
 enum TransactionType {
-  invest,   
-  withdraw, 
-  updateValue,
-  buy,        
-  sell,       
-  dividend, 
+  invest,      // 资产层资金投入
+  withdraw,    // 资产层资金转出
+  updateValue, // 更新价值法资产总值
+  buy,         // 份额法买入
+  sell,        // 份额法卖出
+  dividend,    // 分红/利息
 }
 
 @collection
@@ -21,93 +21,118 @@ class Transaction {
   @Enumerated(EnumType.name)
   late TransactionType type;
 
+  /// 事件发生时间（本地时区）
   late DateTime date;
 
+  /// 金额：
+  /// - 价值法：此次资金变动金额（资产币种）
+  /// - 份额法：成交金额（资产币种，买入为正，卖出为负）
   late double amount;
+
+  /// 份额法才用到的成交份额
   double? shares;
+
+  /// 份额法才用到的成交价格（资产币种）
   double? price;
 
   /// 资产交易发生时的资产币种 -> 人民币汇率
+  ///
+  /// 例如：USD 资产，则为 USD→CNY 的汇率。
   double? fxRateToCny;
 
   /// 该笔交易折算成人民币的金额（买入为正，卖出为负）
+  ///
+  /// 主要用于后续拆分“标的自身收益”和“汇率收益”。
   double? amountCny;
 
-  String? note; 
+  /// 备注
+  String? note;
 
-  // --- 关键变更：替换 IsarLink 为 SupabaseId 引用 ---
-  // final asset = IsarLink<Asset>(); // <-- 旧的
+  /// 所属资产的 Supabase UUID（替代 IsarLink）
   @Index()
-  String? assetSupabaseId; // <-- 新的：存储所属 Asset 的 Supabase UUID
-  // --- 变更结束 ---
+  String? assetSupabaseId;
 
-  // --- 新增：Supabase 同步字段 ---
+  /// 本条交易自身的 Supabase UUID
   @Index(type: IndexType.value, unique: true, caseSensitive: false)
-  String? supabaseId; // 此 Transaction 自己的 Supabase UUID
+  String? supabaseId;
 
+  /// 创建时间（本地）
   late DateTime createdAt;
+
+  /// 最近更新时间（本地）
   DateTime? updatedAt;
-  // --- 新增结束 ---
-  
-  // --- 新增：空的构造函数 (Isar 需要) ---
+
   Transaction();
-  
-  // --- 新增：Supabase 序列化/反序列化方法 ---
-  
+
+  // ===== Supabase 映射 =====
+
+  static double? _parseNum(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v);
+    return null;
+  }
+
   factory Transaction.fromSupabaseJson(Map<String, dynamic> json) {
     final tx = Transaction();
-    tx.supabaseId = json['id'];
-    tx.updatedAt = json['updated_at'] != null 
-        ? DateTime.parse(json['updated_at']).toLocal() 
+
+    tx.supabaseId = json['id'] as String?;
+    tx.updatedAt = json['updated_at'] != null
+        ? DateTime.parse(json['updated_at'] as String).toLocal()
         : null;
-    tx.createdAt = json['created_at'] != null 
-        ? DateTime.parse(json['created_at']).toLocal() 
+    tx.createdAt = json['created_at'] != null
+        ? DateTime.parse(json['created_at'] as String).toLocal()
         : DateTime.now();
 
-    tx.type = TransactionType.values.byName(json['type'] ?? 'invest');
-    tx.date = DateTime.parse(json['date']).toLocal();
-    tx.amount = (json['amount'] as num?)?.toDouble() ?? 0.0;
-    tx.shares = (json['quantity'] as num?)?.toDouble(); // 修正：从 'quantity' 字段读取
-    tx.price = (json['price'] as num?)?.toDouble();
-    tx.note = json['notes']; // 修正：从 'notes' 字段读取
+    final typeStr = (json['type'] as String?) ?? 'invest';
+    tx.type = TransactionType.values.byName(typeStr);
 
-    tx.fxRateToCny = (json['fx_rate_to_cny'] as num?)?.toDouble();
-    tx.amountCny = (json['amount_cny'] as num?)?.toDouble();
-    
-    tx.assetSupabaseId = json['asset_id']; // 关联 Asset 的 UUID
+    tx.date = DateTime.parse(json['date'] as String).toLocal();
+
+    tx.amount = _parseNum(json['amount']) ?? 0.0;
+    tx.shares = _parseNum(json['quantity']);
+    tx.price = _parseNum(json['price']);
+    tx.note = json['notes'] as String?;
+
+    tx.fxRateToCny = _parseNum(json['fx_rate_to_cny']);
+    tx.amountCny = _parseNum(json['amount_cny']);
+
+    tx.assetSupabaseId = json['asset_id'] as String?;
+
     return tx;
   }
-  
+
   Map<String, dynamic> toSupabaseJson() {
     final json = <String, dynamic>{};
-    
-    // 基本必需字段
+
+    // 基本必填字段
     json['type'] = type.name;
-    json['date'] = date.toIso8601String();
+    json['date'] = date.toUtc().toIso8601String();
     json['amount'] = amount;
     json['asset_id'] = assetSupabaseId;
-    json['created_at'] = createdAt.toIso8601String();
-    json['updated_at'] = (updatedAt ?? DateTime.now()).toIso8601String();
+    json['created_at'] = createdAt.toUtc().toIso8601String();
+    json['updated_at'] = (updatedAt ?? DateTime.now()).toUtc().toIso8601String();
 
+    // FX 相关字段：只在非 null 时写入
     if (fxRateToCny != null) {
       json['fx_rate_to_cny'] = fxRateToCny;
     }
     if (amountCny != null) {
       json['amount_cny'] = amountCny;
     }
-    
-    // 可选字段 - 只在有值时才添加，避免null值问题
+
+    // 可选字段
     if (shares != null) {
-      json['quantity'] = shares; // 映射到数据库的 'quantity' 字段
+      json['quantity'] = shares;
     }
     if (price != null) {
       json['price'] = price;
     }
     if (note != null && note!.isNotEmpty) {
-      json['notes'] = note; // 映射到数据库的 'notes' 字段
+      json['notes'] = note;
     }
-    
+
+    // id 由 Supabase 分配，这里不主动写入；_saveObject 会在有 supabaseId 时补上 json['id']
     return json;
   }
-  // --- 新增结束 ---
 }

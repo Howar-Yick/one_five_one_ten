@@ -22,49 +22,59 @@ const TransactionSchema = CollectionSchema(
       name: r'amount',
       type: IsarType.double,
     ),
-    r'assetSupabaseId': PropertySchema(
+    r'amountCny': PropertySchema(
       id: 1,
+      name: r'amountCny',
+      type: IsarType.double,
+    ),
+    r'assetSupabaseId': PropertySchema(
+      id: 2,
       name: r'assetSupabaseId',
       type: IsarType.string,
     ),
     r'createdAt': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
     r'date': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'date',
       type: IsarType.dateTime,
     ),
+    r'fxRateToCny': PropertySchema(
+      id: 5,
+      name: r'fxRateToCny',
+      type: IsarType.double,
+    ),
     r'note': PropertySchema(
-      id: 4,
+      id: 6,
       name: r'note',
       type: IsarType.string,
     ),
     r'price': PropertySchema(
-      id: 5,
+      id: 7,
       name: r'price',
       type: IsarType.double,
     ),
     r'shares': PropertySchema(
-      id: 6,
+      id: 8,
       name: r'shares',
       type: IsarType.double,
     ),
     r'supabaseId': PropertySchema(
-      id: 7,
+      id: 9,
       name: r'supabaseId',
       type: IsarType.string,
     ),
     r'type': PropertySchema(
-      id: 8,
+      id: 10,
       name: r'type',
       type: IsarType.string,
       enumMap: _TransactiontypeEnumValueMap,
     ),
     r'updatedAt': PropertySchema(
-      id: 9,
+      id: 11,
       name: r'updatedAt',
       type: IsarType.dateTime,
     )
@@ -145,15 +155,17 @@ void _transactionSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeDouble(offsets[0], object.amount);
-  writer.writeString(offsets[1], object.assetSupabaseId);
-  writer.writeDateTime(offsets[2], object.createdAt);
-  writer.writeDateTime(offsets[3], object.date);
-  writer.writeString(offsets[4], object.note);
-  writer.writeDouble(offsets[5], object.price);
-  writer.writeDouble(offsets[6], object.shares);
-  writer.writeString(offsets[7], object.supabaseId);
-  writer.writeString(offsets[8], object.type.name);
-  writer.writeDateTime(offsets[9], object.updatedAt);
+  writer.writeDouble(offsets[1], object.amountCny);
+  writer.writeString(offsets[2], object.assetSupabaseId);
+  writer.writeDateTime(offsets[3], object.createdAt);
+  writer.writeDateTime(offsets[4], object.date);
+  writer.writeDouble(offsets[5], object.fxRateToCny);
+  writer.writeString(offsets[6], object.note);
+  writer.writeDouble(offsets[7], object.price);
+  writer.writeDouble(offsets[8], object.shares);
+  writer.writeString(offsets[9], object.supabaseId);
+  writer.writeString(offsets[10], object.type.name);
+  writer.writeDateTime(offsets[11], object.updatedAt);
 }
 
 Transaction _transactionDeserialize(
@@ -164,18 +176,20 @@ Transaction _transactionDeserialize(
 ) {
   final object = Transaction();
   object.amount = reader.readDouble(offsets[0]);
-  object.assetSupabaseId = reader.readStringOrNull(offsets[1]);
-  object.createdAt = reader.readDateTime(offsets[2]);
-  object.date = reader.readDateTime(offsets[3]);
+  object.amountCny = reader.readDoubleOrNull(offsets[1]);
+  object.assetSupabaseId = reader.readStringOrNull(offsets[2]);
+  object.createdAt = reader.readDateTime(offsets[3]);
+  object.date = reader.readDateTime(offsets[4]);
+  object.fxRateToCny = reader.readDoubleOrNull(offsets[5]);
   object.id = id;
-  object.note = reader.readStringOrNull(offsets[4]);
-  object.price = reader.readDoubleOrNull(offsets[5]);
-  object.shares = reader.readDoubleOrNull(offsets[6]);
-  object.supabaseId = reader.readStringOrNull(offsets[7]);
+  object.note = reader.readStringOrNull(offsets[6]);
+  object.price = reader.readDoubleOrNull(offsets[7]);
+  object.shares = reader.readDoubleOrNull(offsets[8]);
+  object.supabaseId = reader.readStringOrNull(offsets[9]);
   object.type =
-      _TransactiontypeValueEnumMap[reader.readStringOrNull(offsets[8])] ??
+      _TransactiontypeValueEnumMap[reader.readStringOrNull(offsets[10])] ??
           TransactionType.invest;
-  object.updatedAt = reader.readDateTimeOrNull(offsets[9]);
+  object.updatedAt = reader.readDateTimeOrNull(offsets[11]);
   return object;
 }
 
@@ -189,23 +203,27 @@ P _transactionDeserializeProp<P>(
     case 0:
       return (reader.readDouble(offset)) as P;
     case 1:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDoubleOrNull(offset)) as P;
     case 2:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 3:
       return (reader.readDateTime(offset)) as P;
     case 4:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 5:
       return (reader.readDoubleOrNull(offset)) as P;
     case 6:
-      return (reader.readDoubleOrNull(offset)) as P;
-    case 7:
       return (reader.readStringOrNull(offset)) as P;
+    case 7:
+      return (reader.readDoubleOrNull(offset)) as P;
     case 8:
+      return (reader.readDoubleOrNull(offset)) as P;
+    case 9:
+      return (reader.readStringOrNull(offset)) as P;
+    case 10:
       return (_TransactiontypeValueEnumMap[reader.readStringOrNull(offset)] ??
           TransactionType.invest) as P;
-    case 9:
+    case 11:
       return (reader.readDateTimeOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -677,6 +695,90 @@ extension TransactionQueryFilter
   }
 
   QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
+      amountCnyIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'amountCny',
+      ));
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
+      amountCnyIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'amountCny',
+      ));
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
+      amountCnyEqualTo(
+    double? value, {
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'amountCny',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
+      amountCnyGreaterThan(
+    double? value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'amountCny',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
+      amountCnyLessThan(
+    double? value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'amountCny',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
+      amountCnyBetween(
+    double? lower,
+    double? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'amountCny',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
       assetSupabaseIdIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(const FilterCondition.isNull(
@@ -935,6 +1037,90 @@ extension TransactionQueryFilter
         includeLower: includeLower,
         upper: upper,
         includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
+      fxRateToCnyIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'fxRateToCny',
+      ));
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
+      fxRateToCnyIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'fxRateToCny',
+      ));
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
+      fxRateToCnyEqualTo(
+    double? value, {
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'fxRateToCny',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
+      fxRateToCnyGreaterThan(
+    double? value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'fxRateToCny',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
+      fxRateToCnyLessThan(
+    double? value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'fxRateToCny',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterFilterCondition>
+      fxRateToCnyBetween(
+    double? lower,
+    double? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'fxRateToCny',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        epsilon: epsilon,
       ));
     });
   }
@@ -1680,6 +1866,18 @@ extension TransactionQuerySortBy
     });
   }
 
+  QueryBuilder<Transaction, Transaction, QAfterSortBy> sortByAmountCny() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'amountCny', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterSortBy> sortByAmountCnyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'amountCny', Sort.desc);
+    });
+  }
+
   QueryBuilder<Transaction, Transaction, QAfterSortBy> sortByAssetSupabaseId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'assetSupabaseId', Sort.asc);
@@ -1714,6 +1912,18 @@ extension TransactionQuerySortBy
   QueryBuilder<Transaction, Transaction, QAfterSortBy> sortByDateDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'date', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterSortBy> sortByFxRateToCny() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fxRateToCny', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterSortBy> sortByFxRateToCnyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fxRateToCny', Sort.desc);
     });
   }
 
@@ -1804,6 +2014,18 @@ extension TransactionQuerySortThenBy
     });
   }
 
+  QueryBuilder<Transaction, Transaction, QAfterSortBy> thenByAmountCny() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'amountCny', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterSortBy> thenByAmountCnyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'amountCny', Sort.desc);
+    });
+  }
+
   QueryBuilder<Transaction, Transaction, QAfterSortBy> thenByAssetSupabaseId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'assetSupabaseId', Sort.asc);
@@ -1838,6 +2060,18 @@ extension TransactionQuerySortThenBy
   QueryBuilder<Transaction, Transaction, QAfterSortBy> thenByDateDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'date', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterSortBy> thenByFxRateToCny() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fxRateToCny', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QAfterSortBy> thenByFxRateToCnyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fxRateToCny', Sort.desc);
     });
   }
 
@@ -1934,6 +2168,12 @@ extension TransactionQueryWhereDistinct
     });
   }
 
+  QueryBuilder<Transaction, Transaction, QDistinct> distinctByAmountCny() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'amountCny');
+    });
+  }
+
   QueryBuilder<Transaction, Transaction, QDistinct> distinctByAssetSupabaseId(
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
@@ -1951,6 +2191,12 @@ extension TransactionQueryWhereDistinct
   QueryBuilder<Transaction, Transaction, QDistinct> distinctByDate() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'date');
+    });
+  }
+
+  QueryBuilder<Transaction, Transaction, QDistinct> distinctByFxRateToCny() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'fxRateToCny');
     });
   }
 
@@ -2008,6 +2254,12 @@ extension TransactionQueryProperty
     });
   }
 
+  QueryBuilder<Transaction, double?, QQueryOperations> amountCnyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'amountCny');
+    });
+  }
+
   QueryBuilder<Transaction, String?, QQueryOperations>
       assetSupabaseIdProperty() {
     return QueryBuilder.apply(this, (query) {
@@ -2024,6 +2276,12 @@ extension TransactionQueryProperty
   QueryBuilder<Transaction, DateTime, QQueryOperations> dateProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'date');
+    });
+  }
+
+  QueryBuilder<Transaction, double?, QQueryOperations> fxRateToCnyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'fxRateToCny');
     });
   }
 
