@@ -71,15 +71,22 @@ class SnapshotHistoryPage extends ConsumerWidget {
       Text('份额: ${snapshot.totalShares.toStringAsFixed(2)}'),
     ];
 
-    if (currencyCode != 'CNY' && snapshot.costBasisCny != null) {
-      subtitleLines.add(
-        Text('人民币成本: ${formatCurrency(snapshot.costBasisCny!, 'CNY')}'),
-      );
-    }
-    if (currencyCode != 'CNY' && snapshot.fxRateToCny != null) {
-      subtitleLines.add(
-        Text('成本汇率: ${snapshot.fxRateToCny!.toStringAsFixed(4)} ($currencyCode→CNY)'),
-      );
+    final fx = snapshot.fxRateToCny;
+    final costCny = snapshot.costBasisCny;
+    final hasFx = fx != null && fx > 0;
+    final hasCostCny = costCny != null;
+
+    if (currencyCode != 'CNY' && (hasFx || hasCostCny)) {
+      if (hasFx) {
+        subtitleLines.add(
+          Text('成本汇率: ${fx!.toStringAsFixed(4)} ($currencyCode→CNY)'),
+        );
+      }
+      if (hasCostCny) {
+        subtitleLines.add(
+          Text('人民币成本: ${formatCurrency(costCny!, 'CNY')}'),
+        );
+      }
     }
 
     return Card(
