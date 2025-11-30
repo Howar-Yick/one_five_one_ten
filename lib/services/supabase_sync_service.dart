@@ -151,10 +151,58 @@ class SupabaseSyncService {
       await _reconcileTable<Asset>('Asset', _isar.assets, Asset.fromSupabaseJson);
       await _reconcileTable<Transaction>('Transaction', _isar.transactions, Transaction.fromSupabaseJson);
       await _reconcileTable<AccountTransaction>('AccountTransaction', _isar.accountTransactions, AccountTransaction.fromSupabaseJson);
-      await _reconcileTable<PositionSnapshot>('PositionSnapshot', _isar.positionSnapshots, PositionSnapshot.fromSupabaseJson);
+      await _syncPositionSnapshotsFromRemote();
     } catch (e) {
       print('首次全量同步失败: $e');
     }
+  }
+
+  /// PositionSnapshot 的专用同步：
+  /// - 采用分页拉取，避免 >1000 记录被截断；
+  /// - 仅做 UPSERT，不因远端缺少记录而删除本地，防止多端互相覆盖。
+  Future<void> _syncPositionSnapshotsFromRemote() async {
+    print('[SupabaseSync] Reconciling table with paging: PositionSnapshot');
+
+    const batchSize = 500;
+    int offset = 0;
+
+    while (true) {
+      final response = await _client
+          .from('PositionSnapshot')
+          .select()
+          .order('created_at', ascending: true)
+          .range(offset, offset + batchSize - 1);
+
+      final List<dynamic> data = response as List<dynamic>;
+      if (data.isEmpty) {
+        break;
+      }
+
+      await _isar.writeTxn(() async {
+        for (final raw in data) {
+          final snap = PositionSnapshot.fromSupabaseJson(raw as Map<String, dynamic>);
+
+          // 统一时间为本地显示
+          snap.date = _fromSupaTs(snap.date);
+          if (snap.updatedAt != null) snap.updatedAt = _fromSupaTs(snap.updatedAt!);
+
+          // UPSERT：存在则沿用本地 id 更新；不存在则插入
+          final existing = await _isar.positionSnapshots.where().supabaseIdEqualTo(snap.supabaseId).findFirst();
+          if (existing != null) {
+            snap.id = existing.id;
+          }
+
+          await _isar.positionSnapshots.put(snap);
+        }
+      });
+
+      if (data.length < batchSize) {
+        break;
+      }
+      offset += batchSize;
+    }
+
+    print('[SupabaseSync] PositionSnapshot paging sync completed');
   }
 
   // ========= 删除记录同步（墓碑表） =========

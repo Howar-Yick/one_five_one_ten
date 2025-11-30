@@ -50,32 +50,23 @@ class PositionSnapshot {
     snap.date = DateTime.parse(json['date'] as String).toLocal();
     snap.totalShares = (json['total_shares'] as num?)?.toDouble() ?? 0.0;
 
-    // ---- 关键修复：优先使用旧字段 cost_basis，其次才是 average_cost ----
-    // 1. 兼容旧结构：老数据只在 cost_basis，有值；average_cost 为 0 或 NULL
-    // 2. 新结构：两个字段都写同样的值
-    // 3. 为了防止 0 把真实值盖掉，这里显式判断：
-    num? rawAvg;
-
+    // ---- 关键修复：兼容旧字段 cost_basis，避免 0 覆盖有效值 ----
+    // 优先使用非 0 的 cost_basis；其次使用非 0 的 average_cost；都为 0/NULL 时按 0 处理。
     final dynamic legacy = json['cost_basis'];
     final dynamic avgCol = json['average_cost'];
 
+    num? rawAvg;
     if (legacy is num && legacy != 0) {
-      // 老数据优先
       rawAvg = legacy;
     } else if (avgCol is num && avgCol != 0) {
-      // 新数据
       rawAvg = avgCol;
     } else if (legacy is num) {
-      // 两边都为 0 或只有 0，这时就按 0 处理（确实是 0 或已经被污染）
-      rawAvg = legacy;
+      rawAvg = legacy; // 包含“确实为 0”的场景
     } else if (avgCol is num) {
-      rawAvg = avgCol;
-    } else {
-      rawAvg = null;
+      rawAvg = avgCol; // 兜底 NULL -> 0 的场景
     }
 
     snap.averageCost = rawAvg?.toDouble() ?? 0.0;
-    // ---- 修复结束 ----
 
     snap.fxRateToCny = (json['fx_rate_to_cny'] as num?)?.toDouble();
     snap.costBasisCny = (json['cost_basis_cny'] as num?)?.toDouble();
