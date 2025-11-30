@@ -36,6 +36,10 @@ class DatabaseService {
 
     final dir = await getApplicationDocumentsDirectory();
 
+    // >>>>> 添加这一行 <<<<<
+    print('📍 ISAR 数据库路径: ${dir.path}\\one_five_one_ten_db.isar'); 
+    // ^^
+
     // ★★★ 一定要把两个新表的 Schema 一起注册 ★★★
     isar = await Isar.open(
       [

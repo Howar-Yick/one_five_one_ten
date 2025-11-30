@@ -1,0 +1,57 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // 1) 删除本地 Isar 数据库（Roaming + Local 两个位置都尝试）
+        "label": "clean-isar-db",
+        "type": "shell",
+        "command": "powershell",
+        "args": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            "$paths = @(\"${env:APPDATA}/one_five_one_ten/isar\", \"${env:LOCALAPPDATA}/one_five_one_ten/isar\"); foreach ($p in $paths) { if (Test-Path $p) { Write-Host \"Deleting $p\"; Remove-Item -Recurse -Force $p } else { Write-Host \"Skip $p (not found)\" } }"
+        ],
+      "problemMatcher": []
+    },
+    {
+      // 2) 重新跑 build_runner，生成最新的 Isar adapter
+      "label": "build-runner",
+      "type": "shell",
+      "command": "flutter",
+      "args": [
+        "pub",
+        "run",
+        "build_runner",
+        "build",
+        "--delete-conflicting-outputs"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      // 3) 启动 Windows 桌面版
+      "label": "run-windows",
+      "type": "shell",
+      "command": "flutter",
+      "args": [
+        "run",
+        "-d",
+        "windows"
+      ],
+      "group": "none",
+      "problemMatcher": []
+    },
+    {
+      // 4) 总任务：顺序执行 1 → 2 → 3
+      "label": "clean+build_runner+run-windows",
+      "dependsOn": [
+        "clean-isar-db",
+        "build-runner",
+        "run-windows"
+      ],
+      "dependsOrder": "sequence"
+    }
+  ]
+}

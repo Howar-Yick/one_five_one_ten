@@ -27,28 +27,38 @@ const PositionSnapshotSchema = CollectionSchema(
       name: r'averageCost',
       type: IsarType.double,
     ),
-    r'createdAt': PropertySchema(
+    r'costBasisCny': PropertySchema(
       id: 2,
+      name: r'costBasisCny',
+      type: IsarType.double,
+    ),
+    r'createdAt': PropertySchema(
+      id: 3,
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
     r'date': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'date',
       type: IsarType.dateTime,
     ),
+    r'fxRateToCny': PropertySchema(
+      id: 5,
+      name: r'fxRateToCny',
+      type: IsarType.double,
+    ),
     r'supabaseId': PropertySchema(
-      id: 4,
+      id: 6,
       name: r'supabaseId',
       type: IsarType.string,
     ),
     r'totalShares': PropertySchema(
-      id: 5,
+      id: 7,
       name: r'totalShares',
       type: IsarType.double,
     ),
     r'updatedAt': PropertySchema(
-      id: 6,
+      id: 8,
       name: r'updatedAt',
       type: IsarType.dateTime,
     )
@@ -123,11 +133,13 @@ void _positionSnapshotSerialize(
 ) {
   writer.writeString(offsets[0], object.assetSupabaseId);
   writer.writeDouble(offsets[1], object.averageCost);
-  writer.writeDateTime(offsets[2], object.createdAt);
-  writer.writeDateTime(offsets[3], object.date);
-  writer.writeString(offsets[4], object.supabaseId);
-  writer.writeDouble(offsets[5], object.totalShares);
-  writer.writeDateTime(offsets[6], object.updatedAt);
+  writer.writeDouble(offsets[2], object.costBasisCny);
+  writer.writeDateTime(offsets[3], object.createdAt);
+  writer.writeDateTime(offsets[4], object.date);
+  writer.writeDouble(offsets[5], object.fxRateToCny);
+  writer.writeString(offsets[6], object.supabaseId);
+  writer.writeDouble(offsets[7], object.totalShares);
+  writer.writeDateTime(offsets[8], object.updatedAt);
 }
 
 PositionSnapshot _positionSnapshotDeserialize(
@@ -139,12 +151,14 @@ PositionSnapshot _positionSnapshotDeserialize(
   final object = PositionSnapshot();
   object.assetSupabaseId = reader.readStringOrNull(offsets[0]);
   object.averageCost = reader.readDouble(offsets[1]);
-  object.createdAt = reader.readDateTime(offsets[2]);
-  object.date = reader.readDateTime(offsets[3]);
+  object.costBasisCny = reader.readDoubleOrNull(offsets[2]);
+  object.createdAt = reader.readDateTime(offsets[3]);
+  object.date = reader.readDateTime(offsets[4]);
+  object.fxRateToCny = reader.readDoubleOrNull(offsets[5]);
   object.id = id;
-  object.supabaseId = reader.readStringOrNull(offsets[4]);
-  object.totalShares = reader.readDouble(offsets[5]);
-  object.updatedAt = reader.readDateTimeOrNull(offsets[6]);
+  object.supabaseId = reader.readStringOrNull(offsets[6]);
+  object.totalShares = reader.readDouble(offsets[7]);
+  object.updatedAt = reader.readDateTimeOrNull(offsets[8]);
   return object;
 }
 
@@ -160,14 +174,18 @@ P _positionSnapshotDeserializeProp<P>(
     case 1:
       return (reader.readDouble(offset)) as P;
     case 2:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readDoubleOrNull(offset)) as P;
     case 3:
       return (reader.readDateTime(offset)) as P;
     case 4:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 5:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readDoubleOrNull(offset)) as P;
     case 6:
+      return (reader.readStringOrNull(offset)) as P;
+    case 7:
+      return (reader.readDouble(offset)) as P;
+    case 8:
       return (reader.readDateTimeOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -785,6 +803,90 @@ extension PositionSnapshotQueryFilter
   }
 
   QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      costBasisCnyIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'costBasisCny',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      costBasisCnyIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'costBasisCny',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      costBasisCnyEqualTo(
+    double? value, {
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'costBasisCny',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      costBasisCnyGreaterThan(
+    double? value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'costBasisCny',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      costBasisCnyLessThan(
+    double? value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'costBasisCny',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      costBasisCnyBetween(
+    double? lower,
+    double? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'costBasisCny',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
       createdAtEqualTo(DateTime value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
@@ -892,6 +994,90 @@ extension PositionSnapshotQueryFilter
         includeLower: includeLower,
         upper: upper,
         includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      fxRateToCnyIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'fxRateToCny',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      fxRateToCnyIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'fxRateToCny',
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      fxRateToCnyEqualTo(
+    double? value, {
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'fxRateToCny',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      fxRateToCnyGreaterThan(
+    double? value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'fxRateToCny',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      fxRateToCnyLessThan(
+    double? value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'fxRateToCny',
+        value: value,
+        epsilon: epsilon,
+      ));
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterFilterCondition>
+      fxRateToCnyBetween(
+    double? lower,
+    double? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'fxRateToCny',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        epsilon: epsilon,
       ));
     });
   }
@@ -1284,6 +1470,20 @@ extension PositionSnapshotQuerySortBy
   }
 
   QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      sortByCostBasisCny() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'costBasisCny', Sort.asc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      sortByCostBasisCnyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'costBasisCny', Sort.desc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
       sortByCreatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'createdAt', Sort.asc);
@@ -1307,6 +1507,20 @@ extension PositionSnapshotQuerySortBy
       sortByDateDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'date', Sort.desc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      sortByFxRateToCny() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fxRateToCny', Sort.asc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      sortByFxRateToCnyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fxRateToCny', Sort.desc);
     });
   }
 
@@ -1384,6 +1598,20 @@ extension PositionSnapshotQuerySortThenBy
   }
 
   QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      thenByCostBasisCny() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'costBasisCny', Sort.asc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      thenByCostBasisCnyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'costBasisCny', Sort.desc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
       thenByCreatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'createdAt', Sort.asc);
@@ -1407,6 +1635,20 @@ extension PositionSnapshotQuerySortThenBy
       thenByDateDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'date', Sort.desc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      thenByFxRateToCny() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fxRateToCny', Sort.asc);
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QAfterSortBy>
+      thenByFxRateToCnyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fxRateToCny', Sort.desc);
     });
   }
 
@@ -1484,6 +1726,13 @@ extension PositionSnapshotQueryWhereDistinct
   }
 
   QueryBuilder<PositionSnapshot, PositionSnapshot, QDistinct>
+      distinctByCostBasisCny() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'costBasisCny');
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QDistinct>
       distinctByCreatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'createdAt');
@@ -1493,6 +1742,13 @@ extension PositionSnapshotQueryWhereDistinct
   QueryBuilder<PositionSnapshot, PositionSnapshot, QDistinct> distinctByDate() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'date');
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, PositionSnapshot, QDistinct>
+      distinctByFxRateToCny() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'fxRateToCny');
     });
   }
 
@@ -1540,6 +1796,13 @@ extension PositionSnapshotQueryProperty
     });
   }
 
+  QueryBuilder<PositionSnapshot, double?, QQueryOperations>
+      costBasisCnyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'costBasisCny');
+    });
+  }
+
   QueryBuilder<PositionSnapshot, DateTime, QQueryOperations>
       createdAtProperty() {
     return QueryBuilder.apply(this, (query) {
@@ -1550,6 +1813,13 @@ extension PositionSnapshotQueryProperty
   QueryBuilder<PositionSnapshot, DateTime, QQueryOperations> dateProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'date');
+    });
+  }
+
+  QueryBuilder<PositionSnapshot, double?, QQueryOperations>
+      fxRateToCnyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'fxRateToCny');
     });
   }
 

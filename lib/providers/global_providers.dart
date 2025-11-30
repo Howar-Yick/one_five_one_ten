@@ -1,20 +1,23 @@
 // File: lib/providers/global_providers.dart
-// Version: CHATGPT-1.14-20251016-ACCOUNT-CHART-TRIM-PROFIT-ZEROS
+// Version: CHATGPT-1.15-20251130-SNAPSHOT-POSITION-SNAPSHOT-FIX
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:isar/isar.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/asset.dart';
+import 'package:one_five_one_ten/models/position_snapshot.dart';
+import 'package:one_five_one_ten/models/account_transaction.dart';
+import 'package:one_five_one_ten/models/transaction.dart';
+
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/price_sync_service.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
-import 'package:one_five_one_ten/models/position_snapshot.dart';
-import 'package:one_five_one_ten/models/account_transaction.dart';
-import 'package:one_five_one_ten/models/transaction.dart';
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
 import 'package:one_five_one_ten/utils/timezone.dart'; // ☆
 
 const int kNavTabDashboard = 0;
@@ -46,6 +49,7 @@ enum ShareAssetChartType {
 final databaseServiceProvider = Provider<DatabaseService>((ref) {
   return DatabaseService();
 });
+
 final syncServiceProvider = Provider<SupabaseSyncService>((ref) {
   return SupabaseSyncService();
 });
@@ -77,10 +81,13 @@ final dashboardDataProvider =
 final priceSyncServiceProvider = Provider<PriceSyncService>((ref) {
   return PriceSyncService();
 });
+
 enum PriceSyncState { idle, loading, success, error }
+
 class PriceSyncController extends StateNotifier<PriceSyncState> {
   final Ref _ref;
   PriceSyncController(this._ref) : super(PriceSyncState.idle);
+
   Future<void> syncAllPrices() async {
     if (state == PriceSyncState.loading) return;
     state = PriceSyncState.loading;
@@ -88,6 +95,7 @@ class PriceSyncController extends StateNotifier<PriceSyncState> {
       final isar = _ref.read(databaseServiceProvider).isar;
       final priceService = _ref.read(priceSyncServiceProvider);
       final syncService = _ref.read(syncServiceProvider);
+
       final allAssets = await isar.assets.where().findAll();
       final assetsToSync = allAssets
           .where((a) =>
@@ -96,14 +104,16 @@ class PriceSyncController extends StateNotifier<PriceSyncState> {
                   a.subType == AssetSubType.mutualFund) &&
               a.code.isNotEmpty)
           .toList();
+
       if (assetsToSync.isEmpty) {
         print('[PriceSyncController] 没有需要同步价格的资产。');
         state = PriceSyncState.success;
         return;
       }
-      print('[PriceSyncController] 开始为 ${assetsToSync.length} 个资产同步价格...');
-      int successCount = 0;
-      int failCount = 0;
+
+      print(
+          '[PriceSyncController] 开始为 ${assetsToSync.length} 个资产同步价格...');
+
       final futures = assetsToSync.map((asset) async {
         try {
           final newPrice = await priceService.syncPrice(asset);
@@ -111,7 +121,8 @@ class PriceSyncController extends StateNotifier<PriceSyncState> {
             asset.latestPrice = newPrice;
             asset.priceUpdateDate = DateTime.now();
             await syncService.saveAsset(asset);
-            print('[PriceSyncController] 同步成功 ${asset.name}: $newPrice');
+            print(
+                '[PriceSyncController] 同步成功 ${asset.name}: $newPrice');
             return true;
           } else if (newPrice == null) {
             print('[PriceSyncController] 未能获取价格 ${asset.name}');
@@ -119,14 +130,19 @@ class PriceSyncController extends StateNotifier<PriceSyncState> {
           }
           return null;
         } catch (e) {
-          print('[PriceSyncController] 同步 ${asset.name} 时出错: $e');
+          print(
+              '[PriceSyncController] 同步 ${asset.name} 时出错: $e');
           return false;
         }
       }).toList();
+
       final results = await Future.wait(futures);
-      successCount = results.where((r) => r == true).length;
-      failCount = results.where((r) => r == false).length;
-      print('[PriceSyncController] 同步完成。 成功: $successCount, 失败: $failCount');
+      final successCount = results.where((r) => r == true).length;
+      final failCount = results.where((r) => r == false).length;
+
+      print(
+          '[PriceSyncController] 同步完成。 成功: $successCount, 失败: $failCount');
+
       _ref.invalidate(dashboardDataProvider);
       state = PriceSyncState.success;
     } catch (e) {
@@ -135,6 +151,7 @@ class PriceSyncController extends StateNotifier<PriceSyncState> {
     }
   }
 }
+
 final priceSyncControllerProvider =
     StateNotifierProvider<PriceSyncController, PriceSyncState>((ref) {
   return PriceSyncController(ref);
@@ -156,9 +173,11 @@ final accountPerformanceProvider =
   return CalculatorService().calculateAccountPerformance(account);
 });
 
-// ------------------------ 🔧 热修复：资产列表（保持不变） ------------------------
+// ------------------------ 资产列表 ------------------------
+
 final trackedAssetsWithPerformanceProvider =
-    StreamProvider.autoDispose.family<List<Map<String, dynamic>>, int>((ref, accountId) async* {
+    StreamProvider.autoDispose.family<List<Map<String, dynamic>>, int>(
+        (ref, accountId) async* {
   final isar = ref.watch(databaseServiceProvider).isar;
   final calculator = CalculatorService();
   final account = await ref.watch(accountDetailProvider(accountId).future);
@@ -194,14 +213,13 @@ final trackedAssetsWithPerformanceProvider =
   }
 });
 
-// ------------------------ ✅ 账户曲线：净值 A+B + 收益两线去前导 0 ------------------------
+// ------------------------ 账户曲线 ------------------------
+
 final accountHistoryProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, Account>(
         (ref, account) async {
-  // 触发依赖刷新（保持旧行为）
   ref.watch(accountPerformanceProvider(account.id));
 
-  // 原始三条曲线
   final raw = await CalculatorService().getAccountHistoryCharts(account);
   final List<FlSpot> rawValue =
       (raw['totalValue'] ?? const <FlSpot>[]) as List<FlSpot>;
@@ -210,7 +228,6 @@ final accountHistoryProvider =
   final List<FlSpot> rawRate =
       (raw['profitRate'] ?? const <FlSpot>[]) as List<FlSpot>;
 
-  // 工具：至少两点（若仅 1 点，则在前一日补同值点）
   void _ensureTwo(List<FlSpot> spots, double defaultY) {
     if (spots.isEmpty) return;
     if (spots.length == 1) {
@@ -221,7 +238,6 @@ final accountHistoryProvider =
     }
   }
 
-  // 工具：裁掉前导 0，并在首个有效点的前一日补同值点（ε 为零判断阈值）
   List<FlSpot> _trimLeadingZerosAndPrependPrev(List<FlSpot> spots,
       {double epsilon = 1e-8}) {
     if (spots.isEmpty) return spots;
@@ -239,17 +255,14 @@ final accountHistoryProvider =
       trimmed.insert(0, FlSpot(dayBefore, trimmed.first.y));
       return trimmed;
     }
-    // 全 0 或本就无前导 0：原样返回（仍做 ensureTwo 兜底）
     return list;
   }
 
-  // A) 净值：与上个版本一致（去前导 0 + 前一日补点 + 动态 Y 轴）
   List<FlSpot> value = _trimLeadingZerosAndPrependPrev(rawValue, epsilon: 1e-9);
   if (value.isNotEmpty) {
     _ensureTwo(value, value.first.y);
   }
 
-  // 仅用于“净值”图表的动态 Y 轴范围
   double? valueMinY;
   double? valueMaxY;
   if (value.isNotEmpty) {
@@ -270,7 +283,6 @@ final accountHistoryProvider =
     }
   }
 
-  // B) 收益与收益率：新增“去前导 0 + 首日前一日补点”，不改 Y 轴缩放策略（沿用默认）
   final List<FlSpot> profit =
       _trimLeadingZerosAndPrependPrev(rawProfit, epsilon: 1e-8);
   final List<FlSpot> rate =
@@ -283,16 +295,16 @@ final accountHistoryProvider =
     'totalValue': value,
     'totalProfit': profit,
     'profitRate': rate,
-    // 仅供“净值”图表读取
     'valueMinY': valueMinY,
     'valueMaxY': valueMaxY,
   };
 });
 
-// --------------------------------------------------------------------
+// ------------------------ 账户流水 ------------------------
 
 final transactionHistoryProvider =
-    StreamProvider.autoDispose.family<List<AccountTransaction>, int>((ref, accountId) async* {
+    StreamProvider.autoDispose.family<List<AccountTransaction>, int>(
+        (ref, accountId) async* {
   final isar = ref.watch(databaseServiceProvider).isar;
   final account = await isar.accounts.get(accountId);
   if (account == null || account.supabaseId == null) {
@@ -307,6 +319,8 @@ final transactionHistoryProvider =
       .watch(fireImmediately: true);
   yield* transactionStream;
 });
+
+// ------------------------ 份额法资产详情 & 业绩 ------------------------
 
 final shareAssetDetailProvider =
     StreamProvider.autoDispose.family<Asset?, int>((ref, assetId) {
@@ -327,6 +341,8 @@ final shareAssetPerformanceProvider =
   return CalculatorService().calculateShareAssetPerformance(asset);
 });
 
+// ------------------------ 份额法资产价格历史（远程行情） ------------------------
+
 final assetHistoryChartProvider =
     FutureProvider.autoDispose.family<List<FlSpot>, int>((ref, assetId) async {
   final asset = await ref.watch(shareAssetDetailProvider(assetId).future);
@@ -341,28 +357,56 @@ final assetHistoryChartProvider =
   return [];
 });
 
+// ------------------------ ✅ 持仓快照历史（关键修复版） ------------------------
+/// 逻辑：
+/// 1. 监听指定 assetId 对应的 Asset（本地 Isar）；
+/// 2. 只要 asset 或其 supabaseId 发生变化，就重新订阅 PositionSnapshot 列表；
+/// 3. 用 asset.supabaseId == snapshot.assetSupabaseId 做关联。
 final snapshotHistoryProvider =
-    StreamProvider.autoDispose.family<List<PositionSnapshot>, int>((ref, assetId) async* {
+    StreamProvider.autoDispose.family<List<PositionSnapshot>, int>(
+        (ref, assetId) async* {
   final isar = ref.watch(databaseServiceProvider).isar;
-  final asset = await ref.watch(shareAssetDetailProvider(assetId).future);
-  if (asset == null || asset.supabaseId == null) {
-    yield [];
-    return;
+
+  // 直接监听 Asset 对象，避免只取“第一次”的问题
+  final assetStream =
+      isar.assets.watchObject(assetId, fireImmediately: true);
+
+  await for (final asset in assetStream) {
+    if (asset == null || asset.supabaseId == null) {
+      yield [];
+      continue;
+    }
+
+    final assetSupabaseId = asset.supabaseId!;
+    // 为当前 assetSupabaseId 建立一个快照流
+    final snapshotsStream = isar.positionSnapshots
+        .where()
+        .assetSupabaseIdEqualTo(assetSupabaseId)
+        .sortByDateDesc()
+        .watch(fireImmediately: true);
+
+    await for (final snaps in snapshotsStream) {
+      // 这里再读一次资产，防止在内部循环时 asset 已经变更导致 supabaseId 不一致
+      final currentAsset = await isar.assets.get(assetId);
+      if (currentAsset == null ||
+          currentAsset.supabaseId != assetSupabaseId) {
+        // 资产已经换了 supabaseId，跳出内层循环，回到外层等待新 asset 事件
+        break;
+      }
+      yield snaps;
+    }
   }
-  final assetSupabaseId = asset.supabaseId!;
-  final snapshotStream = isar.positionSnapshots
-      .where()
-      .assetSupabaseIdEqualTo(assetSupabaseId)
-      .sortByDateDesc()
-      .watch(fireImmediately: true);
-  yield* snapshotStream;
 });
+
+// ------------------------ 份额法资产：价格 + 业绩三线合成图 ------------------------
 
 final shareAssetCombinedChartProvider =
     FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>(
   (ref, assetId) async {
-    final priceHistory = await ref.watch(assetHistoryChartProvider(assetId).future);
-    final snapshots = await ref.watch(snapshotHistoryProvider(assetId).future);
+    final priceHistory =
+        await ref.watch(assetHistoryChartProvider(assetId).future);
+    final snapshots =
+        await ref.watch(snapshotHistoryProvider(assetId).future);
 
     DateTime _dateOnly(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
 
@@ -371,7 +415,8 @@ final shareAssetCombinedChartProvider =
       if (spots.length == 1) {
         final d0 = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
         final dayBefore =
-            d0.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
+            d0.subtract(const Duration(days: 1)).millisecondsSinceEpoch
+                .toDouble();
         spots.insert(0, FlSpot(dayBefore, defaultY));
       }
     }
@@ -402,7 +447,8 @@ final shareAssetCombinedChartProvider =
 
     final List<FlSpot> priceByDay = priceHistory.where((spot) {
       final d = DateTime.fromMillisecondsSinceEpoch(spot.x.toInt());
-      final dayEpoch = _dateOnly(d).millisecondsSinceEpoch.toDouble();
+      final dayEpoch =
+          _dateOnly(d).millisecondsSinceEpoch.toDouble();
       return dayEpoch >= firstSnapEpoch;
     }).toList();
 
@@ -411,8 +457,10 @@ final shareAssetCombinedChartProvider =
 
     if (effectivePrice.isEmpty) {
       final now = DateTime.now().millisecondsSinceEpoch.toDouble();
-      final yesterday =
-          DateTime.now().subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
+      final yesterday = DateTime.now()
+          .subtract(const Duration(days: 1))
+          .millisecondsSinceEpoch
+          .toDouble();
       return {
         'price': const [],
         'totalProfit': [FlSpot(yesterday, 0.0), FlSpot(now, 0.0)],
@@ -427,7 +475,8 @@ final shareAssetCombinedChartProvider =
     PositionSnapshot? active;
 
     for (final p in effectivePrice) {
-      final pDate = _dateOnly(DateTime.fromMillisecondsSinceEpoch(p.x.toInt()));
+      final pDate =
+          _dateOnly(DateTime.fromMillisecondsSinceEpoch(p.x.toInt()));
 
       while (snapIdx < sortedSnapshots.length) {
         final sDate = _dateOnly(sortedSnapshots[snapIdx].date);
@@ -452,13 +501,17 @@ final shareAssetCombinedChartProvider =
         continue;
       }
 
-      final double cost = (shares * avgCost).isFinite ? shares * avgCost : 0.0;
-      final double mv = (shares * price).isFinite ? shares * price : 0.0;
-      final double profit = (mv - cost).isFinite ? (mv - cost) : 0.0;
+      final double cost =
+          (shares * avgCost).isFinite ? shares * avgCost : 0.0;
+      final double mv =
+          (shares * price).isFinite ? shares * price : 0.0;
+      final double profit =
+          (mv - cost).isFinite ? (mv - cost) : 0.0;
       final double rate = (cost == 0) ? 0.0 : (profit / cost);
 
       profitSpots.add(FlSpot(p.x, profit));
-      profitRateSpots.add(FlSpot(p.x, rate.isFinite ? rate : 0.0));
+      profitRateSpots
+          .add(FlSpot(p.x, rate.isFinite ? rate : 0.0));
     }
 
     _ensureTwoSpots(effectivePrice, effectivePrice.first.y);
@@ -472,6 +525,8 @@ final shareAssetCombinedChartProvider =
     };
   },
 );
+
+// ------------------------ 价值法资产 ------------------------
 
 final valueAssetDetailProvider =
     StreamProvider.autoDispose.family<Asset?, int>((ref, assetId) {
@@ -491,13 +546,19 @@ final valueAssetPerformanceProvider =
 
 /// 价值法资产 —— 统一按“日期”对齐；同日多次仅保留“最后一条”；确保至少两点
 final valueAssetCombinedChartProvider =
-    FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>((ref, assetId) async {
+    FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>(
+        (ref, assetId) async {
   ref.watch(valueAssetPerformanceProvider(assetId));
   final asset = await ref.watch(valueAssetDetailProvider(assetId).future);
   if (asset == null) {
-    return {'totalValue': const [], 'totalProfit': const [], 'profitRate': const []};
+    return {
+      'totalValue': const [],
+      'totalProfit': const [],
+      'profitRate': const []
+    };
   }
-  final raw = await CalculatorService().getValueAssetHistoryCharts(asset);
+  final raw =
+      await CalculatorService().getValueAssetHistoryCharts(asset);
 
   DateTime _dateOnly(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
 
@@ -520,14 +581,19 @@ final valueAssetCombinedChartProvider =
     if (spots.isEmpty) return;
     if (spots.length == 1) {
       final d0 = DateTime.fromMillisecondsSinceEpoch(spots.first.x.toInt());
-      final dayBefore = d0.subtract(const Duration(days: 1)).millisecondsSinceEpoch.toDouble();
+      final dayBefore =
+          d0.subtract(const Duration(days: 1)).millisecondsSinceEpoch
+              .toDouble();
       spots.insert(0, FlSpot(dayBefore, defaultY));
     }
   }
 
-  final List<FlSpot> valueLine = _normalizeByDay((raw['totalValue'] ?? const <FlSpot>[]) as List<FlSpot>);
-  final List<FlSpot> profitLine = _normalizeByDay((raw['totalProfit'] ?? const <FlSpot>[]) as List<FlSpot>);
-  final List<FlSpot> rateLine = _normalizeByDay((raw['profitRate'] ?? const <FlSpot>[]) as List<FlSpot>);
+  final List<FlSpot> valueLine =
+      _normalizeByDay((raw['totalValue'] ?? const <FlSpot>[]) as List<FlSpot>);
+  final List<FlSpot> profitLine =
+      _normalizeByDay((raw['totalProfit'] ?? const <FlSpot>[]) as List<FlSpot>);
+  final List<FlSpot> rateLine =
+      _normalizeByDay((raw['profitRate'] ?? const <FlSpot>[]) as List<FlSpot>);
 
   if (valueLine.isNotEmpty) _ensureTwoSpots(valueLine, valueLine.first.y);
   if (profitLine.isNotEmpty) _ensureTwoSpots(profitLine, 0.0);
@@ -541,9 +607,12 @@ final valueAssetCombinedChartProvider =
 });
 
 final valueAssetHistoryChartsProvider =
-    FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>((ref, assetId) async {
+    FutureProvider.autoDispose.family<Map<String, List<FlSpot>>, int>(
+        (ref, assetId) async {
   return ref.watch(valueAssetCombinedChartProvider(assetId).future);
 });
+
+// ------------------------ 主题切换 ------------------------
 
 final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeMode>((ref) {
   return ThemeNotifier();
@@ -554,7 +623,8 @@ class ThemeNotifier extends StateNotifier<ThemeMode> {
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    final themeIndex = prefs.getInt('themeMode') ?? ThemeMode.system.index;
+    final themeIndex =
+        prefs.getInt('themeMode') ?? ThemeMode.system.index;
     state = ThemeMode.values[themeIndex];
   }
 
@@ -567,30 +637,31 @@ class ThemeNotifier extends StateNotifier<ThemeMode> {
   }
 }
 
-// ------------------------ 已清仓（归档）资产 Providers ------------------------
+// ------------------------ 已清仓（归档）资产 ------------------------
 
 final archivedAssetsProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   final isar = ref.watch(databaseServiceProvider).isar;
   final calculator = CalculatorService();
 
-  final archivedAssets = await isar.assets
-      .where()
-      .isArchivedEqualTo(true)
-      .findAll();
+  final archivedAssets =
+      await isar.assets.where().isArchivedEqualTo(true).findAll();
 
   final allAccounts = await isar.accounts.where().findAll();
-  final accountMap = {for (var acc in allAccounts) acc.supabaseId: acc.name};
+  final accountMap = {
+    for (var acc in allAccounts) acc.supabaseId: acc.name
+  };
 
   final List<Future<Map<String, dynamic>>> futures =
       archivedAssets.map((asset) async {
     Map<String, dynamic> performanceData;
 
     if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
-      performanceData =
-          await calculator.calculateArchivedShareAssetPerformance(asset);
+      performanceData = await calculator
+          .calculateArchivedShareAssetPerformance(asset);
     } else {
-      performanceData = await calculator.calculateValueAssetPerformance(asset);
+      performanceData =
+          await calculator.calculateValueAssetPerformance(asset);
     }
 
     return {
@@ -603,8 +674,10 @@ final archivedAssetsProvider =
   final results = await Future.wait(futures);
 
   results.sort((a, b) {
-    final dateA = (a['asset'] as Asset).updatedAt ?? DateTime(2000);
-    final dateB = (b['asset'] as Asset).updatedAt ?? DateTime(2000);
+    final dateA =
+        (a['asset'] as Asset).updatedAt ?? DateTime(2000);
+    final dateB =
+        (b['asset'] as Asset).updatedAt ?? DateTime(2000);
     return dateB.compareTo(dateA);
   });
 
