@@ -22,7 +22,8 @@ class _AllocationDonutChartState extends State<AllocationDonutChart> {
   static const double _outerRadius = 110.0;
   static const double _innerRadius = 90.0;
   static const double _outerSize = (_outerRadius * 2) + 14;
-  static const double _innerSize = (_innerRadius * 2) + 8;
+  // 调整实际绘制区域，避免内圈的组件遮挡外圈的鼠标事件。
+  static const double _innerSize = _innerRadius * 2;
 
   int? _hoveredOuterIndex;
   int? _hoveredInnerIndex;
@@ -177,63 +178,66 @@ class _AllocationDonutChartState extends State<AllocationDonutChart> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          height: _outerSize,
-          width: _outerSize,
-          child: MouseRegion(
-            onExit: (_) {
-              setState(() {
-                _hoveredInnerIndex = null;
-                _hoveredOuterIndex = null;
-              });
-            },
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                _buildChartLayer(
-                  translucent: true,
-                  radius: _outerRadius,
-                  hoveredIndex: _hoveredOuterIndex,
-                  onHoverChanged: (index) {
-                    setState(() {
-                      _hoveredOuterIndex = index;
-                      if (index != null && index < widget.targetSlices.length) {
-                        final label = widget.targetSlices[index].label;
-                        _hoveredInnerIndex =
-                            _indexByLabel(widget.actualSlices, label);
-                      } else {
-                        _hoveredInnerIndex = null;
-                      }
-                    });
-                  },
-                  slices: widget.targetSlices,
-                  size: _outerSize,
-                ),
-                _buildChartLayer(
-                  translucent: false,
-                  radius: _innerRadius,
-                  hoveredIndex: _hoveredInnerIndex,
-                  onHoverChanged: (index) {
-                    setState(() {
-                      _hoveredInnerIndex = index;
-                      if (index != null && index < widget.actualSlices.length) {
-                        final label = widget.actualSlices[index].label;
-                        _hoveredOuterIndex =
-                            _indexByLabel(widget.targetSlices, label);
-                      } else {
-                        _hoveredOuterIndex = null;
-                      }
-                    });
-                  },
-                  slices: widget.actualSlices,
-                  size: _innerSize,
-                ),
-                Text(
-                  _buildCenterTitle(),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
+        Align(
+          alignment: Alignment.center,
+          child: SizedBox(
+            height: _outerSize,
+            width: _outerSize,
+            child: MouseRegion(
+              onExit: (_) {
+                setState(() {
+                  _hoveredInnerIndex = null;
+                  _hoveredOuterIndex = null;
+                });
+              },
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  _buildChartLayer(
+                    translucent: true,
+                    radius: _outerRadius,
+                    hoveredIndex: _hoveredOuterIndex,
+                    onHoverChanged: (index) {
+                      setState(() {
+                        _hoveredOuterIndex = index;
+                        if (index != null &&
+                            index < widget.targetSlices.length) {
+                          final label = widget.targetSlices[index].label;
+                          _hoveredInnerIndex =
+                              _indexByLabel(widget.actualSlices, label);
+                        } else {
+                          _hoveredInnerIndex = null;
+                        }
+                      });
+                    },
+                    slices: widget.targetSlices,
+                    size: _outerSize,
+                  ),
+                  _buildChartLayer(
+                    translucent: false,
+                    radius: _innerRadius,
+                    hoveredIndex: _hoveredInnerIndex,
+                    onHoverChanged: (index) {
+                      setState(() {
+                        _hoveredInnerIndex = index;
+                        if (index != null &&
+                            index < widget.actualSlices.length) {
+                          final label = widget.actualSlices[index].label;
+                          _hoveredOuterIndex =
+                              _indexByLabel(widget.targetSlices, label);
+                        }
+                      });
+                    },
+                    slices: widget.actualSlices,
+                    size: _innerSize,
+                  ),
+                  Text(
+                    _buildCenterTitle(),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
