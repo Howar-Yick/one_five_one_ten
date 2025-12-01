@@ -20,38 +20,23 @@ import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/allocation_service.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/exchangerate_service.dart';
-import 'package:one_five_one_ten/allocation/allocation_service.dart'
-    as legacy_allocation;
-import 'package:one_five_one_ten/allocation/mapping.dart'
-    as allocation_mapping;
 
 final NumberFormat _percentFormatter =
     NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 1;
 final NumberFormat _currencyFormatter =
     NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
 
-const Map<allocation_mapping.AllocationBucket, double>
-    _defaultTargetAllocations = {
-  allocation_mapping.AllocationBucket.us: 0.55,
-  allocation_mapping.AllocationBucket.cn: 0.10,
-  allocation_mapping.AllocationBucket.hk: 0.05,
-  allocation_mapping.AllocationBucket.gold: 0.10,
-  allocation_mapping.AllocationBucket.oil: 0.03,
-  allocation_mapping.AllocationBucket.bondCash: 0.17,
-  allocation_mapping.AllocationBucket.other: 0.0,
-};
+class _AllocationChartSlice {
+  const _AllocationChartSlice({
+    required this.label,
+    required this.targetShare,
+    required this.targetPercent,
+  });
 
-final _currentAllocationSnapshotProvider =
-    FutureProvider.autoDispose<legacy_allocation.AllocationSnapshot?>((ref) async {
-  final source = legacy_allocation.AllocationRegistry.source;
-  if (source == null) {
-    return null;
-  }
-
-  final items = await source();
-  final service = legacy_allocation.AllocationService();
-  return service.buildSnapshot(items);
-});
+  final String label;
+  final double targetShare;
+  final double targetPercent;
+}
 
 final _activeAssetsProvider =
     StreamProvider.autoDispose<List<Asset>>((ref) {
@@ -291,7 +276,7 @@ class _CurrentAllocationOverviewState
 
   @override
   Widget build(BuildContext context) {
-    final allocationAsync = ref.watch(_currentAllocationSnapshotProvider);
+    final activePlanAsync = ref.watch(activeAllocationPlanProvider);
     final theme = Theme.of(context);
 
     return Card(
@@ -314,162 +299,166 @@ class _CurrentAllocationOverviewState
                     setState(() {
                       _touchedIndex = -1;
                     });
-                    ref.refresh(_currentAllocationSnapshotProvider);
+                    ref.invalidate(activeAllocationPlanProvider);
                   },
                   icon: const Icon(Icons.refresh),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            allocationAsync.when(
-              data: (snapshot) {
-                if (snapshot == null) {
-                  return const Text('暂未连接资产配置数据源，请在应用启动时注册 AllocationRegistry。');
+            activePlanAsync.when(
+              data: (plan) {
+                if (plan == null) {
+                  return const Text('暂无资产配置方案，请先新建。');
                 }
 
-                final entries = snapshot.weights.entries
-                    .where((element) => element.value > 0)
-                    .toList()
-                  ..sort((a, b) => b.value.compareTo(a.value));
+                final itemsAsync = ref.watch(allocationItemsProvider(plan.id));
+                return itemsAsync.when(
+                  data: (items) {
+                    final validItems = items
+                        .where((e) => e.targetPercent > 0)
+                        .toList(growable: false)
+                      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
-                if (entries.isEmpty) {
-                  return const Text('暂无资产数据，先去新增或同步资产吧。');
-                }
+                    final totalTarget =
+                        validItems.fold<double>(0, (sum, e) => sum + e.targetPercent);
 
-                final colors = Colors.primaries;
+                    if (validItems.isEmpty || totalTarget <= 0) {
+                      return Text('当前方案“${plan.name}”暂无有效条目，请添加后查看饼图。');
+                    }
 
-                List<PieChartSectionData> buildSections() {
-                  return List.generate(entries.length, (index) {
-                    final bucket = entries[index].key;
-                    final share = entries[index].value;
-                    final percent = share * 100;
-                    final color = colors[index % colors.length];
-                    final isTouched = index == _touchedIndex;
-                    final radius = isTouched ? 86.0 : 76.0;
-                    final titleVisible = percent >= 4.0;
+                    final slices = <_AllocationChartSlice>[];
+                    for (final item in validItems) {
+                      final share = item.targetPercent / totalTarget;
+                      slices.add(_AllocationChartSlice(
+                        label: item.label,
+                        targetShare: share,
+                        targetPercent: item.targetPercent,
+                      ));
+                    }
 
-                    return PieChartSectionData(
-                      color: color,
-                      value: share,
-                      title: titleVisible
-                          ? '${allocation_mapping.bucketLabel(bucket)}\n${percent.toStringAsFixed(1)}%'
-                          : '',
-                      radius: radius,
-                      titleStyle: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    );
-                  });
-                }
+                    final colors = Colors.primaries;
 
-                final legendRows = <Widget>[];
-                for (var i = 0; i < entries.length; i++) {
-                  final bucket = entries[i].key;
-                  final share = entries[i].value;
-                  final percent = share * 100;
-                  final color = colors[i % colors.length];
-                  final bucketValue = snapshot.values[bucket] ?? 0.0;
-                  final target =
-                      (_defaultTargetAllocations[bucket] ?? 0.0) * 100.0;
-                  final diff = percent - target;
-                  final diffColor = diff.abs() < 0.1
-                      ? theme.textTheme.bodySmall?.color ?? Colors.grey
-                      : (diff >= 0 ? Colors.redAccent : Colors.green);
+                    List<PieChartSectionData> buildSections() {
+                      return List.generate(slices.length, (index) {
+                        final slice = slices[index];
+                        final percent = slice.targetShare * 100;
+                        final color = colors[index % colors.length];
+                        final isTouched = index == _touchedIndex;
+                        final radius = isTouched ? 86.0 : 76.0;
+                        final titleVisible = percent >= 4.0;
 
-                  legendRows.add(
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6.0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 12,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
-                            ),
+                        return PieChartSectionData(
+                          color: color,
+                          value: slice.targetShare,
+                          title: titleVisible
+                              ? '${slice.label}\n${percent.toStringAsFixed(1)}%'
+                              : '',
+                          radius: radius,
+                          titleStyle: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  allocation_mapping.bucketLabel(bucket),
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '金额：${_currencyFormatter.format(bucketValue)} · 目标 ${target.toStringAsFixed(0)}%',
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
+                        );
+                      });
+                    }
+
+                    final legendRows = <Widget>[];
+                    for (var i = 0; i < slices.length; i++) {
+                      final slice = slices[i];
+                      final percent = slice.targetShare * 100;
+                      final color = colors[i % colors.length];
+
+                      legendRows.add(
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6.0),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
+                              Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      slice.label,
+                                      style: theme.textTheme.bodyMedium,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '目标占比：${percent.toStringAsFixed(1)}%（权重 ${_percentFormatter.format(slice.targetPercent)}）',
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
                               Text(
                                 '${percent.toStringAsFixed(1)}%',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              Text(
-                                diff >= 0
-                                    ? '+${diff.toStringAsFixed(1)}%'
-                                    : '${diff.toStringAsFixed(1)}%',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: diffColor,
-                                ),
-                              ),
                             ],
                           ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '总资产：${_currencyFormatter.format(snapshot.total)}',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      height: 260,
-                      child: PieChart(
-                        PieChartData(
-                          pieTouchData: PieTouchData(
-                            touchCallback: (event, response) {
-                              setState(() {
-                                if (!event.isInterestedForInteractions ||
-                                    response == null ||
-                                    response.touchedSection == null) {
-                                  _touchedIndex = -1;
-                                } else {
-                                  _touchedIndex = response
-                                      .touchedSection!.touchedSectionIndex;
-                                }
-                              });
-                            },
-                          ),
-                          sectionsSpace: 2,
-                          centerSpaceRadius: 60,
-                          sections: buildSections(),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ...legendRows,
-                  ],
+                      );
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '当前方案：${plan.name}',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 260,
+                          child: PieChart(
+                            PieChartData(
+                              pieTouchData: PieTouchData(
+                                touchCallback: (event, response) {
+                                  setState(() {
+                                    if (!event.isInterestedForInteractions ||
+                                        response == null ||
+                                        response.touchedSection == null) {
+                                      _touchedIndex = -1;
+                                    } else {
+                                      _touchedIndex = response
+                                          .touchedSection!.touchedSectionIndex;
+                                    }
+                                  });
+                                },
+                              ),
+                              sectionsSpace: 2,
+                              centerSpaceRadius: 60,
+                              sections: buildSections(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ...legendRows,
+                      ],
+                    );
+                  },
+                  loading: () => const SizedBox(
+                    height: 160,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                  error: (err, stack) => Text(
+                    '加载方案条目失败：$err',
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: theme.colorScheme.error),
+                  ),
                 );
               },
               loading: () => const SizedBox(
@@ -477,7 +466,7 @@ class _CurrentAllocationOverviewState
                 child: Center(child: CircularProgressIndicator()),
               ),
               error: (err, stack) => Text(
-                '加载资产配置失败：$err',
+                '加载方案失败：$err',
                 style: theme.textTheme.bodyMedium
                     ?.copyWith(color: theme.colorScheme.error),
               ),
