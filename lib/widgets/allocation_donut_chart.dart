@@ -21,6 +21,8 @@ class _AllocationDonutChartState extends State<AllocationDonutChart> {
   static const double _centerSpace = 60.0;
   static const double _outerRadius = 110.0;
   static const double _innerRadius = 90.0;
+  static const double _outerSize = (_outerRadius * 2) + 14;
+  static const double _innerSize = (_innerRadius * 2) + 8;
 
   int? _hoveredOuterIndex;
   int? _hoveredInnerIndex;
@@ -66,6 +68,13 @@ class _AllocationDonutChartState extends State<AllocationDonutChart> {
     ) {
       for (final slice in slices) {
         if (slice.label == label) return slice;
+      }
+      return null;
+    }
+
+    int? _indexByLabel(List<AllocationChartSlice> slices, String label) {
+      for (int i = 0; i < slices.length; i++) {
+        if (slices[i].label == label) return i;
       }
       return null;
     }
@@ -130,32 +139,36 @@ class _AllocationDonutChartState extends State<AllocationDonutChart> {
       required int? hoveredIndex,
       required void Function(int? index) onHoverChanged,
       required List<AllocationChartSlice> slices,
+      required double size,
     }) {
       if (slices.isEmpty) return const SizedBox.shrink();
-      return PieChart(
-        PieChartData(
-          pieTouchData: PieTouchData(
-            enabled: true,
-            touchCallback: (event, response) {
-              final touchedIndex =
-                  response?.touchedSection?.touchedSectionIndex;
-              if (!event.isInterestedForInteractions ||
-                  touchedIndex == null ||
-                  touchedIndex < 0 ||
-                  touchedIndex >= slices.length) {
-                onHoverChanged(null);
-                return;
-              }
-              onHoverChanged(touchedIndex);
-            },
-          ),
-          sectionsSpace: translucent ? 2 : 1,
-          centerSpaceRadius: _centerSpace,
-          sections: toSections(
-            slices,
-            translucent: translucent,
-            radius: radius,
-            hoveredIndex: hoveredIndex,
+      return SizedBox.square(
+        dimension: size,
+        child: PieChart(
+          PieChartData(
+            pieTouchData: PieTouchData(
+              enabled: true,
+              touchCallback: (event, response) {
+                final touchedIndex =
+                    response?.touchedSection?.touchedSectionIndex;
+                if (!event.isInterestedForInteractions ||
+                    touchedIndex == null ||
+                    touchedIndex < 0 ||
+                    touchedIndex >= slices.length) {
+                  onHoverChanged(null);
+                  return;
+                }
+                onHoverChanged(touchedIndex);
+              },
+            ),
+            sectionsSpace: translucent ? 2 : 1,
+            centerSpaceRadius: _centerSpace,
+            sections: toSections(
+              slices,
+              translucent: translucent,
+              radius: radius,
+              hoveredIndex: hoveredIndex,
+            ),
           ),
         ),
       );
@@ -165,7 +178,8 @@ class _AllocationDonutChartState extends State<AllocationDonutChart> {
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          height: 210,
+          height: _outerSize,
+          width: _outerSize,
           child: MouseRegion(
             onExit: (_) {
               setState(() {
@@ -181,18 +195,38 @@ class _AllocationDonutChartState extends State<AllocationDonutChart> {
                   radius: _outerRadius,
                   hoveredIndex: _hoveredOuterIndex,
                   onHoverChanged: (index) {
-                    setState(() => _hoveredOuterIndex = index);
+                    setState(() {
+                      _hoveredOuterIndex = index;
+                      if (index != null && index < widget.targetSlices.length) {
+                        final label = widget.targetSlices[index].label;
+                        _hoveredInnerIndex =
+                            _indexByLabel(widget.actualSlices, label);
+                      } else {
+                        _hoveredInnerIndex = null;
+                      }
+                    });
                   },
                   slices: widget.targetSlices,
+                  size: _outerSize,
                 ),
                 _buildChartLayer(
                   translucent: false,
                   radius: _innerRadius,
                   hoveredIndex: _hoveredInnerIndex,
                   onHoverChanged: (index) {
-                    setState(() => _hoveredInnerIndex = index);
+                    setState(() {
+                      _hoveredInnerIndex = index;
+                      if (index != null && index < widget.actualSlices.length) {
+                        final label = widget.actualSlices[index].label;
+                        _hoveredOuterIndex =
+                            _indexByLabel(widget.targetSlices, label);
+                      } else {
+                        _hoveredOuterIndex = null;
+                      }
+                    });
                   },
                   slices: widget.actualSlices,
+                  size: _innerSize,
                 ),
                 Text(
                   _buildCenterTitle(),

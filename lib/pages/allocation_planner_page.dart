@@ -303,8 +303,16 @@ class _CurrentAllocationOverviewState
                       return Text('当前方案“${plan.name}”暂无有效条目，请添加后查看饼图。');
                     }
 
+                    final actualSliceMap = {
+                      for (final s in overview.actualSlices) s.label: s,
+                    };
+
                     final legendRows = overview.targetSlices.map((slice) {
                       final percent = slice.percent * 100;
+                      final actualPercent =
+                          actualSliceMap[slice.label]?.percent != null
+                              ? actualSliceMap[slice.label]!.percent * 100
+                              : null;
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 6.0),
                         child: Row(
@@ -332,14 +340,27 @@ class _CurrentAllocationOverviewState
                                     '目标占比：${percent.toStringAsFixed(1)}%（权重 ${_percentFormatter.format(slice.percent)}）',
                                     style: theme.textTheme.bodySmall,
                                   ),
+                                  Text(
+                                    '实际占比：${actualPercent?.toStringAsFixed(1) ?? '--'}%（当前持仓）',
+                                    style: theme.textTheme.bodySmall,
+                                  ),
                                 ],
                               ),
                             ),
-                            Text(
-                              '${percent.toStringAsFixed(1)}%',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '${percent.toStringAsFixed(1)}%',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  '实际 ${actualPercent?.toStringAsFixed(1) ?? '--'}%',
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ],
                             ),
                           ],
                         ),
