@@ -20,6 +20,8 @@ import 'package:one_five_one_ten/models/allocation_plan.dart';
 import 'package:one_five_one_ten/models/allocation_plan_item.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/asset_bucket_map.dart';
+import 'package:one_five_one_ten/models/position_snapshot.dart';
+import 'package:one_five_one_ten/models/transaction.dart';
 
 class AllocationService {
   AllocationService._(this.isar);
