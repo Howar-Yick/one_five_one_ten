@@ -7,8 +7,14 @@
 // - 用 targetPercent / sortOrder 对齐你的字段
 // - 其余保持最小入侵
 
+import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:isar/isar.dart';
+import 'package:one_five_one_ten/models/allocation_overview.dart';
+import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
+import 'package:one_five_one_ten/services/exchangerate_service.dart';
 
 import 'package:one_five_one_ten/models/allocation_plan.dart';
 import 'package:one_five_one_ten/models/allocation_plan_item.dart';
@@ -272,5 +278,247 @@ class AllocationService {
         await isar.assetBucketMaps.delete(entry.id);
       }
     });
+  }
+
+  Stream<AllocationOverview?> watchOverviewForChart() {
+    return Stream<AllocationOverview?>.multi((controller) {
+      final subs = <StreamSubscription<dynamic>>[];
+      var disposed = false;
+      Future<void>? running;
+      var scheduled = false;
+
+      Future<void> trigger() async {
+        if (disposed) return;
+        if (running != null) {
+          scheduled = true;
+          return;
+        }
+        scheduled = false;
+        running = _buildOverview().then((value) {
+          if (!disposed) {
+            controller.add(value);
+          }
+        }).catchError((error, stack) {
+          if (!disposed) {
+            controller.addError(error, stack);
+          }
+        }).whenComplete(() {
+          running = null;
+          if (scheduled && !disposed) {
+            trigger();
+          }
+        });
+      }
+
+      void listenTo(Stream<dynamic> stream) {
+        subs.add(stream.listen((_) => trigger(),
+            onError: (Object error, StackTrace stack) {
+          if (!disposed) {
+            controller.addError(error, stack);
+          }
+        }));
+      }
+
+      listenTo(isar.allocationPlans.watchLazy(fireImmediately: true));
+      listenTo(isar.allocationPlanItems.watchLazy(fireImmediately: true));
+      listenTo(isar.assetBucketMaps.watchLazy(fireImmediately: true));
+      listenTo(isar.assets.watchLazy(fireImmediately: true));
+      listenTo(isar.transactions.watchLazy(fireImmediately: true));
+      listenTo(isar.positionSnapshots.watchLazy(fireImmediately: true));
+
+      trigger();
+
+      controller.onCancel = () async {
+        disposed = true;
+        for (final sub in subs) {
+          await sub.cancel();
+        }
+      };
+    });
+  }
+
+  Future<AllocationOverview?> _buildOverview() async {
+    final plans = await listPlans();
+    if (plans.isEmpty) return null;
+
+    final plan = plans.firstWhere((p) => p.isActive, orElse: () => plans.first);
+    final items = await listItems(plan.id);
+    final validItems = items
+        .where((e) => e.targetPercent > 0)
+        .toList(growable: false)
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+    final totalTarget =
+        validItems.fold<double>(0, (sum, e) => sum + e.targetPercent);
+
+    if (validItems.isEmpty || totalTarget <= 0) {
+      return const AllocationOverview(targetSlices: [], actualSlices: []);
+    }
+
+    final colors = Colors.primaries;
+    final targetSlices = <AllocationChartSlice>[];
+    final labelColor = <String, Color>{};
+    final bucketLabels = <int, String>{};
+
+    for (var i = 0; i < validItems.length; i++) {
+      final item = validItems[i];
+      final share = item.targetPercent / totalTarget;
+      final color = colors[i % colors.length];
+      bucketLabels[item.id] = item.label;
+      labelColor[item.label] = color;
+
+      targetSlices.add(
+        AllocationChartSlice(
+          label: item.label,
+          percent: share,
+          color: color,
+        ),
+      );
+    }
+
+    final actualSlices =
+        await _buildActualSlices(plan.id, bucketLabels, labelColor);
+
+    return AllocationOverview(
+      targetSlices: targetSlices,
+      actualSlices: actualSlices,
+    );
+  }
+
+  Future<List<AllocationChartSlice>> _buildActualSlices(
+    int planId,
+    Map<int, String> bucketLabels,
+    Map<String, Color> labelColor,
+  ) async {
+    final calcService = CalculatorService();
+    final fxService = ExchangeRateService();
+
+    final mappings = await isar.assetBucketMaps
+        .where()
+        .planIdEqualTo(planId)
+        .findAll();
+
+    if (mappings.isEmpty) return const <AllocationChartSlice>[];
+
+    final assetIds = <int>{};
+    final supabaseIds = <String>{};
+    for (final mapping in mappings) {
+      if (mapping.assetId != null) {
+        assetIds.add(mapping.assetId!);
+      }
+      final supa = mapping.assetSupabaseId;
+      if (supa != null && supa.isNotEmpty) {
+        supabaseIds.add(supa);
+      }
+    }
+
+    final assets = <int, Asset>{};
+    if (assetIds.isNotEmpty) {
+      final fetched = await isar.assets.getAll(assetIds.toList());
+      for (final asset in fetched) {
+        if (asset != null && !asset.isArchived) {
+          assets[asset.id] = asset;
+        }
+      }
+    }
+
+    if (supabaseIds.isNotEmpty) {
+      final supaAssets = await isar.assets
+          .where()
+          .filter()
+          .anyOf(supabaseIds, (q, supa) => q.supabaseIdEqualTo(supa))
+          .findAll();
+      for (final asset in supaAssets) {
+        if (!asset.isArchived) {
+          assets[asset.id] = asset;
+        }
+      }
+    }
+
+    final currencyCache = <String, double>{};
+    Future<double> toCnyRate(String currency) async {
+      if (currencyCache.containsKey(currency)) {
+        return currencyCache[currency]!;
+      }
+      final rate = await fxService.getRate(currency, 'CNY');
+      currencyCache[currency] = rate;
+      return rate;
+    }
+
+    final supabaseLookup = <String, Asset>{};
+    for (final asset in assets.values) {
+      final supa = asset.supabaseId;
+      if (supa != null && supa.isNotEmpty) {
+        supabaseLookup[supa.toLowerCase()] = asset;
+      }
+    }
+
+    final assetValueCache = <int, double>{};
+    Future<double> assetValueInCny(Asset asset) async {
+      if (assetValueCache.containsKey(asset.id)) {
+        return assetValueCache[asset.id]!;
+      }
+
+      double localValue = 0.0;
+      if (asset.subType == AssetSubType.wealthManagement) {
+        final perf = await calcService.calculateValueAssetPerformance(asset);
+        localValue = (perf['currentValue'] as num?)?.toDouble() ?? 0.0;
+      } else if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
+        final perf = await calcService.calculateShareAssetPerformance(asset);
+        localValue = (perf['marketValue'] as num?)?.toDouble() ?? 0.0;
+      } else {
+        final perf = await calcService.calculateValueAssetPerformance(asset);
+        localValue = (perf['currentValue'] as num?)?.toDouble() ?? 0.0;
+      }
+
+      final rate = await toCnyRate(asset.currency);
+      final converted = localValue * rate;
+      final normalized = converted.isFinite ? converted : 0.0;
+      assetValueCache[asset.id] = normalized;
+      return normalized;
+    }
+
+    final bucketTotals = <int, double>{};
+    double planTotal = 0.0;
+
+    for (final mapping in mappings) {
+      Asset? asset;
+      if (mapping.assetId != null) {
+        asset = assets[mapping.assetId!];
+      }
+      asset ??= supabaseLookup[(mapping.assetSupabaseId ?? '').toLowerCase()];
+      if (asset == null) continue;
+
+      final value = await assetValueInCny(asset);
+      final positive = value.isFinite && value > 0 ? value : 0.0;
+      if (positive <= 0) {
+        bucketTotals.putIfAbsent(mapping.bucketId, () => 0.0);
+        continue;
+      }
+      bucketTotals.update(mapping.bucketId, (prev) => prev + positive,
+          ifAbsent: () => positive);
+      planTotal += positive;
+    }
+
+    if (planTotal <= 0) {
+      return const <AllocationChartSlice>[];
+    }
+
+    final actualSlices = <AllocationChartSlice>[];
+    for (final entry in bucketLabels.entries) {
+      final bucketId = entry.key;
+      final label = entry.value;
+      final bucketValue = bucketTotals[bucketId] ?? 0.0;
+      if (bucketValue <= 0) continue;
+      actualSlices.add(
+        AllocationChartSlice(
+          label: label,
+          percent: bucketValue / planTotal,
+          color: labelColor[label] ?? Colors.grey,
+        ),
+      );
+    }
+
+    return actualSlices;
   }
 }

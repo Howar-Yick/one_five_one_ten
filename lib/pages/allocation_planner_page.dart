@@ -3,7 +3,6 @@
 
 import 'dart:async';
 
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -17,6 +16,7 @@ import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/providers/allocation_providers.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
+import 'package:one_five_one_ten/widgets/allocation_donut_chart.dart';
 import 'package:one_five_one_ten/services/allocation_service.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/exchangerate_service.dart';
@@ -25,18 +25,6 @@ final NumberFormat _percentFormatter =
     NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 1;
 final NumberFormat _currencyFormatter =
     NumberFormat.currency(locale: 'zh_CN', symbol: '¥');
-
-class _AllocationChartSlice {
-  const _AllocationChartSlice({
-    required this.label,
-    required this.targetShare,
-    required this.targetPercent,
-  });
-
-  final String label;
-  final double targetShare;
-  final double targetPercent;
-}
 
 final _activeAssetsProvider =
     StreamProvider.autoDispose<List<Asset>>((ref) {
@@ -272,11 +260,10 @@ class _CurrentAllocationOverview extends ConsumerStatefulWidget {
 
 class _CurrentAllocationOverviewState
     extends ConsumerState<_CurrentAllocationOverview> {
-  int _touchedIndex = -1;
-
   @override
   Widget build(BuildContext context) {
     final activePlanAsync = ref.watch(activeAllocationPlanProvider);
+    final overviewAsync = ref.watch(allocationOverviewForChartProvider);
     final theme = Theme.of(context);
 
     return Card(
@@ -296,10 +283,8 @@ class _CurrentAllocationOverviewState
                 IconButton(
                   tooltip: '刷新',
                   onPressed: () {
-                    setState(() {
-                      _touchedIndex = -1;
-                    });
                     ref.invalidate(activeAllocationPlanProvider);
+                    ref.invalidate(allocationOverviewForChartProvider);
                   },
                   icon: const Icon(Icons.refresh),
                 ),
@@ -312,106 +297,54 @@ class _CurrentAllocationOverviewState
                   return const Text('暂无资产配置方案，请先新建。');
                 }
 
-                final itemsAsync = ref.watch(allocationItemsProvider(plan.id));
-                return itemsAsync.when(
-                  data: (items) {
-                    final validItems = items
-                        .where((e) => e.targetPercent > 0)
-                        .toList(growable: false)
-                      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-
-                    final totalTarget =
-                        validItems.fold<double>(0, (sum, e) => sum + e.targetPercent);
-
-                    if (validItems.isEmpty || totalTarget <= 0) {
+                return overviewAsync.when(
+                  data: (overview) {
+                    if (overview == null || overview.targetSlices.isEmpty) {
                       return Text('当前方案“${plan.name}”暂无有效条目，请添加后查看饼图。');
                     }
 
-                    final slices = <_AllocationChartSlice>[];
-                    for (final item in validItems) {
-                      final share = item.targetPercent / totalTarget;
-                      slices.add(_AllocationChartSlice(
-                        label: item.label,
-                        targetShare: share,
-                        targetPercent: item.targetPercent,
-                      ));
-                    }
-
-                    final colors = Colors.primaries;
-
-                    List<PieChartSectionData> buildSections() {
-                      return List.generate(slices.length, (index) {
-                        final slice = slices[index];
-                        final percent = slice.targetShare * 100;
-                        final color = colors[index % colors.length];
-                        final isTouched = index == _touchedIndex;
-                        final radius = isTouched ? 86.0 : 76.0;
-                        final titleVisible = percent >= 4.0;
-
-                        return PieChartSectionData(
-                          color: color,
-                          value: slice.targetShare,
-                          title: titleVisible
-                              ? '${slice.label}\n${percent.toStringAsFixed(1)}%'
-                              : '',
-                          radius: radius,
-                          titleStyle: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        );
-                      });
-                    }
-
-                    final legendRows = <Widget>[];
-                    for (var i = 0; i < slices.length; i++) {
-                      final slice = slices[i];
-                      final percent = slice.targetShare * 100;
-                      final color = colors[i % colors.length];
-
-                      legendRows.add(
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6.0),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Container(
-                                width: 12,
-                                height: 12,
-                                decoration: BoxDecoration(
-                                  color: color,
-                                  shape: BoxShape.circle,
-                                ),
+                    final legendRows = overview.targetSlices.map((slice) {
+                      final percent = slice.percent * 100;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6.0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: slice.color,
+                                shape: BoxShape.circle,
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      slice.label,
-                                      style: theme.textTheme.bodyMedium,
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '目标占比：${percent.toStringAsFixed(1)}%（权重 ${_percentFormatter.format(slice.targetPercent)}）',
-                                      style: theme.textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    slice.label,
+                                    style: theme.textTheme.bodyMedium,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '目标占比：${percent.toStringAsFixed(1)}%（权重 ${_percentFormatter.format(slice.percent)}）',
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ],
                               ),
-                              Text(
-                                '${percent.toStringAsFixed(1)}%',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            ),
+                            Text(
+                              '${percent.toStringAsFixed(1)}%',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       );
-                    }
+                    }).toList();
 
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -423,26 +356,9 @@ class _CurrentAllocationOverviewState
                         const SizedBox(height: 12),
                         SizedBox(
                           height: 260,
-                          child: PieChart(
-                            PieChartData(
-                              pieTouchData: PieTouchData(
-                                touchCallback: (event, response) {
-                                  setState(() {
-                                    if (!event.isInterestedForInteractions ||
-                                        response == null ||
-                                        response.touchedSection == null) {
-                                      _touchedIndex = -1;
-                                    } else {
-                                      _touchedIndex = response
-                                          .touchedSection!.touchedSectionIndex;
-                                    }
-                                  });
-                                },
-                              ),
-                              sectionsSpace: 2,
-                              centerSpaceRadius: 60,
-                              sections: buildSections(),
-                            ),
+                          child: AllocationDonutChart(
+                            targetSlices: overview.targetSlices,
+                            actualSlices: overview.actualSlices,
                           ),
                         ),
                         const SizedBox(height: 12),

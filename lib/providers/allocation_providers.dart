@@ -1,6 +1,7 @@
 // File: lib/providers/allocation_providers.dart
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:one_five_one_ten/models/allocation_overview.dart';
 import 'package:one_five_one_ten/services/allocation_service.dart';
 import 'package:one_five_one_ten/models/allocation_plan.dart';
 import 'package:one_five_one_ten/models/allocation_plan_item.dart';
@@ -33,4 +34,10 @@ final activeAllocationPlanProvider = StreamProvider<AllocationPlan?>((ref) {
 final allocationItemsProvider = StreamProvider.family<List<AllocationPlanItem>, int>((ref, planId) {
   final svc = ref.watch(allocationServiceProvider);
   return svc.watchItems(planId);
+});
+
+/// 饼图数据（当前启用方案 + 实际持仓）
+final allocationOverviewForChartProvider = StreamProvider<AllocationOverview?>((ref) {
+  final svc = ref.watch(allocationServiceProvider);
+  return svc.watchOverviewForChart();
 });
