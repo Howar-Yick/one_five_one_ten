@@ -137,12 +137,16 @@ class _AllocationDonutChartState extends State<AllocationDonutChart> {
           pieTouchData: PieTouchData(
             enabled: true,
             touchCallback: (event, response) {
+              final touchedIndex =
+                  response?.touchedSection?.touchedSectionIndex;
               if (!event.isInterestedForInteractions ||
-                  response?.touchedSection == null) {
+                  touchedIndex == null ||
+                  touchedIndex < 0 ||
+                  touchedIndex >= slices.length) {
                 onHoverChanged(null);
                 return;
               }
-              onHoverChanged(response!.touchedSection!.touchedSectionIndex);
+              onHoverChanged(touchedIndex);
             },
           ),
           sectionsSpace: translucent ? 2 : 1,
