@@ -7,6 +7,7 @@ import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/pages/share_asset_detail_page.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
+import 'package:one_five_one_ten/utils/number_formatter.dart';
 
 // Providers & services
 import 'package:one_five_one_ten/providers/global_providers.dart';
@@ -25,23 +26,33 @@ class SnapshotHistoryPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('持仓快照历史'),
       ),
-      body: historyAsync.when(
-        data: (snapshots) {
-          if (snapshots.isEmpty) {
-            return const Center(child: Text('暂无快照记录'));
+      body: asyncAsset.when(
+        data: (asset) {
+          if (asset == null) {
+            return const Center(child: Text('未找到资产'));
           }
-          final currencyCode = asyncAsset.asData?.value?.currency ?? 'CNY';
-          return ListView.builder(
-            itemCount: snapshots.length,
-            itemBuilder: (context, index) {
-              final snapshot = snapshots[index];
-              return _buildSnapshotTile(
-                context,
-                ref,
-                snapshot,
-                currencyCode,
+          final currencyCode = asset.currency;
+          return historyAsync.when(
+            data: (snapshots) {
+              if (snapshots.isEmpty) {
+                return const Center(child: Text('暂无快照记录'));
+              }
+              return ListView.builder(
+                itemCount: snapshots.length,
+                itemBuilder: (context, index) {
+                  final snapshot = snapshots[index];
+                  return _buildSnapshotTile(
+                    context,
+                    ref,
+                    snapshot,
+                    currencyCode,
+                    asset,
+                  );
+                },
               );
             },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (err, stack) => Center(child: Text('加载失败: $err')),
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -65,9 +76,11 @@ class SnapshotHistoryPage extends ConsumerWidget {
     WidgetRef ref,
     PositionSnapshot snapshot,
     String currencyCode,
+    Asset asset,
   ) {
+    final unitCostText = formatSnapshotUnitCost(snapshot.averageCost, asset);
     final List<Widget> subtitleLines = [
-      Text('单位成本: ${formatCurrency(snapshot.averageCost, currencyCode)}'),
+      Text('单位成本: ${getCurrencySymbol(currencyCode)}$unitCostText'),
       Text('份额: ${snapshot.totalShares.toStringAsFixed(2)}'),
     ];
 
@@ -98,7 +111,8 @@ class SnapshotHistoryPage extends ConsumerWidget {
         trailing: Text(
           DateFormat('yyyy-MM-dd').format(snapshot.date),
         ),
-        onTap: () => _showEditSnapshotDialog(context, ref, snapshot, currencyCode),
+        onTap: () =>
+            _showEditSnapshotDialog(context, ref, snapshot, currencyCode, asset),
         onLongPress: () => _showDeleteConfirmation(context, ref, snapshot),
       ),
     );
@@ -110,11 +124,12 @@ class SnapshotHistoryPage extends ConsumerWidget {
     WidgetRef ref,
     PositionSnapshot snapshot,
     String currencyCode,
+    Asset asset,
   ) {
     final sharesController =
         TextEditingController(text: snapshot.totalShares.toString());
     final costController =
-        TextEditingController(text: snapshot.averageCost.toStringAsFixed(4));
+        TextEditingController(text: formatSnapshotUnitCost(snapshot.averageCost, asset));
 
     // 新增：汇率 / 人民币成本输入框
     final fxRateController = TextEditingController(
