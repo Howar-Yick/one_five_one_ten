@@ -84,7 +84,12 @@ const AssetSchema = CollectionSchema(
       id: 12,
       name: r'updatedAt',
       type: IsarType.dateTime,
-    )
+    ),
+    r'showFxImpact': PropertySchema(
+      id: 13,
+      name: r'showFxImpact',
+      type: IsarType.bool,
+    ),
   },
   estimateSize: _assetEstimateSize,
   serialize: _assetSerialize,
@@ -225,6 +230,7 @@ void _assetSerialize(
   writer.writeString(offsets[10], object.supabaseId);
   writer.writeString(offsets[11], object.trackingMethod.name);
   writer.writeDateTime(offsets[12], object.updatedAt);
+  writer.writeBool(offsets[13], object.showFxImpact);
 }
 
 Asset _assetDeserialize(
@@ -254,6 +260,7 @@ Asset _assetDeserialize(
       _AssettrackingMethodValueEnumMap[reader.readStringOrNull(offsets[11])] ??
           AssetTrackingMethod.valueBased;
   object.updatedAt = reader.readDateTimeOrNull(offsets[12]);
+  object.showFxImpact = reader.readBool(offsets[13]);
   return object;
 }
 
@@ -294,6 +301,8 @@ P _assetDeserializeProp<P>(
           AssetTrackingMethod.valueBased) as P;
     case 12:
       return (reader.readDateTimeOrNull(offset)) as P;
+    case 13:
+      return (reader.readBool(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }

@@ -59,6 +59,20 @@ class FxBreakdown {
 class CalculatorService {
   Isar get _isar => DatabaseService().isar;
 
+  double? _resolveCnyCashFlow({
+    required double amountAbs,
+    required double? amountCny,
+    required double? fxRateToCny,
+  }) {
+    if (amountCny != null) {
+      return amountCny.abs();
+    }
+    if (fxRateToCny != null) {
+      return amountAbs * fxRateToCny;
+    }
+    return null;
+  }
+
   FxBreakdown? _calculateFxBreakdown({
     required double netForeign,
     required double netCny,
@@ -68,13 +82,10 @@ class CalculatorService {
     if (netForeign == 0 || netCny == 0) {
       return null;
     }
-
-    final avgFx = netCny / netForeign;
-    final valueCnyNoFx = currentValueForeign * avgFx;
-    final valueCnyReal = currentValueForeign * fxNow;
-
-    final assetProfitCny = valueCnyNoFx - netCny;
-    final fxProfitCny = valueCnyReal - valueCnyNoFx;
+    final totalProfitCny = currentValueForeign * fxNow - netCny;
+    final underlyingProfitUsd = currentValueForeign - netForeign;
+    final assetProfitCny = underlyingProfitUsd * fxNow;
+    final fxProfitCny = totalProfitCny - assetProfitCny;
 
     return FxBreakdown(
       assetProfitCny: assetProfitCny,
@@ -346,19 +357,24 @@ class CalculatorService {
       totalCostCny = totalCost * fxNow;
 
       final costBasisCny = latestSnapshot.costBasisCny;
-      final fxBreakdown = _calculateFxBreakdown(
-        netForeign: totalCost,
-        netCny: costBasisCny ?? 0,
-        currentValueForeign: marketValue,
-        fxNow: fxNow,
-      );
-
-      if (fxBreakdown != null) {
-        assetProfitCny = fxBreakdown.assetProfitCny;
-        fxProfitCny = fxBreakdown.fxProfitCny;
-        totalProfitCny = fxBreakdown.totalProfitCny;
+      if (costBasisCny != null && costBasisCny != 0) {
+        totalProfitCny = marketValue * fxNow - costBasisCny;
       } else {
         totalProfitCny = totalProfit * fxNow;
+      }
+
+      if (asset.showFxImpact && costBasisCny != null) {
+        final fxBreakdown = _calculateFxBreakdown(
+          netForeign: totalCost,
+          netCny: costBasisCny,
+          currentValueForeign: marketValue,
+          fxNow: fxNow,
+        );
+
+        if (fxBreakdown != null) {
+          assetProfitCny = fxBreakdown.assetProfitCny;
+          fxProfitCny = fxBreakdown.fxProfitCny;
+        }
       }
     }
 
@@ -485,6 +501,7 @@ class CalculatorService {
     double currentValue = 0;
     double netForeign = 0;
     double netCny = 0;
+    double netCnyMissingForeign = 0;
     DateTime lastDate = transactions.first.date;
     
     final Map<DateTime, List<Transaction>> dailyTransactions = {};
@@ -510,14 +527,34 @@ class CalculatorService {
           final txn = dayTransactions[i];
           lastDate = txn.date;
           if (txn.type == TransactionType.invest) {
-            netInvestment += txn.amount.abs();
-            totalInvested += txn.amount.abs();
-            netForeign += txn.amount.abs();
-            if (txn.amountCny != null) netCny += txn.amountCny!;
+            final amountAbs = txn.amount.abs();
+            netInvestment += amountAbs;
+            totalInvested += amountAbs;
+            netForeign += amountAbs;
+            final cnyCashFlow = _resolveCnyCashFlow(
+              amountAbs: amountAbs,
+              amountCny: txn.amountCny,
+              fxRateToCny: txn.fxRateToCny,
+            );
+            if (cnyCashFlow != null) {
+              netCny += cnyCashFlow;
+            } else {
+              netCnyMissingForeign += amountAbs;
+            }
           } else if (txn.type == TransactionType.withdraw) {
-            netInvestment -= txn.amount.abs();
-            netForeign -= txn.amount.abs();
-            if (txn.amountCny != null) netCny -= txn.amountCny!;
+            final amountAbs = txn.amount.abs();
+            netInvestment -= amountAbs;
+            netForeign -= amountAbs;
+            final cnyCashFlow = _resolveCnyCashFlow(
+              amountAbs: amountAbs,
+              amountCny: txn.amountCny,
+              fxRateToCny: txn.fxRateToCny,
+            );
+            if (cnyCashFlow != null) {
+              netCny -= cnyCashFlow;
+            } else {
+              netCnyMissingForeign -= amountAbs;
+            }
           }
         }
         currentValue = updateTxn.amount;
@@ -526,16 +563,36 @@ class CalculatorService {
           final txn = dayTransactions[i];
           lastDate = txn.date;
           if (txn.type == TransactionType.invest) {
-            netInvestment += txn.amount.abs();
-            totalInvested += txn.amount.abs();
-            currentValue += txn.amount.abs();
-            netForeign += txn.amount.abs();
-            if (txn.amountCny != null) netCny += txn.amountCny!;
+            final amountAbs = txn.amount.abs();
+            netInvestment += amountAbs;
+            totalInvested += amountAbs;
+            currentValue += amountAbs;
+            netForeign += amountAbs;
+            final cnyCashFlow = _resolveCnyCashFlow(
+              amountAbs: amountAbs,
+              amountCny: txn.amountCny,
+              fxRateToCny: txn.fxRateToCny,
+            );
+            if (cnyCashFlow != null) {
+              netCny += cnyCashFlow;
+            } else {
+              netCnyMissingForeign += amountAbs;
+            }
           } else if (txn.type == TransactionType.withdraw) {
-            netInvestment -= txn.amount.abs();
-            currentValue -= txn.amount.abs();
-            netForeign -= txn.amount.abs();
-            if (txn.amountCny != null) netCny -= txn.amountCny!;
+            final amountAbs = txn.amount.abs();
+            netInvestment -= amountAbs;
+            currentValue -= amountAbs;
+            netForeign -= amountAbs;
+            final cnyCashFlow = _resolveCnyCashFlow(
+              amountAbs: amountAbs,
+              amountCny: txn.amountCny,
+              fxRateToCny: txn.fxRateToCny,
+            );
+            if (cnyCashFlow != null) {
+              netCny -= cnyCashFlow;
+            } else {
+              netCnyMissingForeign -= amountAbs;
+            }
           }
         }
 
@@ -543,12 +600,36 @@ class CalculatorService {
         for (final txn in dayTransactions) {
           lastDate = txn.date;
           if (txn.type == TransactionType.invest) {
-            netInvestment += txn.amount.abs();
-            totalInvested += txn.amount.abs();
-            currentValue += txn.amount.abs();
+            final amountAbs = txn.amount.abs();
+            netInvestment += amountAbs;
+            totalInvested += amountAbs;
+            currentValue += amountAbs;
+            netForeign += amountAbs;
+            final cnyCashFlow = _resolveCnyCashFlow(
+              amountAbs: amountAbs,
+              amountCny: txn.amountCny,
+              fxRateToCny: txn.fxRateToCny,
+            );
+            if (cnyCashFlow != null) {
+              netCny += cnyCashFlow;
+            } else {
+              netCnyMissingForeign += amountAbs;
+            }
           } else if (txn.type == TransactionType.withdraw) {
-            netInvestment -= txn.amount.abs();
-            currentValue -= txn.amount.abs();
+            final amountAbs = txn.amount.abs();
+            netInvestment -= amountAbs;
+            currentValue -= amountAbs;
+            netForeign -= amountAbs;
+            final cnyCashFlow = _resolveCnyCashFlow(
+              amountAbs: amountAbs,
+              amountCny: txn.amountCny,
+              fxRateToCny: txn.fxRateToCny,
+            );
+            if (cnyCashFlow != null) {
+              netCny -= cnyCashFlow;
+            } else {
+              netCnyMissingForeign -= amountAbs;
+            }
           }
         }
       }
@@ -609,21 +690,29 @@ class CalculatorService {
     if (asset.currency != 'CNY') {
       final fxNow = await ExchangeRateService().getRate(asset.currency, 'CNY');
       currentValueCny = currentValue * fxNow;
-      final fxBreakdown = _calculateFxBreakdown(
-        netForeign: netForeign,
-        netCny: netCny,
-        currentValueForeign: currentValue,
-        fxNow: fxNow,
-      );
+      if (netCnyMissingForeign != 0) {
+        netCny += netCnyMissingForeign * fxNow;
+      }
 
-      if (fxBreakdown != null) {
-        assetProfitCny = fxBreakdown.assetProfitCny;
-        fxProfitCny = fxBreakdown.fxProfitCny;
-        totalProfitCny = fxBreakdown.totalProfitCny;
-        netInvestmentCny = netCny;
-      } else {
-        totalProfitCny = totalProfit * fxNow;
+      totalProfitCny = currentValue * fxNow - netCny;
+      if (netCny == 0 && netInvestment != 0) {
         netInvestmentCny = netInvestment * fxNow;
+      } else {
+        netInvestmentCny = netCny;
+      }
+
+      if (asset.showFxImpact) {
+        final fxBreakdown = _calculateFxBreakdown(
+          netForeign: netForeign,
+          netCny: netCny,
+          currentValueForeign: currentValue,
+          fxNow: fxNow,
+        );
+
+        if (fxBreakdown != null) {
+          assetProfitCny = fxBreakdown.assetProfitCny;
+          fxProfitCny = fxBreakdown.fxProfitCny;
+        }
       }
     }
 

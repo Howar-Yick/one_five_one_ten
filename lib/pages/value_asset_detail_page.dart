@@ -350,7 +350,11 @@ class _ValueAssetDetailView extends ConsumerWidget {
       );
     }
 
-    Widget buildPerformanceCard(Map<String, dynamic> performance, String currencyCode) {
+    Widget buildPerformanceCard(
+      Map<String, dynamic> performance,
+      String currencyCode,
+      bool showFxImpact,
+    ) {
       final double totalProfit = (performance['totalProfit'] ?? 0.0) as double;
       final double profitRate = (performance['profitRate'] ?? 0.0) as double;
       final double annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
@@ -392,9 +396,9 @@ class _ValueAssetDetailView extends ConsumerWidget {
                     ? Colors.red.shade400
                     : Colors.green.shade400,
               ),
-              if (currencyCode != 'CNY' && totalProfitCny != null) ...[
-                const SizedBox(height: 8),
-                const Divider(),
+      if (showFxImpact && currencyCode != 'CNY' && totalProfitCny != null) ...[
+        const SizedBox(height: 8),
+        const Divider(),
                 buildMetricRow(
                   context,
                   '总收益（CNY）:',
@@ -610,7 +614,11 @@ class _ValueAssetDetailView extends ConsumerWidget {
             ),
             
             // (*** 2. 业绩概览卡片 ***)
-            buildPerformanceCard(performance, asset.currency),
+            buildPerformanceCard(
+              performance,
+              asset.currency,
+              asset.showFxImpact,
+            ),
             
             // (*** 3. 图表卡片 ***)
             chartAsync.when(

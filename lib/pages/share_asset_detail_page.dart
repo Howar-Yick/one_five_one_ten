@@ -572,7 +572,12 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
             ),
             
             // 2. 中部卡片 (业绩)
-            _buildPerformanceCard(context, performance, widget.asset.currency),
+            _buildPerformanceCard(
+              context,
+              performance,
+              widget.asset.currency,
+              widget.asset.showFxImpact,
+            ),
             
             // (按钮区已按要求移除)
 
@@ -621,7 +626,11 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
 
   // (Performance Card 函数)
   Widget _buildPerformanceCard(
-      BuildContext context, Map<String, dynamic> performance, String currencyCode) {
+    BuildContext context,
+    Map<String, dynamic> performance,
+    String currencyCode,
+    bool showFxImpact,
+  ) {
     final double totalProfit = (performance['totalProfit'] ?? 0.0) as double;
     final double profitRate = (performance['profitRate'] ?? 0.0) as double;
     final double annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
@@ -662,7 +671,7 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                   ? Colors.red.shade400
                   : Colors.green.shade400,
             ),
-            if (currencyCode != 'CNY' && totalProfitCny != null) ...[
+            if (showFxImpact && currencyCode != 'CNY' && totalProfitCny != null) ...[
               const Divider(height: 24),
               _buildMetricRow(
                 context,

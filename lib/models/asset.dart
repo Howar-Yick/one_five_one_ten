@@ -64,6 +64,9 @@ class Asset {
   @Index()
   bool isArchived = false;
   // ★★★ 新增结束 ★★★
+
+  // 是否显示汇率影响利润（默认为 false，未开启时不展示拆分）
+  bool showFxImpact = false;
   
   Asset();
 
@@ -95,6 +98,8 @@ class Asset {
     // ★★★ 新增字段的解析 ★★★
     asset.isArchived = json['is_archived'] ?? false;
     // ★★★ 新增结束 ★★★
+
+    asset.showFxImpact = json['show_fx_impact'] ?? false;
     
     return asset;
   }
@@ -114,6 +119,7 @@ class Asset {
       // ★★★ 新增要同步的字段 ★★★
       'is_archived': isArchived,
       // ★★★ 新增结束 ★★★
+      'show_fx_impact': showFxImpact,
     };
   }
 }

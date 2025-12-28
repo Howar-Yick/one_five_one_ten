@@ -61,6 +61,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
   Account? _parentAccount;
   Asset? _editingAsset;
   bool _isLoading = true;
+  bool _showFxImpact = false;
 
   bool get _isEditing => widget.assetId != null;
   
@@ -101,11 +102,13 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         _selectedSubType = _editingAsset!.subType;
         _selectedCurrency = _editingAsset!.currency;
         _selectedAssetClass = _editingAsset!.assetClass;
+        _showFxImpact = _editingAsset!.showFxImpact;
       }
     } else {
       _selectedCurrency = _parentAccount?.currency ?? 'CNY';
       // (创建新资产时，根据默认方法设置默认类型)
       _updateDefaultsForMethod(_selectedMethod);
+      _showFxImpact = false;
     }
 
     if (!['CNY', 'USD', 'HKD'].contains(_selectedCurrency)) {
@@ -163,6 +166,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
     final currentSelectedSubType = _selectedSubType;
     final currentSelectedCurrency = _selectedCurrency;
     final currentSelectedAssetClass = _selectedAssetClass;
+    final currentShowFxImpact = _showFxImpact;
 
     try {
       if (parentAccount.supabaseId == null) {
@@ -180,6 +184,7 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
         assetToUpdate.code = code;
         assetToUpdate.currency = currentSelectedCurrency;
         assetToUpdate.assetClass = currentSelectedAssetClass;
+        assetToUpdate.showFxImpact = currentShowFxImpact;
         
         // (*** 2.1 关键修复：同时保存跟踪方法和子类型 ***)
         assetToUpdate.trackingMethod = currentSelectedMethod; 
@@ -209,7 +214,8 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
           ..currency = currentSelectedCurrency
           ..createdAt = DateTime.now() 
           ..accountSupabaseId = parentAccount.supabaseId
-          ..assetClass = currentSelectedAssetClass;
+          ..assetClass = currentSelectedAssetClass
+          ..showFxImpact = currentShowFxImpact;
 
         if (latestPriceText.isNotEmpty) {
           newAsset.latestPrice = double.tryParse(latestPriceText) ?? 0.0;
@@ -523,16 +529,34 @@ class _AddEditAssetPageState extends ConsumerState<AddEditAssetPage> {
                             child: Text(value),
                           );
                         }).toList(),
-                        onChanged: (newValue) {
-                          if (newValue != null) {
-                            setState(() {
-                              _selectedCurrency = newValue;
-                            });
+                    onChanged: (newValue) {
+                      if (newValue != null) {
+                        setState(() {
+                          _selectedCurrency = newValue;
+                          if (_selectedCurrency == 'CNY') {
+                            _showFxImpact = false;
                           }
-                        },
-                      ),
-                    ],
+                        });
+                      }
+                    },
                   ),
+                ],
+              ),
+
+                  if (_selectedCurrency != 'CNY') ...[
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('显示汇率影响利润'),
+                      subtitle: const Text('开启后展示标的收益/汇率收益拆分'),
+                      value: _showFxImpact,
+                      onChanged: (value) {
+                        setState(() {
+                          _showFxImpact = value;
+                        });
+                      },
+                    ),
+                  ],
 
                   if (!_isEditing) ...[
                     const SizedBox(height: 16),
