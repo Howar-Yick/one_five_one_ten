@@ -516,6 +516,8 @@ class CalculatorService {
             netForeign += txn.amount.abs();
             if (txn.amountCny != null) {
               netCny += txn.amountCny!;
+            } else if (txn.fxRateToCny != null) {
+              netCny += txn.amount.abs() * txn.fxRateToCny!;
             } else {
               hasMissingCny = true;
             }
@@ -524,6 +526,8 @@ class CalculatorService {
             netForeign -= txn.amount.abs();
             if (txn.amountCny != null) {
               netCny -= txn.amountCny!;
+            } else if (txn.fxRateToCny != null) {
+              netCny -= txn.amount.abs() * txn.fxRateToCny!;
             } else {
               hasMissingCny = true;
             }
@@ -541,6 +545,8 @@ class CalculatorService {
             netForeign += txn.amount.abs();
             if (txn.amountCny != null) {
               netCny += txn.amountCny!;
+            } else if (txn.fxRateToCny != null) {
+              netCny += txn.amount.abs() * txn.fxRateToCny!;
             } else {
               hasMissingCny = true;
             }
@@ -550,6 +556,8 @@ class CalculatorService {
             netForeign -= txn.amount.abs();
             if (txn.amountCny != null) {
               netCny -= txn.amountCny!;
+            } else if (txn.fxRateToCny != null) {
+              netCny -= txn.amount.abs() * txn.fxRateToCny!;
             } else {
               hasMissingCny = true;
             }
@@ -566,6 +574,8 @@ class CalculatorService {
             netForeign += txn.amount.abs();
             if (txn.amountCny != null) {
               netCny += txn.amountCny!;
+            } else if (txn.fxRateToCny != null) {
+              netCny += txn.amount.abs() * txn.fxRateToCny!;
             } else {
               hasMissingCny = true;
             }
@@ -575,6 +585,8 @@ class CalculatorService {
             netForeign -= txn.amount.abs();
             if (txn.amountCny != null) {
               netCny -= txn.amountCny!;
+            } else if (txn.fxRateToCny != null) {
+              netCny -= txn.amount.abs() * txn.fxRateToCny!;
             } else {
               hasMissingCny = true;
             }
