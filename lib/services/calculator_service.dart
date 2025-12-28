@@ -546,9 +546,13 @@ class CalculatorService {
             netInvestment += txn.amount.abs();
             totalInvested += txn.amount.abs();
             currentValue += txn.amount.abs();
+            netForeign += txn.amount.abs();
+            if (txn.amountCny != null) netCny += txn.amountCny!;
           } else if (txn.type == TransactionType.withdraw) {
             netInvestment -= txn.amount.abs();
             currentValue -= txn.amount.abs();
+            netForeign -= txn.amount.abs();
+            if (txn.amountCny != null) netCny -= txn.amountCny!;
           }
         }
       }
