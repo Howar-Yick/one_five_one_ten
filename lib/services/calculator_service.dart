@@ -59,6 +59,54 @@ class FxBreakdown {
 class CalculatorService {
   Isar get _isar => DatabaseService().isar;
 
+  Future<List<Transaction>> _queryAssetTransactions(Asset asset) {
+    final supabaseId = asset.supabaseId;
+    if (supabaseId != null) {
+      return _isar.transactions
+          .filter()
+          .assetSupabaseIdEqualTo(supabaseId)
+          .sortByDate()
+          .findAll();
+    }
+    return _isar.transactions
+        .filter()
+        .assetSupabaseIdEqualTo(asset.id.toString())
+        .sortByDate()
+        .findAll();
+  }
+
+  Future<List<PositionSnapshot>> _queryAssetSnapshots(Asset asset) {
+    final supabaseId = asset.supabaseId;
+    if (supabaseId != null) {
+      return _isar.positionSnapshots
+          .filter()
+          .assetSupabaseIdEqualTo(supabaseId)
+          .sortByDate()
+          .findAll();
+    }
+    return _isar.positionSnapshots
+        .filter()
+        .assetSupabaseIdEqualTo(asset.id.toString())
+        .sortByDate()
+        .findAll();
+  }
+
+  Future<List<AccountTransaction>> _queryAccountTransactions(Account account) {
+    final supabaseId = account.supabaseId;
+    if (supabaseId != null) {
+      return _isar.accountTransactions
+          .where()
+          .accountSupabaseIdEqualTo(supabaseId)
+          .sortByDate()
+          .findAll();
+    }
+    return _isar.accountTransactions
+        .where()
+        .accountSupabaseIdEqualTo(account.id.toString())
+        .sortByDate()
+        .findAll();
+  }
+
   double? _resolveCnyCashFlow({
     required double amountAbs,
     required double? amountCny,
@@ -95,24 +143,7 @@ class CalculatorService {
 
   // ... (calculateAccountPerformance, _buildAccountHistoryPoints, _ensureChartHasStart 等方法保持不变) ...
   Future<Map<String, dynamic>> calculateAccountPerformance(Account account) async {
-    if (account.supabaseId == null) {
-      return {
-        'currentValue': 0.0,
-        'netInvestment': 0.0,
-        'totalProfit': 0.0,
-        'profitRate': 0.0,
-        'annualizedReturn': 0.0,
-        'currentValueCny': null,
-        'netInvestmentCny': null,
-        'totalProfitCny': null,
-        'fxProfitCny': null,
-      };
-    }
-    final originalTransactions = await _isar.accountTransactions
-        .where()
-        .accountSupabaseIdEqualTo(account.supabaseId)
-        .sortByDate()
-        .findAll();
+    final originalTransactions = await _queryAccountTransactions(account);
     final historyPoints = _buildAccountHistoryPoints(originalTransactions);
     if (historyPoints.isEmpty) {
       return {'currentValue': 0.0, 'netInvestment': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0};
@@ -252,13 +283,7 @@ class CalculatorService {
   }
 
   Future<Map<String, dynamic>> calculateShareAssetPerformance(Asset asset) async {
-    if (asset.supabaseId == null) return {'marketValue': 0.0, 'totalCost': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0, 'totalShares': 0.0, 'averageCost': 0.0, 'latestPrice': 0.0, 'marketValueCny': null, 'totalCostCny': null, 'totalProfitCny': null, 'assetProfitCny': null, 'fxProfitCny': null};
-    
-    final snapshots = await _isar.positionSnapshots
-        .filter()
-        .assetSupabaseIdEqualTo(asset.supabaseId)
-        .sortByDate() 
-        .findAll();
+    final snapshots = await _queryAssetSnapshots(asset);
         
     if (snapshots.isEmpty) {
       return {
@@ -484,13 +509,7 @@ class CalculatorService {
   }
   
   Future<Map<String, dynamic>> calculateValueAssetPerformance(Asset asset) async {
-    if (asset.supabaseId == null) return {'currentValue': 0.0, 'netInvestment': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0};
-
-    final transactions = await _isar.transactions
-        .filter()
-        .assetSupabaseIdEqualTo(asset.supabaseId)
-        .sortByDate()
-        .findAll();
+    final transactions = await _queryAssetTransactions(asset);
 
     if (transactions.isEmpty) {
       return {'currentValue': 0.0, 'netInvestment': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0};
@@ -731,15 +750,7 @@ class CalculatorService {
   }
   
   Future<Map<String, List<FlSpot>>> getValueAssetHistoryCharts(Asset asset) async {
-    if (asset.supabaseId == null) {
-      return {'totalValue': [], 'totalProfit': [], 'profitRate': []};
-    }
-    
-    final transactions = await _isar.transactions
-        .filter()
-        .assetSupabaseIdEqualTo(asset.supabaseId)
-        .sortByDate()
-        .findAll();
+    final transactions = await _queryAssetTransactions(asset);
         
     final points = _processValueTransactions(transactions);
     
@@ -805,14 +816,7 @@ class CalculatorService {
   }
   
   Future<Map<String, List<FlSpot>>> getAccountHistoryCharts(Account account) async {
-    if (account.supabaseId == null) {
-        return {'totalValue': [], 'totalProfit': [], 'profitRate': []};
-    }
-      final transactions = await _isar.accountTransactions
-          .where()
-          .accountSupabaseIdEqualTo(account.supabaseId)
-          .sortByDate()
-          .findAll();
+    final transactions = await _queryAccountTransactions(account);
     final points = _buildAccountHistoryPoints(transactions);
     final perf = await calculateAccountPerformance(account);
     final today = DateTime.now();
@@ -959,25 +963,20 @@ class CalculatorService {
       double recordedInvestedCNY = 0;
       double recordedCashflowProfitCNY = 0;
 
-      if (account.supabaseId != null) {
-        final accTransactions = await isar.accountTransactions
-            .where()
-            .accountSupabaseIdEqualTo(account.supabaseId)
-            .findAll();
-        for (final txn in accTransactions) {
-          if (txn.type == TransactionType.updateValue) continue;
-          final txnRate = txn.fxRateToCny ?? rate;
-          final amountCNY = txn.baseAmountCny ?? txn.amount * txnRate;
-          if (txn.type == TransactionType.invest) {
-            recordedNetInvestmentCNY += amountCNY;
-            recordedInvestedCNY += amountCNY;
-            globalCashflows.add(-amountCNY);
-            globalDates.add(txn.date);
-          } else if (txn.type == TransactionType.withdraw) {
-            recordedNetInvestmentCNY -= amountCNY;
-            globalCashflows.add(amountCNY);
-            globalDates.add(txn.date);
-          }
+      final accTransactions = await _queryAccountTransactions(account);
+      for (final txn in accTransactions) {
+        if (txn.type == TransactionType.updateValue) continue;
+        final txnRate = txn.fxRateToCny ?? rate;
+        final amountCNY = txn.baseAmountCny ?? txn.amount * txnRate;
+        if (txn.type == TransactionType.invest) {
+          recordedNetInvestmentCNY += amountCNY;
+          recordedInvestedCNY += amountCNY;
+          globalCashflows.add(-amountCNY);
+          globalDates.add(txn.date);
+        } else if (txn.type == TransactionType.withdraw) {
+          recordedNetInvestmentCNY -= amountCNY;
+          globalCashflows.add(amountCNY);
+          globalDates.add(txn.date);
         }
       }
 
@@ -1114,11 +1113,7 @@ class CalculatorService {
       return null;
     }
     final isar = DatabaseService().isar;
-    final allSnapshots = await isar.positionSnapshots
-        .filter()
-        .assetSupabaseIdEqualTo(asset.supabaseId)
-        .sortByDate()
-        .findAll();
+    final allSnapshots = await _queryAssetSnapshots(asset);
     PositionSnapshot? lastSnapshot;
     final snapshotsBeforeTx = allSnapshots.where((s) => !s.date.isAfter(newTx.date)).toList();
     if (snapshotsBeforeTx.isNotEmpty) {
@@ -1127,19 +1122,13 @@ class CalculatorService {
     double runningShares = lastSnapshot?.totalShares ?? 0.0;
     double runningCost = lastSnapshot?.averageCost ?? 0.0;
     double runningTotalCost = runningShares * runningCost;
-    final otherTransactions = await isar.transactions
-        .filter()
-        .assetSupabaseIdEqualTo(asset.supabaseId)
-        .group((q) => q
-          .typeEqualTo(TransactionType.buy)
-          .or()
-          .typeEqualTo(TransactionType.sell))
-        .and()
-        .dateGreaterThan(lastSnapshot?.date ?? DateTime(2000))
-        .and()
-        .dateLessThan(newTx.date)
-        .sortByDate()
-        .findAll();
+    final otherTransactions = (await _queryAssetTransactions(asset))
+        .where((tx) =>
+            (tx.type == TransactionType.buy || tx.type == TransactionType.sell) &&
+            tx.date.isAfter(lastSnapshot?.date ?? DateTime(2000)) &&
+            tx.date.isBefore(newTx.date))
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
     for (final tx in otherTransactions) {
       if (tx.type == TransactionType.buy && tx.shares != null && tx.amount != 0) {
         runningTotalCost += tx.amount.abs();
@@ -1170,7 +1159,7 @@ class CalculatorService {
       ..date = newTx.date
       ..totalShares = runningShares
       ..averageCost = runningCost
-      ..assetSupabaseId = asset.supabaseId
+      ..assetSupabaseId = asset.supabaseId ?? asset.id.toString()
       ..createdAt = DateTime.now();
 
     return newSnapshot;
@@ -1185,12 +1174,7 @@ class CalculatorService {
     double totalRevenue = 0.0;
 
     List<Transaction> transactions = const <Transaction>[];
-    if (asset.supabaseId != null) {
-      transactions = await _isar.transactions
-          .filter()
-          .assetSupabaseIdEqualTo(asset.supabaseId)
-          .findAll();
-    }
+    transactions = await _queryAssetTransactions(asset);
 
     if (transactions.isNotEmpty) {
       for (final txn in transactions) {
@@ -1237,15 +1221,7 @@ class CalculatorService {
 
   Future<Map<String, double>?> _estimateArchivedSharePerformanceFromSnapshots(
       Asset asset) async {
-    if (asset.supabaseId == null) {
-      return null;
-    }
-
-    final snapshots = await _isar.positionSnapshots
-        .filter()
-        .assetSupabaseIdEqualTo(asset.supabaseId)
-        .sortByDate()
-        .findAll();
+    final snapshots = await _queryAssetSnapshots(asset);
 
     if (snapshots.isEmpty) {
       return null;
