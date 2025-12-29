@@ -247,7 +247,7 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                   ? Colors.red.shade400
                   : Colors.green.shade400,
             ),
-            if (account.currency != 'CNY' && totalProfitCny != null) ...[
+            if (fxProfitCny != null) ...[
               const Divider(height: 24),
               _buildMetricRow(
                 context,
@@ -263,9 +263,9 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                 context,
                 '总收益（CNY）:',
                 cnyProfitRate != null
-                    ? '${formatCurrency(totalProfitCny, 'CNY')} (${percentFormat.format(cnyProfitRate)})'
-                    : formatCurrency(totalProfitCny, 'CNY'),
-                color: totalProfitCny >= 0
+                    ? '${formatCurrency(totalProfitCny ?? 0, 'CNY')} (${percentFormat.format(cnyProfitRate)})'
+                    : formatCurrency(totalProfitCny ?? 0, 'CNY'),
+                color: (totalProfitCny ?? 0) >= 0
                     ? Colors.red.shade400
                     : Colors.green.shade400,
               ),
