@@ -1007,7 +1007,6 @@ class CalculatorService {
     final fx = ExchangeRateService();
     double totalValueCNY = 0;
     double totalNetInvestmentCNY = 0;
-    double totalInvestedCNY = 0;
     double totalFxProfitCNY = 0;
     final globalCashflows = <double>[];
     final globalDates = <DateTime>[];
@@ -1019,7 +1018,6 @@ class CalculatorService {
       final currentValueCNY = accValue * rate;
 
       double recordedNetInvestmentCNY = 0;
-      double recordedInvestedCNY = 0;
       double recordedCashflowProfitCNY = 0;
 
       if (account.supabaseId != null) {
@@ -1033,7 +1031,6 @@ class CalculatorService {
           final amountCNY = txn.baseAmountCny ?? txn.amount * txnRate;
           if (txn.type == TransactionType.invest) {
             recordedNetInvestmentCNY += amountCNY;
-            recordedInvestedCNY += amountCNY;
             globalCashflows.add(-amountCNY);
             globalDates.add(txn.date);
           } else if (txn.type == TransactionType.withdraw) {
@@ -1048,21 +1045,32 @@ class CalculatorService {
       if (recordedNetInvestmentCNY == 0 && accNetInv != 0) {
         recordedNetInvestmentCNY = accNetInv * rate;
       }
-      if (recordedInvestedCNY == 0 && accNetInv > 0) {
-        recordedInvestedCNY = accNetInv * rate;
+
+      final perfValueCny = performance['currentValueCny'] as double?;
+      final perfNetInvestmentCny = performance['netInvestmentCny'] as double?;
+      final perfTotalProfitCny = performance['totalProfitCny'] as double?;
+      final perfFxProfitCny = performance['fxProfitCny'] as double?;
+
+      final resolvedValueCny = perfValueCny ?? currentValueCNY;
+      final resolvedNetInvestmentCny =
+          perfNetInvestmentCny ?? recordedNetInvestmentCNY;
+      final resolvedTotalProfitCny =
+          perfTotalProfitCny ?? (resolvedValueCny - resolvedNetInvestmentCny);
+
+      totalValueCNY += resolvedValueCny;
+      totalNetInvestmentCNY += resolvedNetInvestmentCny;
+
+      if (perfFxProfitCny != null) {
+        totalFxProfitCNY += perfFxProfitCny;
+      } else {
+        final baseProfitCNY = (accValue - accNetInv) * rate;
+        recordedCashflowProfitCNY = resolvedTotalProfitCny - baseProfitCNY;
+        totalFxProfitCNY += recordedCashflowProfitCNY;
       }
-
-      totalValueCNY += currentValueCNY;
-      totalNetInvestmentCNY += recordedNetInvestmentCNY;
-      totalInvestedCNY += recordedInvestedCNY;
-
-      final totalProfitCNY = currentValueCNY - recordedNetInvestmentCNY;
-      final baseProfitCNY = (accValue - accNetInv) * rate;
-      recordedCashflowProfitCNY = totalProfitCNY - baseProfitCNY;
-      totalFxProfitCNY += recordedCashflowProfitCNY;
     }
     final double totalProfit = totalValueCNY - totalNetInvestmentCNY;
-    final double totalProfitRate = totalInvestedCNY == 0 ? 0 : totalProfit / totalInvestedCNY;
+    final double totalProfitRate =
+        totalNetInvestmentCNY == 0 ? 0 : totalProfit / totalNetInvestmentCNY;
     double globalAnnualizedReturn = 0.0;
     if (globalCashflows.isNotEmpty && totalValueCNY != 0) {
       globalCashflows.add(totalValueCNY);
