@@ -102,19 +102,15 @@ class CalculatorService {
         .accountSupabaseIdEqualTo(account.supabaseId)
         .sortByDate()
         .findAll();
-    final assets = await _isar.assets
-        .filter()
-        .accountSupabaseIdEqualTo(account.supabaseId)
-        .findAll();
     final historyPoints = _buildAccountHistoryPoints(originalTransactions);
     if (historyPoints.isEmpty) {
       return {'currentValue': 0.0, 'netInvestment': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0};
     }
-    double currentValue = historyPoints.last.value;
-    double netInvestment = historyPoints.last.netInvestment;
+    final double currentValue = historyPoints.last.value;
+    final double netInvestment = historyPoints.last.netInvestment;
     final double totalInvested = historyPoints.last.totalInvested;
-    double totalProfit = currentValue - netInvestment;
-    double profitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested;
+    final double totalProfit = currentValue - netInvestment;
+    final double profitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested;
     double annualizedReturn = 0.0;
     final xirrCashflows = <double>[];
     final xirrDates = <DateTime>[];
@@ -170,90 +166,29 @@ class CalculatorService {
       }
 
       totalProfitCny = currentValueCny - recordedNetInvestmentCNY;
-      final baseProfitCny = (currentValue - netInvestment) * rate;
-      fxProfitCny = totalProfitCny - baseProfitCny;
       netInvestmentCny = recordedNetInvestmentCNY;
     }
 
-    double aggregatedCurrentValue = 0.0;
-    double aggregatedNetInvestment = 0.0;
-    double aggregatedTotalProfit = 0.0;
-    double aggregatedCurrentValueCny = 0.0;
-    double aggregatedNetInvestmentCny = 0.0;
-    double aggregatedTotalProfitCny = 0.0;
-    double aggregatedFxProfitCny = 0.0;
-    bool hasFxProfitCny = false;
-    bool hasCnyAggregation = false;
-
-    for (final asset in assets) {
-      Map<String, dynamic> performance;
-      double assetCurrentValue = 0.0;
-      double assetNetInvestment = 0.0;
-      double assetTotalProfit = 0.0;
-      double? assetCurrentValueCny;
-      double? assetNetInvestmentCny;
-      double? assetTotalProfitCny;
-
-      if (asset.trackingMethod == AssetTrackingMethod.shareBased) {
-        performance = await calculateShareAssetPerformance(asset);
-        assetCurrentValue = (performance['marketValue'] ?? 0.0) as double;
-        assetNetInvestment = (performance['totalCost'] ?? 0.0) as double;
-        assetTotalProfit = (performance['totalProfit'] ?? 0.0) as double;
-        assetCurrentValueCny = performance['marketValueCny'] as double?;
-        assetNetInvestmentCny = performance['totalCostCny'] as double?;
-        assetTotalProfitCny = performance['totalProfitCny'] as double?;
-      } else {
-        performance = await calculateValueAssetPerformance(asset);
-        assetCurrentValue = (performance['currentValue'] ?? 0.0) as double;
-        assetNetInvestment = (performance['netInvestment'] ?? 0.0) as double;
-        assetTotalProfit = (performance['totalProfit'] ?? 0.0) as double;
-        assetCurrentValueCny = performance['currentValueCny'] as double?;
-        assetNetInvestmentCny = performance['netInvestmentCny'] as double?;
-        assetTotalProfitCny = performance['totalProfitCny'] as double?;
+    if (account.currency != 'CNY') {
+      final assets = await _isar.assets
+          .filter()
+          .accountSupabaseIdEqualTo(account.supabaseId)
+          .findAll();
+      double aggregatedFxProfitCny = 0.0;
+      bool hasFxProfitCny = false;
+      for (final asset in assets) {
+        final Map<String, dynamic> performance =
+            asset.trackingMethod == AssetTrackingMethod.shareBased
+                ? await calculateShareAssetPerformance(asset)
+                : await calculateValueAssetPerformance(asset);
+        final assetFxProfitCny = performance['fxProfitCny'] as double?;
+        if (assetFxProfitCny != null) {
+          aggregatedFxProfitCny += assetFxProfitCny;
+          hasFxProfitCny = true;
+        }
       }
-
-      aggregatedCurrentValue += assetCurrentValue;
-      aggregatedNetInvestment += assetNetInvestment;
-      aggregatedTotalProfit += assetTotalProfit;
-
-      final assetFxProfitCny = performance['fxProfitCny'] as double?;
-      if (assetFxProfitCny != null) {
-        aggregatedFxProfitCny += assetFxProfitCny;
-        hasFxProfitCny = true;
-      }
-
-      if (asset.currency == 'CNY') {
-        aggregatedCurrentValueCny += assetCurrentValue;
-        aggregatedNetInvestmentCny += assetNetInvestment;
-        aggregatedTotalProfitCny += assetTotalProfit;
-        hasCnyAggregation = true;
-      } else if (assetCurrentValueCny != null ||
-          assetNetInvestmentCny != null ||
-          assetTotalProfitCny != null) {
-        aggregatedCurrentValueCny += assetCurrentValueCny ?? 0.0;
-        aggregatedNetInvestmentCny += assetNetInvestmentCny ?? 0.0;
-        aggregatedTotalProfitCny += assetTotalProfitCny ?? 0.0;
-        hasCnyAggregation = true;
-      }
+      fxProfitCny = hasFxProfitCny ? aggregatedFxProfitCny : null;
     }
-
-    final double? aggregatedFxProfitCnyValue =
-        hasFxProfitCny ? aggregatedFxProfitCny : null;
-    if (assets.isNotEmpty &&
-        (account.currency == 'CNY' || aggregatedFxProfitCnyValue == null)) {
-      currentValue = aggregatedCurrentValue;
-      netInvestment = aggregatedNetInvestment;
-      totalProfit = aggregatedTotalProfit;
-      profitRate = aggregatedNetInvestment == 0
-          ? 0.0
-          : aggregatedTotalProfit / aggregatedNetInvestment;
-      if (hasCnyAggregation) {
-        currentValueCny = aggregatedCurrentValueCny;
-        netInvestmentCny = aggregatedNetInvestmentCny;
-        totalProfitCny = aggregatedTotalProfitCny;
-      }
-    }
-    fxProfitCny = aggregatedFxProfitCnyValue;
 
     return {
       'currentValue': currentValue,
@@ -1007,6 +942,7 @@ class CalculatorService {
     final fx = ExchangeRateService();
     double totalValueCNY = 0;
     double totalNetInvestmentCNY = 0;
+    double totalInvestedCNY = 0;
     double totalFxProfitCNY = 0;
     final globalCashflows = <double>[];
     final globalDates = <DateTime>[];
@@ -1018,6 +954,7 @@ class CalculatorService {
       final currentValueCNY = accValue * rate;
 
       double recordedNetInvestmentCNY = 0;
+      double recordedInvestedCNY = 0;
       double recordedCashflowProfitCNY = 0;
 
       if (account.supabaseId != null) {
@@ -1031,6 +968,7 @@ class CalculatorService {
           final amountCNY = txn.baseAmountCny ?? txn.amount * txnRate;
           if (txn.type == TransactionType.invest) {
             recordedNetInvestmentCNY += amountCNY;
+            recordedInvestedCNY += amountCNY;
             globalCashflows.add(-amountCNY);
             globalDates.add(txn.date);
           } else if (txn.type == TransactionType.withdraw) {
@@ -1044,6 +982,9 @@ class CalculatorService {
       // 如果没有记录汇率，使用当前汇率保证净值不为0
       if (recordedNetInvestmentCNY == 0 && accNetInv != 0) {
         recordedNetInvestmentCNY = accNetInv * rate;
+      }
+      if (recordedInvestedCNY == 0 && accNetInv > 0) {
+        recordedInvestedCNY = accNetInv * rate;
       }
 
       final perfValueCny = performance['currentValueCny'] as double?;
@@ -1059,6 +1000,7 @@ class CalculatorService {
 
       totalValueCNY += resolvedValueCny;
       totalNetInvestmentCNY += resolvedNetInvestmentCny;
+      totalInvestedCNY += recordedInvestedCNY;
 
       if (perfFxProfitCny != null) {
         totalFxProfitCNY += perfFxProfitCny;
@@ -1070,7 +1012,7 @@ class CalculatorService {
     }
     final double totalProfit = totalValueCNY - totalNetInvestmentCNY;
     final double totalProfitRate =
-        totalNetInvestmentCNY == 0 ? 0 : totalProfit / totalNetInvestmentCNY;
+        totalInvestedCNY == 0 ? 0 : totalProfit / totalInvestedCNY;
     double globalAnnualizedReturn = 0.0;
     if (globalCashflows.isNotEmpty && totalValueCNY != 0) {
       globalCashflows.add(totalValueCNY);
