@@ -55,6 +55,31 @@ class FxBreakdown {
   }) : totalProfitCny = assetProfitCny + fxProfitCny;
 }
 
+class SharePnlBreakdown {
+  final double holdingProfit;
+  final double realizedProfit;
+  final double comprehensiveProfit;
+  final double holdingCost;
+  final double realizedCostBasis;
+  final double comprehensiveCostBasis;
+
+  const SharePnlBreakdown({
+    required this.holdingProfit,
+    required this.realizedProfit,
+    required this.holdingCost,
+    required this.realizedCostBasis,
+    required this.comprehensiveCostBasis,
+  }) : comprehensiveProfit = holdingProfit + realizedProfit;
+
+  double get holdingProfitRate => holdingCost == 0 ? 0.0 : holdingProfit / holdingCost;
+
+  double get realizedProfitRate =>
+      realizedCostBasis == 0 ? 0.0 : realizedProfit / realizedCostBasis;
+
+  double get comprehensiveProfitRate =>
+      comprehensiveCostBasis == 0 ? 0.0 : comprehensiveProfit / comprehensiveCostBasis;
+}
+
 
 class CalculatorService {
   Isar get _isar => DatabaseService().isar;
@@ -240,127 +265,148 @@ class CalculatorService {
     }
   }
 
+
+  SharePnlBreakdown _calculateSharePnlBreakdown({
+    required List<Transaction> transactions,
+    required double holdingShares,
+    required double averageCost,
+    required double latestPrice,
+  }) {
+    double runningShares = 0.0;
+    double runningCost = 0.0;
+    double realizedProfit = 0.0;
+    double realizedCostBasis = 0.0;
+
+    final ordered = List<Transaction>.from(transactions)
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    for (final tx in ordered) {
+      if (tx.type == TransactionType.buy) {
+        final shares = tx.shares ?? 0.0;
+        if (shares <= 0) continue;
+        final buyCost = tx.amount.abs() > 0
+            ? tx.amount.abs()
+            : (tx.price ?? 0.0) * shares;
+        runningShares += shares;
+        runningCost += buyCost;
+      } else if (tx.type == TransactionType.sell) {
+        final sellShares = tx.shares?.abs() ?? 0.0;
+        if (sellShares <= 0 || runningShares <= 0) continue;
+
+        final avgCostBeforeSell = runningCost / runningShares;
+        final effectiveSellShares = sellShares > runningShares ? runningShares : sellShares;
+        final costOut = avgCostBeforeSell * effectiveSellShares;
+        final proceeds = tx.amount.abs() > 0
+            ? tx.amount.abs()
+            : (tx.price ?? 0.0) * effectiveSellShares;
+
+        realizedCostBasis += costOut;
+        realizedProfit += proceeds - costOut;
+
+        runningShares -= effectiveSellShares;
+        runningCost -= costOut;
+        if (runningShares <= 0.0000001) {
+          runningShares = 0.0;
+          runningCost = 0.0;
+        }
+      }
+    }
+
+    final safeHoldingShares = holdingShares > 0 ? holdingShares : 0.0;
+    final holdingCost = safeHoldingShares * averageCost;
+    final holdingProfit = safeHoldingShares * (latestPrice - averageCost);
+    final comprehensiveCostBasis = holdingCost + realizedCostBasis;
+
+    return SharePnlBreakdown(
+      holdingProfit: holdingProfit,
+      realizedProfit: realizedProfit,
+      holdingCost: holdingCost,
+      realizedCostBasis: realizedCostBasis,
+      comprehensiveCostBasis: comprehensiveCostBasis,
+    );
+  }
+
   Future<Map<String, dynamic>> calculateShareAssetPerformance(Asset asset) async {
-    if (asset.supabaseId == null) return {'marketValue': 0.0, 'totalCost': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0, 'totalShares': 0.0, 'averageCost': 0.0, 'latestPrice': 0.0, 'marketValueCny': null, 'totalCostCny': null, 'totalProfitCny': null, 'assetProfitCny': null, 'fxProfitCny': null};
-    
+    if (asset.supabaseId == null) {
+      return {
+        'marketValue': 0.0,
+        'totalCost': 0.0,
+        'totalProfit': 0.0,
+        'profitRate': 0.0,
+        'annualizedReturn': 0.0,
+        'totalShares': 0.0,
+        'averageCost': 0.0,
+        'latestPrice': 0.0,
+        'holdingProfit': 0.0,
+        'holdingProfitRate': 0.0,
+        'realizedProfit': 0.0,
+        'realizedProfitRate': 0.0,
+        'comprehensiveProfit': 0.0,
+        'comprehensiveProfitRate': 0.0,
+        'marketValueCny': null,
+        'totalCostCny': null,
+        'totalProfitCny': null,
+        'assetProfitCny': null,
+        'fxProfitCny': null,
+      };
+    }
+
     final snapshots = await _isar.positionSnapshots
         .filter()
         .assetSupabaseIdEqualTo(asset.supabaseId)
-        .sortByDate() 
+        .sortByDate()
         .findAll();
-        
+    final transactions = await _isar.transactions
+        .filter()
+        .assetSupabaseIdEqualTo(asset.supabaseId)
+        .sortByDate()
+        .findAll();
+
     if (snapshots.isEmpty) {
       return {
-        'marketValue': 0.0, 'totalCost': 0.0, 'totalProfit': 0.0,
-        'profitRate': 0.0, 'annualizedReturn': 0.0,
-        'totalShares': 0.0, 'averageCost': 0.0, 'latestPrice': 0.0,
-        'marketValueCny': null, 'totalCostCny': null, 'totalProfitCny': null,
-        'assetProfitCny': null, 'fxProfitCny': null,
+        'marketValue': 0.0,
+        'totalCost': 0.0,
+        'totalProfit': 0.0,
+        'profitRate': 0.0,
+        'annualizedReturn': 0.0,
+        'totalShares': 0.0,
+        'averageCost': 0.0,
+        'latestPrice': 0.0,
+        'holdingProfit': 0.0,
+        'holdingProfitRate': 0.0,
+        'realizedProfit': 0.0,
+        'realizedProfitRate': 0.0,
+        'comprehensiveProfit': 0.0,
+        'comprehensiveProfitRate': 0.0,
+        'marketValueCny': null,
+        'totalCostCny': null,
+        'totalProfitCny': null,
+        'assetProfitCny': null,
+        'fxProfitCny': null,
       };
     }
 
     final latestSnapshot = snapshots.last;
     double totalShares = latestSnapshot.totalShares;
-
-    // ★★★ 关键修复：仅对份额法资产应用清仓逻辑 ★★★
-    if (asset.trackingMethod == AssetTrackingMethod.shareBased && totalShares.abs() < 0.0001 && snapshots.length > 1) {
-      // 这是一个已清仓的份额法资产
-      final lastActiveSnapshot = snapshots[snapshots.length - 2];
-      
-      final double salePrice = asset.latestPrice;
-
-      if (lastActiveSnapshot.totalShares > 0) {
-        final double proceeds = lastActiveSnapshot.totalShares * salePrice;
-        final double costBasis = lastActiveSnapshot.totalShares * lastActiveSnapshot.averageCost;
-        final double realizedProfit = proceeds - costBasis;
-        final double realizedProfitRate = costBasis > 0 ? realizedProfit / costBasis : 0.0;
-
-        return {
-          'marketValue': 0.0,
-          'totalCost': 0.0,
-          'totalProfit': realizedProfit,
-          'profitRate': realizedProfitRate,
-          'annualizedReturn': 0.0,
-          'totalShares': 0.0,
-          'averageCost': 0.0,
-          'latestPrice': salePrice,
-          'marketValueCny': null,
-          'totalCostCny': null,
-          'totalProfitCny': null,
-          'assetProfitCny': null,
-          'fxProfitCny': null,
-        };
-      }
-    }
-    // ★★★ 修复结束 ★★★
-
-    // --- 以下是处理“持仓中”资产的原有逻辑 ---
     double averageCost = latestSnapshot.averageCost;
-    if (!totalShares.isFinite) {
-      totalShares = 0.0;
-    }
-    if (!averageCost.isFinite) {
-      averageCost = 0.0;
-    }
+    if (!totalShares.isFinite) totalShares = 0.0;
+    if (!averageCost.isFinite) averageCost = 0.0;
 
     final bool hasPosition = totalShares > 0;
-    double totalCost = hasPosition ? totalShares * averageCost : 0.0;
-    if (!totalCost.isFinite) {
-      totalCost = 0.0;
-    }
-
     double latestPrice = asset.latestPrice;
     if (!latestPrice.isFinite || latestPrice == 0) {
       latestPrice = hasPosition ? averageCost : 0.0;
     }
 
     double marketValue = totalShares * latestPrice;
-    if (!marketValue.isFinite) {
-      marketValue = 0.0;
-    }
+    if (!marketValue.isFinite) marketValue = 0.0;
 
-    double totalProfit = marketValue - totalCost;
-    if (!totalProfit.isFinite) {
-      totalProfit = 0.0;
-    }
-
-    double profitRate;
-    if (totalCost == 0 || !totalCost.isFinite) {
-      profitRate = 0.0;
-    } else {
-      profitRate = totalProfit / totalCost;
-      if (!profitRate.isFinite) {
-        profitRate = 0.0;
-      }
-    }
-
-    double? marketValueCny;
-    double? totalCostCny;
-    double? totalProfitCny;
-    double? assetProfitCny;
-    double? fxProfitCny;
-
-    if (asset.currency != 'CNY') {
-      final fxNow = await ExchangeRateService().getRate(asset.currency, 'CNY');
-      marketValueCny = marketValue * fxNow;
-      totalCostCny = totalCost * fxNow;
-
-      final costBasisCny = latestSnapshot.costBasisCny;
-      final fxBreakdown = _calculateFxBreakdown(
-        netForeign: totalCost,
-        netCny: costBasisCny ?? 0,
-        currentValueForeign: marketValue,
-        fxNow: fxNow,
-      );
-
-      if (fxBreakdown != null) {
-        assetProfitCny = fxBreakdown.assetProfitCny;
-        fxProfitCny = fxBreakdown.fxProfitCny;
-        totalProfitCny = fxBreakdown.totalProfitCny;
-      } else {
-        totalProfitCny = totalProfit * fxNow;
-      }
-    }
+    final pnl = _calculateSharePnlBreakdown(
+      transactions: transactions,
+      holdingShares: totalShares,
+      averageCost: averageCost,
+      latestPrice: latestPrice,
+    );
 
     double annualizedReturn = 0.0;
     if (snapshots.length >= 1) {
@@ -372,9 +418,7 @@ class CalculatorService {
       for (int i = 1; i < snapshots.length; i++) {
         final prevCost = snapshots[i - 1].totalShares * snapshots[i - 1].averageCost;
         final currentCost = snapshots[i].totalShares * snapshots[i].averageCost;
-        if (!prevCost.isFinite || !currentCost.isFinite) {
-          continue;
-        }
+        if (!prevCost.isFinite || !currentCost.isFinite) continue;
         final costChange = currentCost - prevCost;
         if (costChange.isFinite && costChange.abs() > 0.01) {
           dates.add(snapshots[i].date);
@@ -382,33 +426,65 @@ class CalculatorService {
         }
       }
       final lastDate = snapshots.last.date;
-      dates.add(DateTime.now().isAfter(lastDate) ? DateTime.now() : lastDate.add(const Duration(days: 1)));
+      dates.add(DateTime.now().isAfter(lastDate)
+          ? DateTime.now()
+          : lastDate.add(const Duration(days: 1)));
       cashflows.add(marketValue.isFinite ? marketValue : 0.0);
       try {
         if (cashflows.any((cf) => cf > 0) && cashflows.any((cf) => cf < 0)) {
           annualizedReturn = xirr(dates, cashflows);
         }
-      } catch (e) {
-        //
+      } catch (_) {}
+    }
+    if (!annualizedReturn.isFinite) annualizedReturn = 0.0;
+
+    double? marketValueCny;
+    double? totalCostCny;
+    double? totalProfitCny;
+    double? assetProfitCny;
+    double? fxProfitCny;
+
+    if (asset.currency != 'CNY') {
+      final fxNow = await ExchangeRateService().getRate(asset.currency, 'CNY');
+      marketValueCny = marketValue * fxNow;
+      totalCostCny = pnl.holdingCost * fxNow;
+
+      final costBasisCny = latestSnapshot.costBasisCny;
+      final fxBreakdown = _calculateFxBreakdown(
+        netForeign: pnl.holdingCost,
+        netCny: costBasisCny ?? 0,
+        currentValueForeign: marketValue,
+        fxNow: fxNow,
+      );
+
+      if (fxBreakdown != null) {
+        assetProfitCny = fxBreakdown.assetProfitCny;
+        fxProfitCny = fxBreakdown.fxProfitCny;
+        totalProfitCny = fxBreakdown.totalProfitCny;
+      } else {
+        totalProfitCny = pnl.holdingProfit * fxNow;
       }
     }
-    if (!annualizedReturn.isFinite) {
-      annualizedReturn = 0.0;
-    }
 
-    if (totalProfit >= 0 && annualizedReturn < 0) {
+    if (pnl.comprehensiveProfit >= 0 && annualizedReturn < 0) {
       annualizedReturn = 0.0;
     }
 
     return {
       'marketValue': marketValue,
-      'totalCost': totalCost,
-      'totalProfit': totalProfit,
-      'profitRate': profitRate,
+      'totalCost': pnl.holdingCost,
+      'totalProfit': pnl.comprehensiveProfit,
+      'profitRate': pnl.comprehensiveProfitRate,
       'annualizedReturn': annualizedReturn,
       'totalShares': totalShares,
       'averageCost': averageCost,
       'latestPrice': latestPrice,
+      'holdingProfit': pnl.holdingProfit,
+      'holdingProfitRate': pnl.holdingProfitRate,
+      'realizedProfit': pnl.realizedProfit,
+      'realizedProfitRate': pnl.realizedProfitRate,
+      'comprehensiveProfit': pnl.comprehensiveProfit,
+      'comprehensiveProfitRate': pnl.comprehensiveProfitRate,
       'marketValueCny': marketValueCny,
       'totalCostCny': totalCostCny,
       'totalProfitCny': totalProfitCny,
@@ -416,11 +492,11 @@ class CalculatorService {
       'fxProfitCny': fxProfitCny,
     };
   }
-  
+
   List<_ValueHistoryPoint> _processValueTransactions(List<Transaction> transactions) {
     if (transactions.isEmpty) return [];
     transactions.sort((a, b) => a.date.compareTo(b.date));
-    
+
     final Map<DateTime, _ValueHistoryPoint> dailyPoints = {};
     double runningValue = 0.0;
     double runningNetInvestment = 0.0;
@@ -441,7 +517,7 @@ class CalculatorService {
           totalInvested: runningTotalInvested
         );
       }
-      
+
       final currentPoint = dailyPoints[day]!;
 
       if (txn.type == TransactionType.invest || txn.type == TransactionType.buy) {
@@ -456,7 +532,7 @@ class CalculatorService {
       } else if (txn.type == TransactionType.updateValue) {
         runningValue = txn.amount;
       }
-      
+
       currentPoint.value = runningValue;
       currentPoint.netInvestment = runningNetInvestment;
       currentPoint.totalInvested = runningTotalInvested;
@@ -466,7 +542,7 @@ class CalculatorService {
     pointsList.sort((a,b) => a.date.compareTo(b.date));
     return pointsList;
   }
-  
+
   Future<Map<String, dynamic>> calculateValueAssetPerformance(Asset asset) async {
     if (asset.supabaseId == null) return {'currentValue': 0.0, 'netInvestment': 0.0, 'totalProfit': 0.0, 'profitRate': 0.0, 'annualizedReturn': 0.0};
 
@@ -487,7 +563,7 @@ class CalculatorService {
     double netCny = 0;
     double missingCnyForeign = 0;
     DateTime lastDate = transactions.first.date;
-    
+
     final Map<DateTime, List<Transaction>> dailyTransactions = {};
     for (final txn in transactions) {
       final day = DateTime(txn.date.year, txn.date.month, txn.date.day);
@@ -501,7 +577,7 @@ class CalculatorService {
 
     for (final day in sortedDays) {
       final dayTransactions = dailyTransactions[day]!..sort((a, b) => a.date.compareTo(b.date));
-      
+
       final updateTxnIndex = dayTransactions.lastIndexWhere((t) => t.type == TransactionType.updateValue);
 
       if (updateTxnIndex != -1) {
@@ -597,7 +673,7 @@ class CalculatorService {
 
     final double totalProfit = currentValue - netInvestment;
     final double profitRate = totalInvested == 0 ? 0 : totalProfit / totalInvested;
-    
+
     double annualizedReturn = 0.0;
     final cashflows = <double>[];
     final dates = <DateTime>[];
@@ -615,7 +691,7 @@ class CalculatorService {
     if (cashflows.isNotEmpty) {
       cashflows.add(currentValue);
       dates.add(lastDate);
-      
+
       if (cashflows.any((cf) => cf > 0) && cashflows.any((cf) => cf < 0)) {
         try {
           final firstDate = dates.first;
@@ -684,24 +760,24 @@ class CalculatorService {
       'netInvestmentCny': netInvestmentCny,
     };
   }
-  
+
   Future<Map<String, List<FlSpot>>> getValueAssetHistoryCharts(Asset asset) async {
     if (asset.supabaseId == null) {
       return {'totalValue': [], 'totalProfit': [], 'profitRate': []};
     }
-    
+
     final transactions = await _isar.transactions
         .filter()
         .assetSupabaseIdEqualTo(asset.supabaseId)
         .sortByDate()
         .findAll();
-        
+
     final points = _processValueTransactions(transactions);
-    
+
     final perf = await calculateValueAssetPerformance(asset);
     final today = DateTime.now();
     final todayDateOnly = DateTime(today.year, today.month, today.day);
-    
+
     final double currentTotalValue = (perf['currentValue'] ?? 0.0) as double;
     final double currentNetInvestment = (perf['netInvestment'] ?? 0.0) as double;
     final double currentTotalInvested = points.isEmpty
@@ -724,21 +800,21 @@ class CalculatorService {
     final List<FlSpot> valueSpots = [];
     final List<FlSpot> profitSpots = [];
     final List<FlSpot> profitRateSpots = [];
-    
+
     bool hasProfitStarted = false;
     bool hasProfitRateStarted = false;
-    
+
     for (var p in points) {
       final dateEpoch = p.date.millisecondsSinceEpoch.toDouble();
-      
+
       valueSpots.add(FlSpot(dateEpoch, p.value));
-      
+
       final double totalProfit = p.value - p.netInvestment;
       if (totalProfit.abs() > 0.001 || hasProfitStarted) {
         hasProfitStarted = true;
         profitSpots.add(FlSpot(dateEpoch, totalProfit));
       }
-      
+
       final double profitRate = (p.totalInvested == 0 || p.totalInvested.isNaN)
               ? 0.0
               : totalProfit / p.totalInvested;
@@ -747,18 +823,18 @@ class CalculatorService {
         profitRateSpots.add(FlSpot(dateEpoch, profitRate));
       }
     }
-    
+
     _ensureChartHasStart(valueSpots);
     _ensureChartHasStart(profitSpots);
     _ensureChartHasStart(profitRateSpots);
-    
+
     return {
       'totalValue': valueSpots,
       'totalProfit': profitSpots,
       'profitRate': profitRateSpots,
     };
   }
-  
+
   Future<Map<String, List<FlSpot>>> getAccountHistoryCharts(Account account) async {
     if (account.supabaseId == null) {
         return {'totalValue': [], 'totalProfit': [], 'profitRate': []};
@@ -786,25 +862,25 @@ class CalculatorService {
       points.last.value = currentTotalValue;
       points.last.netInvestment = currentNetInvestment;
     }
-    
+
     final List<FlSpot> valueSpots = [];
     final List<FlSpot> profitSpots = [];
     final List<FlSpot> profitRateSpots = [];
-    
+
     bool hasProfitStarted = false;
     bool hasProfitRateStarted = false;
-    
+
     for (var p in points) {
       final dateEpoch = p.date.millisecondsSinceEpoch.toDouble();
-      
+
       valueSpots.add(FlSpot(dateEpoch, p.value));
-      
+
       final double totalProfit = p.value - p.netInvestment;
       if (totalProfit.abs() > 0.001 || hasProfitStarted) {
         hasProfitStarted = true;
         profitSpots.add(FlSpot(dateEpoch, totalProfit));
       }
-      
+
       final double profitRate = (p.totalInvested == 0 || p.totalInvested.isNaN)
               ? 0.0
               : totalProfit / p.totalInvested;
@@ -813,11 +889,11 @@ class CalculatorService {
         profitRateSpots.add(FlSpot(dateEpoch, profitRate));
       }
     }
-    
+
     _ensureChartHasStart(valueSpots);
     _ensureChartHasStart(profitSpots);
     _ensureChartHasStart(profitRateSpots);
-    
+
     return {
       'totalValue': valueSpots,
       'totalProfit': profitSpots,
@@ -834,13 +910,13 @@ class CalculatorService {
     for (final asset in allAssets) {
       Map<String, dynamic> performance;
       double assetLocalValue = 0.0;
-      
+
       AssetSubType subTypeForGrouping = asset.subType;
       if (asset.trackingMethod == AssetTrackingMethod.valueBased &&
           asset.subType == AssetSubType.stock) {
         subTypeForGrouping = AssetSubType.wealthManagement;
       }
-      
+
       if (asset.subType == AssetSubType.wealthManagement) {
         performance = await calculateValueAssetPerformance(asset);
         assetLocalValue = (performance['currentValue'] ?? 0.0) as double;
@@ -855,7 +931,7 @@ class CalculatorService {
 
       final double rate = await fx.getRate(asset.currency, 'CNY');
       final double assetValueCNY = assetLocalValue * rate;
-      
+
       allocationCNY.update(subTypeForGrouping, (existing) => existing + assetValueCNY, ifAbsent: () => assetValueCNY);
     }
     allocationCNY.removeWhere((key, value) => value <= 0);
@@ -871,7 +947,7 @@ class CalculatorService {
     for (final asset in allAssets) {
       Map<String, dynamic> performance;
       double assetLocalValue = 0.0;
-      
+
       if (asset.subType == AssetSubType.wealthManagement) {
         performance = await calculateValueAssetPerformance(asset);
         assetLocalValue = (performance['currentValue'] ?? 0.0) as double;
@@ -886,7 +962,7 @@ class CalculatorService {
 
       final double rate = await fx.getRate(asset.currency, 'CNY');
       final double assetValueCNY = assetLocalValue * rate;
-      
+
       allocationCNY.update(asset.assetClass, (existing) => existing + assetValueCNY, ifAbsent: () => assetValueCNY);
     }
     allocationCNY.removeWhere((key, value) => value <= 0);
@@ -976,7 +1052,7 @@ class CalculatorService {
       'annualizedReturn': globalAnnualizedReturn,
     };
   }
-  
+
   Future<List<FlSpot>> getGlobalValueHistory() async {
     final isar = _isar;
     final allTransactions = await isar
@@ -1130,7 +1206,7 @@ class CalculatorService {
 
     return newSnapshot;
   }
-  
+
   /// ★★★ 核心方法: 专门计算已清仓份额类资产的最终表现 ★★★
   ///
   /// 该方法通过遍历所有历史交易记录来计算最终的已实现盈亏，
@@ -1165,28 +1241,34 @@ class CalculatorService {
       }
     }
 
-    double totalProfit = totalRevenue - totalCost;
-    double profitRate = totalCost == 0 ? 0.0 : totalProfit / totalCost;
+    double realizedProfit = totalRevenue - totalCost;
+    double realizedProfitRate = totalCost == 0 ? 0.0 : realizedProfit / totalCost;
 
     final bool hasMeaningfulTransactions =
         transactions.isNotEmpty && (totalCost > 0 || totalRevenue > 0);
 
     if (!hasMeaningfulTransactions) {
-      final fallback =
-          await _estimateArchivedSharePerformanceFromSnapshots(asset);
+      final fallback = await _estimateArchivedSharePerformanceFromSnapshots(asset);
       if (fallback != null) {
         totalCost = fallback['totalCost']!;
         totalRevenue = fallback['totalRevenue']!;
-        totalProfit = fallback['totalProfit']!;
-        profitRate = fallback['profitRate']!;
+        realizedProfit = fallback['totalProfit']!;
+        realizedProfitRate = fallback['profitRate']!;
       }
     }
 
     return {
-      'totalCost': totalCost,
+      'marketValue': 0.0,
+      'totalCost': 0.0,
       'totalRevenue': totalRevenue,
-      'totalProfit': totalProfit,
-      'profitRate': profitRate,
+      'totalProfit': realizedProfit,
+      'profitRate': realizedProfitRate,
+      'holdingProfit': 0.0,
+      'holdingProfitRate': 0.0,
+      'realizedProfit': realizedProfit,
+      'realizedProfitRate': realizedProfitRate,
+      'comprehensiveProfit': realizedProfit,
+      'comprehensiveProfitRate': realizedProfitRate,
     };
   }
 

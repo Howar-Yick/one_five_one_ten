@@ -426,6 +426,9 @@ final shareAssetCombinedChartProvider =
         'price': const [],
         'totalProfit': const [],
         'profitRate': const [],
+        'holdingProfit': const [],
+        'realizedProfit': const [],
+        'comprehensiveProfit': const [],
       };
     }
 
@@ -439,6 +442,9 @@ final shareAssetCombinedChartProvider =
         'price': price,
         'totalProfit': const [],
         'profitRate': const [],
+        'holdingProfit': const [],
+        'realizedProfit': const [],
+        'comprehensiveProfit': const [],
       };
     }
 
@@ -465,6 +471,9 @@ final shareAssetCombinedChartProvider =
         'price': const [],
         'totalProfit': [FlSpot(yesterday, 0.0), FlSpot(now, 0.0)],
         'profitRate': [FlSpot(yesterday, 0.0), FlSpot(now, 0.0)],
+        'holdingProfit': [FlSpot(yesterday, 0.0), FlSpot(now, 0.0)],
+        'realizedProfit': [FlSpot(yesterday, 0.0), FlSpot(now, 0.0)],
+        'comprehensiveProfit': [FlSpot(yesterday, 0.0), FlSpot(now, 0.0)],
       };
     }
 
@@ -522,6 +531,9 @@ final shareAssetCombinedChartProvider =
       'price': effectivePrice,
       'totalProfit': profitSpots,
       'profitRate': profitRateSpots,
+      'holdingProfit': profitSpots,
+      'realizedProfit': List<FlSpot>.generate(profitSpots.length, (i) => FlSpot(profitSpots[i].x, 0.0)),
+      'comprehensiveProfit': profitSpots,
     };
   },
 );
