@@ -272,6 +272,9 @@ class SnapshotHistoryPage extends ConsumerWidget {
         TextEditingController(text: snapshot.totalShares.toString());
     final costController =
         TextEditingController(text: formatSnapshotUnitCost(snapshot.averageCost, asset));
+    final comprehensiveProfitController = TextEditingController(
+      text: snapshot.brokerComprehensiveProfit?.toString() ?? '',
+    );
 
     // 新增：汇率 / 人民币成本输入框
     final fxRateController = TextEditingController(
@@ -302,6 +305,16 @@ class SnapshotHistoryPage extends ConsumerWidget {
                   TextField(
                     controller: costController,
                     decoration: const InputDecoration(labelText: '单位成本'),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  TextField(
+                    controller: comprehensiveProfitController,
+                    decoration: InputDecoration(
+                      labelText: '综合收益（券商口径）',
+                      helperText: '留空表示不记录综合收益，页面将按持仓收益回退展示',
+                      prefixText: getCurrencySymbol(currencyCode),
+                    ),
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                   ),
@@ -377,6 +390,9 @@ class SnapshotHistoryPage extends ConsumerWidget {
                     final shares =
                         double.tryParse(sharesController.text.trim());
                     final cost = double.tryParse(costController.text.trim());
+                    final comprehensiveProfit = double.tryParse(
+                      comprehensiveProfitController.text.trim(),
+                    );
 
                     if (shares == null || cost == null) {
                       ScaffoldMessenger.of(dialogContext).showSnackBar(
@@ -390,6 +406,7 @@ class SnapshotHistoryPage extends ConsumerWidget {
                     snapshot.totalShares = shares;
                     snapshot.averageCost = cost;
                     snapshot.date = selectedDate;
+                    snapshot.brokerComprehensiveProfit = comprehensiveProfit;
 
                     if (currencyCode != 'CNY') {
                       final fxRate =
