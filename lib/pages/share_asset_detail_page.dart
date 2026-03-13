@@ -314,14 +314,17 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
         bool isPercentage = false; // 标记是否为百分比Y轴
 
         switch (_selectedChartType) {
-          case ShareAssetChartType.totalProfit:
-            spots = chartDataMap['totalProfit'] ?? [];
+          case ShareAssetChartType.comprehensiveProfit:
+            spots = chartDataMap['comprehensiveProfit'] ?? [];
+            chartTitle = '综合收益趋势';
+            break;
+          case ShareAssetChartType.holdingProfit:
+            spots = chartDataMap['holdingProfit'] ?? [];
             chartTitle = '持仓收益趋势';
             break;
-          case ShareAssetChartType.profitRate:
-            spots = chartDataMap['profitRate'] ?? [];
-            chartTitle = '持仓收益率趋势';
-            isPercentage = true;
+          case ShareAssetChartType.realizedProfit:
+            spots = chartDataMap['realizedProfit'] ?? [];
+            chartTitle = '实现盈亏趋势';
             break;
           case ShareAssetChartType.price:
           default:
@@ -336,7 +339,9 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
         final NumberFormat yAxisFormat;
         if (isPercentage) {
           yAxisFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 1;
-        } else if (_selectedChartType == ShareAssetChartType.totalProfit) {
+        } else if (_selectedChartType == ShareAssetChartType.comprehensiveProfit ||
+            _selectedChartType == ShareAssetChartType.holdingProfit ||
+            _selectedChartType == ShareAssetChartType.realizedProfit) {
           yAxisFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: getCurrencySymbol(asset.currency));
         } else {
           // 价格
@@ -385,8 +390,9 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                       return SegmentedButton<ShareAssetChartType>(
                         segments: const [
                           ButtonSegment(value: ShareAssetChartType.price, label: Text('价格'), icon: Icon(Icons.timeline)),
-                          ButtonSegment(value: ShareAssetChartType.totalProfit, label: Text('收益'), icon: Icon(Icons.trending_up)),
-                          ButtonSegment(value: ShareAssetChartType.profitRate, label: Text('收益率'), icon: Icon(Icons.percent)),
+                          ButtonSegment(value: ShareAssetChartType.comprehensiveProfit, label: Text('综合收益'), icon: Icon(Icons.multiline_chart)),
+                          ButtonSegment(value: ShareAssetChartType.holdingProfit, label: Text('持仓收益'), icon: Icon(Icons.show_chart)),
+                          ButtonSegment(value: ShareAssetChartType.realizedProfit, label: Text('实现盈亏'), icon: Icon(Icons.trending_up)),
                         ],
                         selected: {_selectedChartType},
                         onSelectionChanged: (newSelection) {
@@ -469,7 +475,9 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                               final String valueStr;
                               if (isPercentage) {
                                 valueStr = (NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2).format(originalSpot.y);
-                              } else if (_selectedChartType == ShareAssetChartType.totalProfit) {
+                              } else if (_selectedChartType == ShareAssetChartType.comprehensiveProfit ||
+                                  _selectedChartType == ShareAssetChartType.holdingProfit ||
+                                  _selectedChartType == ShareAssetChartType.realizedProfit) {
                                 valueStr = formatCurrency(originalSpot.y, asset.currency);
                               } else {
                                 valueStr = tooltipFormat.format(originalSpot.y);
@@ -718,14 +726,17 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
         bool isPercentage = false;
 
         switch (_selectedChartType) {
-          case ShareAssetChartType.totalProfit:
-            spots = chartDataMap['totalProfit'] ?? [];
+          case ShareAssetChartType.comprehensiveProfit:
+            spots = chartDataMap['comprehensiveProfit'] ?? [];
+            chartTitle = '综合收益趋势';
+            break;
+          case ShareAssetChartType.holdingProfit:
+            spots = chartDataMap['holdingProfit'] ?? [];
             chartTitle = '持仓收益趋势';
             break;
-          case ShareAssetChartType.profitRate:
-            spots = chartDataMap['profitRate'] ?? [];
-            chartTitle = '持仓收益率趋势';
-            isPercentage = true;
+          case ShareAssetChartType.realizedProfit:
+            spots = chartDataMap['realizedProfit'] ?? [];
+            chartTitle = '实现盈亏趋势';
             break;
           case ShareAssetChartType.price:
           default:
@@ -740,7 +751,9 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
         final NumberFormat yAxisFormat;
         if (isPercentage) {
           yAxisFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 1;
-        } else if (_selectedChartType == ShareAssetChartType.totalProfit) {
+        } else if (_selectedChartType == ShareAssetChartType.comprehensiveProfit ||
+            _selectedChartType == ShareAssetChartType.holdingProfit ||
+            _selectedChartType == ShareAssetChartType.realizedProfit) {
           yAxisFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: getCurrencySymbol(asset.currency));
         } else {
           yAxisFormat = (asset.subType == AssetSubType.mutualFund)
@@ -750,7 +763,10 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
               : NumberFormat("0.00"));
         }
 
-        final tooltipFormat = (isPercentage || _selectedChartType == ShareAssetChartType.totalProfit)
+        final tooltipFormat = (isPercentage ||
+                _selectedChartType == ShareAssetChartType.comprehensiveProfit ||
+                _selectedChartType == ShareAssetChartType.holdingProfit ||
+                _selectedChartType == ShareAssetChartType.realizedProfit)
           ? yAxisFormat
           : (asset.subType == AssetSubType.mutualFund
             ? NumberFormat("0.0000")
@@ -792,8 +808,9 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                       return SegmentedButton<ShareAssetChartType>(
                         segments: const [
                           ButtonSegment(value: ShareAssetChartType.price, label: Text('价格'), icon: Icon(Icons.timeline)),
-                          ButtonSegment(value: ShareAssetChartType.totalProfit, label: Text('收益'), icon: Icon(Icons.trending_up)),
-                          ButtonSegment(value: ShareAssetChartType.profitRate, label: Text('收益率'), icon: Icon(Icons.percent)),
+                          ButtonSegment(value: ShareAssetChartType.comprehensiveProfit, label: Text('综合收益'), icon: Icon(Icons.multiline_chart)),
+                          ButtonSegment(value: ShareAssetChartType.holdingProfit, label: Text('持仓收益'), icon: Icon(Icons.show_chart)),
+                          ButtonSegment(value: ShareAssetChartType.realizedProfit, label: Text('实现盈亏'), icon: Icon(Icons.trending_up)),
                         ],
                         selected: {_selectedChartType},
                         onSelectionChanged: (newSelection) {
@@ -876,7 +893,9 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                               final String valueStr;
                               if (isPercentage) {
                                 valueStr = (NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2).format(originalSpot.y);
-                              } else if (_selectedChartType == ShareAssetChartType.totalProfit) {
+                              } else if (_selectedChartType == ShareAssetChartType.comprehensiveProfit ||
+                                  _selectedChartType == ShareAssetChartType.holdingProfit ||
+                                  _selectedChartType == ShareAssetChartType.realizedProfit) {
                                 valueStr = formatCurrency(originalSpot.y, asset.currency);
                               } else {
                                 valueStr = tooltipFormat.format(originalSpot.y);

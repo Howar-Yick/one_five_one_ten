@@ -42,6 +42,10 @@ enum AccountChartType {
 
 enum ShareAssetChartType {
   price,
+  comprehensiveProfit,
+  holdingProfit,
+  realizedProfit,
+  // 兼容旧逻辑（已不在证券详情页图表中使用）
   totalProfit,
   profitRate,
 }
