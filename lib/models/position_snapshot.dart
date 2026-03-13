@@ -21,6 +21,11 @@ class PositionSnapshot {
   /// 快照对应的人民币成本（如有）
   double? costBasisCny;
 
+  /// 券商口径综合收益（资产币种）
+  ///
+  /// 仅存原始输入值，持仓收益/实现盈亏在服务层按最新快照实时计算。
+  double? brokerComprehensiveProfit;
+
   /// 关联 Asset 的 Supabase UUID
   @Index()
   String? assetSupabaseId;
@@ -70,6 +75,8 @@ class PositionSnapshot {
 
     snap.fxRateToCny = (json['fx_rate_to_cny'] as num?)?.toDouble();
     snap.costBasisCny = (json['cost_basis_cny'] as num?)?.toDouble();
+    snap.brokerComprehensiveProfit =
+        (json['broker_comprehensive_profit'] as num?)?.toDouble();
 
     snap.assetSupabaseId = json['asset_id'] as String?;
     return snap;
@@ -93,6 +100,9 @@ class PositionSnapshot {
     }
     if (costBasisCny != null) {
       map['cost_basis_cny'] = costBasisCny;
+    }
+    if (brokerComprehensiveProfit != null) {
+      map['broker_comprehensive_profit'] = brokerComprehensiveProfit;
     }
 
     return map;

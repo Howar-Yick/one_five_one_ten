@@ -131,6 +131,9 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
     final costController = TextEditingController(
        text: performance.asData?.value['averageCost']?.toString() ?? ''
     );
+    final comprehensiveProfitController = TextEditingController(
+      text: performance.asData?.value['comprehensiveProfit']?.toString() ?? '',
+    );
     final fxRateController = TextEditingController();
     final costCnyController = TextEditingController();
     final priceController = TextEditingController(text: asset.latestPrice > 0 ? asset.latestPrice.toString() : '');
@@ -150,6 +153,15 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                     TextField(controller: sharesController, decoration: const InputDecoration(labelText: '最新总份额'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                     TextField(controller: costController, decoration: InputDecoration(labelText: '最新单位成本', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                     TextField(controller: priceController, decoration: InputDecoration(labelText: '最新价格 (可选)', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                    TextField(
+                      controller: comprehensiveProfitController,
+                      decoration: InputDecoration(
+                        labelText: '综合收益（券商口径）',
+                        helperText: '仅录入综合收益，持仓收益和实现盈亏将自动计算',
+                        prefixText: getCurrencySymbol(asset.currency),
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
                     if (asset.currency != 'CNY') ...[
                       const SizedBox(height: 12),
                       TextField(
@@ -205,6 +217,8 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                     final shares = double.tryParse(sharesController.text);
                     final cost = double.tryParse(costController.text);
                     final priceText = priceController.text.trim();
+                    final comprehensiveProfit =
+                        double.tryParse(comprehensiveProfitController.text.trim());
 
                     if (shares == null || cost == null) {
                        if (context.mounted) {
@@ -242,7 +256,8 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                         ..createdAt = DateTime.now()
                         ..assetSupabaseId = asset.supabaseId
                         ..fxRateToCny = fxRate
-                        ..costBasisCny = costCny;
+                        ..costBasisCny = costCny
+                        ..brokerComprehensiveProfit = comprehensiveProfit;
 
                       await syncService.savePositionSnapshot(newSnapshot);
 

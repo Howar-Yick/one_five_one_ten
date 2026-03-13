@@ -408,6 +408,23 @@ class CalculatorService {
       latestPrice: latestPrice,
     );
 
+    final double holdingCost = totalShares > 0 ? totalShares * averageCost : 0.0;
+    final double holdingProfit = (latestPrice * totalShares) - (averageCost * totalShares);
+    final double? snapshotComprehensiveProfit = latestSnapshot.brokerComprehensiveProfit;
+    final bool hasSnapshotComprehensive =
+        snapshotComprehensiveProfit != null && snapshotComprehensiveProfit.isFinite;
+    final double comprehensiveProfit =
+        hasSnapshotComprehensive ? snapshotComprehensiveProfit! : pnl.comprehensiveProfit;
+    final double realizedProfit =
+        hasSnapshotComprehensive ? (comprehensiveProfit - holdingProfit) : pnl.realizedProfit;
+
+    final double holdingProfitRate =
+        holdingCost == 0 ? 0.0 : (holdingProfit / holdingCost);
+    final double realizedProfitRate =
+        holdingCost == 0 ? 0.0 : (realizedProfit / holdingCost);
+    final double comprehensiveProfitRate =
+        holdingCost == 0 ? 0.0 : (comprehensiveProfit / holdingCost);
+
     double annualizedReturn = 0.0;
     if (snapshots.length >= 1) {
       final dates = <DateTime>[];
@@ -447,11 +464,11 @@ class CalculatorService {
     if (asset.currency != 'CNY') {
       final fxNow = await ExchangeRateService().getRate(asset.currency, 'CNY');
       marketValueCny = marketValue * fxNow;
-      totalCostCny = pnl.holdingCost * fxNow;
+      totalCostCny = holdingCost * fxNow;
 
       final costBasisCny = latestSnapshot.costBasisCny;
       final fxBreakdown = _calculateFxBreakdown(
-        netForeign: pnl.holdingCost,
+        netForeign: holdingCost,
         netCny: costBasisCny ?? 0,
         currentValueForeign: marketValue,
         fxNow: fxNow,
@@ -462,29 +479,29 @@ class CalculatorService {
         fxProfitCny = fxBreakdown.fxProfitCny;
         totalProfitCny = fxBreakdown.totalProfitCny;
       } else {
-        totalProfitCny = pnl.holdingProfit * fxNow;
+        totalProfitCny = holdingProfit * fxNow;
       }
     }
 
-    if (pnl.comprehensiveProfit >= 0 && annualizedReturn < 0) {
+    if (comprehensiveProfit >= 0 && annualizedReturn < 0) {
       annualizedReturn = 0.0;
     }
 
     return {
       'marketValue': marketValue,
-      'totalCost': pnl.holdingCost,
-      'totalProfit': pnl.comprehensiveProfit,
-      'profitRate': pnl.comprehensiveProfitRate,
+      'totalCost': holdingCost,
+      'totalProfit': comprehensiveProfit,
+      'profitRate': comprehensiveProfitRate,
       'annualizedReturn': annualizedReturn,
       'totalShares': totalShares,
       'averageCost': averageCost,
       'latestPrice': latestPrice,
-      'holdingProfit': pnl.holdingProfit,
-      'holdingProfitRate': pnl.holdingProfitRate,
-      'realizedProfit': pnl.realizedProfit,
-      'realizedProfitRate': pnl.realizedProfitRate,
-      'comprehensiveProfit': pnl.comprehensiveProfit,
-      'comprehensiveProfitRate': pnl.comprehensiveProfitRate,
+      'holdingProfit': holdingProfit,
+      'holdingProfitRate': holdingProfitRate,
+      'realizedProfit': realizedProfit,
+      'realizedProfitRate': realizedProfitRate,
+      'comprehensiveProfit': comprehensiveProfit,
+      'comprehensiveProfitRate': comprehensiveProfitRate,
       'marketValueCny': marketValueCny,
       'totalCostCny': totalCostCny,
       'totalProfitCny': totalProfitCny,

@@ -32,33 +32,38 @@ const PositionSnapshotSchema = CollectionSchema(
       name: r'costBasisCny',
       type: IsarType.double,
     ),
-    r'createdAt': PropertySchema(
+    r'brokerComprehensiveProfit': PropertySchema(
       id: 3,
+      name: r'brokerComprehensiveProfit',
+      type: IsarType.double,
+    ),
+    r'createdAt': PropertySchema(
+      id: 4,
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
     r'date': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'date',
       type: IsarType.dateTime,
     ),
     r'fxRateToCny': PropertySchema(
-      id: 5,
+      id: 6,
       name: r'fxRateToCny',
       type: IsarType.double,
     ),
     r'supabaseId': PropertySchema(
-      id: 6,
+      id: 7,
       name: r'supabaseId',
       type: IsarType.string,
     ),
     r'totalShares': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'totalShares',
       type: IsarType.double,
     ),
     r'updatedAt': PropertySchema(
-      id: 8,
+      id: 9,
       name: r'updatedAt',
       type: IsarType.dateTime,
     )
@@ -134,12 +139,13 @@ void _positionSnapshotSerialize(
   writer.writeString(offsets[0], object.assetSupabaseId);
   writer.writeDouble(offsets[1], object.averageCost);
   writer.writeDouble(offsets[2], object.costBasisCny);
-  writer.writeDateTime(offsets[3], object.createdAt);
-  writer.writeDateTime(offsets[4], object.date);
-  writer.writeDouble(offsets[5], object.fxRateToCny);
-  writer.writeString(offsets[6], object.supabaseId);
-  writer.writeDouble(offsets[7], object.totalShares);
-  writer.writeDateTime(offsets[8], object.updatedAt);
+  writer.writeDouble(offsets[3], object.brokerComprehensiveProfit);
+  writer.writeDateTime(offsets[4], object.createdAt);
+  writer.writeDateTime(offsets[5], object.date);
+  writer.writeDouble(offsets[6], object.fxRateToCny);
+  writer.writeString(offsets[7], object.supabaseId);
+  writer.writeDouble(offsets[8], object.totalShares);
+  writer.writeDateTime(offsets[9], object.updatedAt);
 }
 
 PositionSnapshot _positionSnapshotDeserialize(
@@ -152,13 +158,14 @@ PositionSnapshot _positionSnapshotDeserialize(
   object.assetSupabaseId = reader.readStringOrNull(offsets[0]);
   object.averageCost = reader.readDouble(offsets[1]);
   object.costBasisCny = reader.readDoubleOrNull(offsets[2]);
-  object.createdAt = reader.readDateTime(offsets[3]);
-  object.date = reader.readDateTime(offsets[4]);
-  object.fxRateToCny = reader.readDoubleOrNull(offsets[5]);
+  object.brokerComprehensiveProfit = reader.readDoubleOrNull(offsets[3]);
+  object.createdAt = reader.readDateTime(offsets[4]);
+  object.date = reader.readDateTime(offsets[5]);
+  object.fxRateToCny = reader.readDoubleOrNull(offsets[6]);
   object.id = id;
-  object.supabaseId = reader.readStringOrNull(offsets[6]);
-  object.totalShares = reader.readDouble(offsets[7]);
-  object.updatedAt = reader.readDateTimeOrNull(offsets[8]);
+  object.supabaseId = reader.readStringOrNull(offsets[7]);
+  object.totalShares = reader.readDouble(offsets[8]);
+  object.updatedAt = reader.readDateTimeOrNull(offsets[9]);
   return object;
 }
 
@@ -176,16 +183,18 @@ P _positionSnapshotDeserializeProp<P>(
     case 2:
       return (reader.readDoubleOrNull(offset)) as P;
     case 3:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readDoubleOrNull(offset)) as P;
     case 4:
       return (reader.readDateTime(offset)) as P;
     case 5:
-      return (reader.readDoubleOrNull(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 6:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDoubleOrNull(offset)) as P;
     case 7:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 8:
+      return (reader.readDouble(offset)) as P;
+    case 9:
       return (reader.readDateTimeOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');

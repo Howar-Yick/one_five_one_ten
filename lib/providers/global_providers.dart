@@ -479,6 +479,9 @@ final shareAssetCombinedChartProvider =
 
     final List<FlSpot> profitSpots = [];
     final List<FlSpot> profitRateSpots = [];
+    final List<FlSpot> holdingProfitSpots = [];
+    final List<FlSpot> realizedProfitSpots = [];
+    final List<FlSpot> comprehensiveProfitSpots = [];
 
     int snapIdx = 0;
     PositionSnapshot? active;
@@ -497,6 +500,9 @@ final shareAssetCombinedChartProvider =
       if (active == null) {
         profitSpots.add(FlSpot(p.x, 0.0));
         profitRateSpots.add(FlSpot(p.x, 0.0));
+        holdingProfitSpots.add(FlSpot(p.x, 0.0));
+        realizedProfitSpots.add(FlSpot(p.x, 0.0));
+        comprehensiveProfitSpots.add(FlSpot(p.x, 0.0));
         continue;
       }
 
@@ -507,6 +513,9 @@ final shareAssetCombinedChartProvider =
       if (!shares.isFinite || shares <= 0) {
         profitSpots.add(FlSpot(p.x, 0.0));
         profitRateSpots.add(FlSpot(p.x, 0.0));
+        holdingProfitSpots.add(FlSpot(p.x, 0.0));
+        realizedProfitSpots.add(FlSpot(p.x, 0.0));
+        comprehensiveProfitSpots.add(FlSpot(p.x, 0.0));
         continue;
       }
 
@@ -514,13 +523,21 @@ final shareAssetCombinedChartProvider =
           (shares * avgCost).isFinite ? shares * avgCost : 0.0;
       final double mv =
           (shares * price).isFinite ? shares * price : 0.0;
-      final double profit =
+      final double holdingProfit =
           (mv - cost).isFinite ? (mv - cost) : 0.0;
-      final double rate = (cost == 0) ? 0.0 : (profit / cost);
+      final double snapshotComprehensive =
+          active!.brokerComprehensiveProfit ?? holdingProfit;
+      final double comprehensiveProfit =
+          snapshotComprehensive.isFinite ? snapshotComprehensive : holdingProfit;
+      final double realizedProfit = comprehensiveProfit - holdingProfit;
+      final double rate = (cost == 0) ? 0.0 : (comprehensiveProfit / cost);
 
-      profitSpots.add(FlSpot(p.x, profit));
+      profitSpots.add(FlSpot(p.x, comprehensiveProfit));
       profitRateSpots
           .add(FlSpot(p.x, rate.isFinite ? rate : 0.0));
+      holdingProfitSpots.add(FlSpot(p.x, holdingProfit));
+      realizedProfitSpots.add(FlSpot(p.x, realizedProfit));
+      comprehensiveProfitSpots.add(FlSpot(p.x, comprehensiveProfit));
     }
 
     _ensureTwoSpots(effectivePrice, effectivePrice.first.y);
@@ -531,9 +548,9 @@ final shareAssetCombinedChartProvider =
       'price': effectivePrice,
       'totalProfit': profitSpots,
       'profitRate': profitRateSpots,
-      'holdingProfit': profitSpots,
-      'realizedProfit': List<FlSpot>.generate(profitSpots.length, (i) => FlSpot(profitSpots[i].x, 0.0)),
-      'comprehensiveProfit': profitSpots,
+      'holdingProfit': holdingProfitSpots,
+      'realizedProfit': realizedProfitSpots,
+      'comprehensiveProfit': comprehensiveProfitSpots,
     };
   },
 );
