@@ -1,17 +1,16 @@
 // 文件: lib/pages/snapshot_history_page.dart
 
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/pages/share_asset_detail_page.dart';
-import 'package:one_five_one_ten/utils/currency_formatter.dart';
-import 'package:one_five_one_ten/utils/number_formatter.dart';
-
-// Providers & services
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
+import 'package:one_five_one_ten/utils/currency_formatter.dart';
+import 'package:one_five_one_ten/utils/number_formatter.dart';
 
 class SnapshotHistoryPage extends ConsumerWidget {
   final int assetId;
@@ -21,6 +20,7 @@ class SnapshotHistoryPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncAsset = ref.watch(shareAssetDetailProvider(assetId));
     final historyAsync = ref.watch(snapshotHistoryProvider(assetId));
+    final priceHistoryAsync = ref.watch(assetHistoryChartProvider(assetId));
 
     return Scaffold(
       appBar: AppBar(
@@ -31,22 +31,30 @@ class SnapshotHistoryPage extends ConsumerWidget {
           if (asset == null) {
             return const Center(child: Text('未找到资产'));
           }
+
           final currencyCode = asset.currency;
+          final priceSpots = priceHistoryAsync.asData?.value ?? const <FlSpot>[];
+          final bool hasPriceData = priceSpots.isNotEmpty;
+
           return historyAsync.when(
             data: (snapshots) {
               if (snapshots.isEmpty) {
                 return const Center(child: Text('暂无快照记录'));
               }
+
               return ListView.builder(
                 itemCount: snapshots.length,
                 itemBuilder: (context, index) {
                   final snapshot = snapshots[index];
+                  final pnl = _buildSnapshotPnl(snapshot, priceSpots);
                   return _buildSnapshotTile(
                     context,
                     ref,
                     snapshot,
                     currencyCode,
                     asset,
+                    pnl,
+                    showPriceFallbackHint: !hasPriceData,
                   );
                 },
               );
@@ -71,17 +79,105 @@ class SnapshotHistoryPage extends ConsumerWidget {
     );
   }
 
+  _SnapshotPnlViewModel _buildSnapshotPnl(
+    PositionSnapshot snapshot,
+    List<FlSpot> priceSpots,
+  ) {
+    final double? price = _findPriceOnOrBeforeDate(snapshot.date, priceSpots);
+
+    final double? holdingProfit = price == null
+        ? null
+        : (price * snapshot.totalShares) -
+            (snapshot.averageCost * snapshot.totalShares);
+
+    final double? comprehensiveProfitFromSnapshot =
+        snapshot.brokerComprehensiveProfit;
+    final double? comprehensiveProfit = comprehensiveProfitFromSnapshot ??
+        holdingProfit; // 与详情页口径一致：缺失时回退持仓收益
+
+    final double? realizedProfit =
+        (comprehensiveProfit != null && holdingProfit != null)
+            ? (comprehensiveProfit - holdingProfit)
+            : null;
+
+    return _SnapshotPnlViewModel(
+      holdingProfit: holdingProfit,
+      comprehensiveProfit: comprehensiveProfit,
+      realizedProfit: realizedProfit,
+      hasSnapshotComprehensive: comprehensiveProfitFromSnapshot != null,
+      hasMatchedPrice: price != null,
+    );
+  }
+
+  double? _findPriceOnOrBeforeDate(DateTime date, List<FlSpot> priceSpots) {
+    if (priceSpots.isEmpty) return null;
+
+    final target = DateTime(date.year, date.month, date.day);
+    final sorted = priceSpots.toList()
+      ..sort((a, b) => a.x.compareTo(b.x));
+
+    double? matchedPrice;
+    for (final spot in sorted) {
+      final spotDate = DateTime.fromMillisecondsSinceEpoch(spot.x.toInt());
+      final spotDay = DateTime(spotDate.year, spotDate.month, spotDate.day);
+      if (spotDay.isAfter(target)) break;
+      matchedPrice = spot.y;
+    }
+    return matchedPrice;
+  }
+
   Widget _buildSnapshotTile(
     BuildContext context,
     WidgetRef ref,
     PositionSnapshot snapshot,
     String currencyCode,
     Asset asset,
-  ) {
+    _SnapshotPnlViewModel pnl, {
+    required bool showPriceFallbackHint,
+  }) {
     final unitCostText = formatSnapshotUnitCost(snapshot.averageCost, asset);
+    final dateText = DateFormat('yyyy-MM-dd').format(snapshot.date);
+
+    Color pnlColor(double value) {
+      if (value > 0) return Colors.red.shade400;
+      if (value < 0) return Colors.green.shade400;
+      return Theme.of(context).textTheme.bodyMedium?.color ?? Colors.grey;
+    }
+
+    String displayPnl(double? value) {
+      if (value == null) return '—';
+      return formatCurrency(value, currencyCode);
+    }
+
     final List<Widget> subtitleLines = [
       Text('单位成本: ${getCurrencySymbol(currencyCode)}$unitCostText'),
       Text('份额: ${snapshot.totalShares.toStringAsFixed(2)}'),
+      const SizedBox(height: 6),
+      Text(
+        '综合收益: ${displayPnl(pnl.comprehensiveProfit)}',
+        style: TextStyle(
+          color: pnl.comprehensiveProfit == null
+              ? Theme.of(context).textTheme.bodyMedium?.color
+              : pnlColor(pnl.comprehensiveProfit!),
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      Text(
+        '持仓收益: ${displayPnl(pnl.holdingProfit)}',
+        style: TextStyle(
+          color: pnl.holdingProfit == null
+              ? Theme.of(context).textTheme.bodyMedium?.color
+              : pnlColor(pnl.holdingProfit!),
+        ),
+      ),
+      Text(
+        '实现盈亏: ${displayPnl(pnl.realizedProfit)}',
+        style: TextStyle(
+          color: pnl.realizedProfit == null
+              ? Theme.of(context).textTheme.bodyMedium?.color
+              : pnlColor(pnl.realizedProfit!),
+        ),
+      ),
     ];
 
     if (currencyCode != 'CNY' && snapshot.costBasisCny != null) {
@@ -97,19 +193,65 @@ class SnapshotHistoryPage extends ConsumerWidget {
       );
     }
 
+    if (!pnl.hasMatchedPrice) {
+      subtitleLines.add(
+        Text(
+          showPriceFallbackHint
+              ? '注：暂无历史价格，持仓收益/实现盈亏暂不可计算'
+              : '注：该日期未匹配到历史价格，持仓收益/实现盈亏暂不可计算',
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+
+    if (!pnl.hasSnapshotComprehensive) {
+      subtitleLines.add(
+        Text(
+          '注：综合收益缺失时按持仓收益回退展示',
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: ListTile(
         leading: const Icon(Icons.history_toggle_off),
-        title: Text(
-          '快照日期: ${DateFormat('yyyy-MM-dd').format(snapshot.date)}',
-        ),
+        title: Text('快照日期: $dateText'),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: subtitleLines,
         ),
-        trailing: Text(
-          DateFormat('yyyy-MM-dd').format(snapshot.date),
+        trailing: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 140),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '综合收益',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              Text(
+                displayPnl(pnl.comprehensiveProfit),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: pnl.comprehensiveProfit == null
+                      ? Theme.of(context).textTheme.bodyMedium?.color
+                      : pnlColor(pnl.comprehensiveProfit!),
+                ),
+              ),
+            ],
+          ),
         ),
         onTap: () =>
             _showEditSnapshotDialog(context, ref, snapshot, currencyCode, asset),
@@ -505,4 +647,20 @@ class SnapshotHistoryPage extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _SnapshotPnlViewModel {
+  final double? comprehensiveProfit;
+  final double? holdingProfit;
+  final double? realizedProfit;
+  final bool hasSnapshotComprehensive;
+  final bool hasMatchedPrice;
+
+  const _SnapshotPnlViewModel({
+    required this.comprehensiveProfit,
+    required this.holdingProfit,
+    required this.realizedProfit,
+    required this.hasSnapshotComprehensive,
+    required this.hasMatchedPrice,
+  });
 }
