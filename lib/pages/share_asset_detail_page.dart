@@ -312,24 +312,32 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
         List<FlSpot> spots;
         String chartTitle;
         bool isPercentage = false; // 标记是否为百分比Y轴
+        String modeLabel = '价格模式';
+        final List<FlSpot> comprehensiveSpots = chartDataMap['comprehensiveProfit'] ?? [];
+        final List<FlSpot> holdingSpots = chartDataMap['holdingProfit'] ?? [];
+        final List<FlSpot> realizedSpots = chartDataMap['realizedProfit'] ?? [];
 
         switch (_selectedChartType) {
           case ShareAssetChartType.comprehensiveProfit:
-            spots = chartDataMap['comprehensiveProfit'] ?? [];
+            spots = comprehensiveSpots;
             chartTitle = '综合收益趋势';
+            modeLabel = '当前：综合收益曲线';
             break;
           case ShareAssetChartType.holdingProfit:
-            spots = chartDataMap['holdingProfit'] ?? [];
+            spots = holdingSpots;
             chartTitle = '持仓收益趋势';
+            modeLabel = '当前：持仓收益曲线';
             break;
           case ShareAssetChartType.realizedProfit:
-            spots = chartDataMap['realizedProfit'] ?? [];
+            spots = realizedSpots;
             chartTitle = '实现盈亏趋势';
+            modeLabel = '当前：实现盈亏曲线';
             break;
           case ShareAssetChartType.price:
           default:
             spots = chartDataMap['price'] ?? [];
             chartTitle = (asset.subType == AssetSubType.mutualFund) ? '单位净值历史' : '价格历史 (日K收盘)';
+            modeLabel = '当前：价格曲线';
             break;
         }
 
@@ -405,7 +413,15 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                     }
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Container(width: 10, height: 10, color: colorScheme.primary),
+                    const SizedBox(width: 6),
+                    Text(modeLabel, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  ],
+                ),
+                const SizedBox(height: 14),
 
                 // (*** 5. 动态图表 ***)
                 SizedBox(
@@ -482,9 +498,32 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                               } else {
                                 valueStr = tooltipFormat.format(originalSpot.y);
                               }
+                              final double? comprehensiveAt = index < comprehensiveSpots.length
+                                  ? comprehensiveSpots[index].y
+                                  : null;
+                              final double? holdingAt = index < holdingSpots.length
+                                  ? holdingSpots[index].y
+                                  : null;
+                              final double? realizedAt = index < realizedSpots.length
+                                  ? realizedSpots[index].y
+                                  : null;
+
+                              final String comprehensiveText = comprehensiveAt == null
+                                  ? '—'
+                                  : formatCurrency(comprehensiveAt, asset.currency);
+                              final String holdingText = holdingAt == null
+                                  ? '—'
+                                  : formatCurrency(holdingAt, asset.currency);
+                              final String realizedText = realizedAt == null
+                                  ? '—'
+                                  : formatCurrency(realizedAt, asset.currency);
 
                               return LineTooltipItem(
-                                '$date\n$valueStr',
+                                '''$date
+$valueStr
+综合收益: $comprehensiveText
+持仓收益: $holdingText
+实现盈亏: $realizedText''',
                                 const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold),
@@ -541,6 +580,10 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
 
         final String latestPriceString = formatPrice(widget.asset.latestPrice, widget.asset.subType);
         final String avgCostString = formatPrice(performance['averageCost'] ?? 0.0, widget.asset.subType);
+        final double holdingProfit = (performance['holdingProfit'] ?? 0.0) as double;
+        final double realizedProfit = (performance['realizedProfit'] ?? 0.0) as double;
+        final double comprehensiveProfit =
+            (performance['comprehensiveProfit'] ?? performance['totalProfit'] ?? 0.0) as double;
 
         return ListView(
           padding: const EdgeInsets.all(16.0),
@@ -596,6 +639,13 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
 
             // 2. 中部卡片 (业绩)
             _buildPerformanceCard(context, performance, widget.asset.currency),
+            _buildProfitStructureCard(
+              context,
+              holdingProfit,
+              realizedProfit,
+              comprehensiveProfit,
+              widget.asset.currency,
+            ),
 
             // (按钮区已按要求移除)
 
@@ -712,6 +762,93 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
     );
   }
 
+
+  Widget _buildProfitStructureCard(
+    BuildContext context,
+    double holdingProfit,
+    double realizedProfit,
+    double comprehensiveProfit,
+    String currencyCode,
+  ) {
+    final double totalAbs = holdingProfit.abs() + realizedProfit.abs();
+    final double realizedRatio = totalAbs == 0 ? 0.0 : (realizedProfit.abs() / totalAbs);
+    final double holdingRatio = totalAbs == 0 ? 0.0 : (holdingProfit.abs() / totalAbs);
+
+    Color pnlColor(double value) {
+      if (value > 0) return Colors.red.shade400;
+      if (value < 0) return Colors.green.shade400;
+      return Theme.of(context).textTheme.bodyMedium?.color ?? Colors.grey;
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '收益结构',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '综合收益 = 持仓收益 + 实现盈亏',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '持仓收益 ${formatCurrency(holdingProfit, currencyCode)}',
+                    style: TextStyle(color: pnlColor(holdingProfit)),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    '实现盈亏 ${formatCurrency(realizedProfit, currencyCode)}',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(color: pnlColor(realizedProfit)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox(
+                height: 10,
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: ((holdingRatio * 1000).round().clamp(1, 999) as num).toInt(),
+                      child: Container(color: Colors.blueGrey.shade300),
+                    ),
+                    Expanded(
+                      flex: ((realizedRatio * 1000).round().clamp(1, 999) as num).toInt(),
+                      child: Container(color: Colors.orange.shade300),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '实现盈亏占比：${(realizedRatio * 100).toStringAsFixed(1)}%   综合收益：${formatCurrency(comprehensiveProfit, currencyCode)}',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // (*** 7. 关键修改：_buildChartCard ***)
   Widget _buildChartCard(BuildContext context, Asset asset) {
     // (*** 1. Watch 新的组合 Provider ***)
@@ -724,24 +861,32 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
         List<FlSpot> spots;
         String chartTitle;
         bool isPercentage = false;
+        String modeLabel = '价格模式';
+        final List<FlSpot> comprehensiveSpots = chartDataMap['comprehensiveProfit'] ?? [];
+        final List<FlSpot> holdingSpots = chartDataMap['holdingProfit'] ?? [];
+        final List<FlSpot> realizedSpots = chartDataMap['realizedProfit'] ?? [];
 
         switch (_selectedChartType) {
           case ShareAssetChartType.comprehensiveProfit:
-            spots = chartDataMap['comprehensiveProfit'] ?? [];
+            spots = comprehensiveSpots;
             chartTitle = '综合收益趋势';
+            modeLabel = '当前：综合收益曲线';
             break;
           case ShareAssetChartType.holdingProfit:
-            spots = chartDataMap['holdingProfit'] ?? [];
+            spots = holdingSpots;
             chartTitle = '持仓收益趋势';
+            modeLabel = '当前：持仓收益曲线';
             break;
           case ShareAssetChartType.realizedProfit:
-            spots = chartDataMap['realizedProfit'] ?? [];
+            spots = realizedSpots;
             chartTitle = '实现盈亏趋势';
+            modeLabel = '当前：实现盈亏曲线';
             break;
           case ShareAssetChartType.price:
           default:
             spots = chartDataMap['price'] ?? [];
             chartTitle = (asset.subType == AssetSubType.mutualFund) ? '单位净值历史' : '价格历史 (日K收盘)';
+            modeLabel = '当前：价格曲线';
             break;
         }
 
@@ -823,7 +968,15 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                     }
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Container(width: 10, height: 10, color: colorScheme.primary),
+                    const SizedBox(width: 6),
+                    Text(modeLabel, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  ],
+                ),
+                const SizedBox(height: 14),
 
                 // (*** 5. 动态图表 ***)
                 SizedBox(
@@ -900,9 +1053,32 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                               } else {
                                 valueStr = tooltipFormat.format(originalSpot.y);
                               }
+                              final double? comprehensiveAt = index < comprehensiveSpots.length
+                                  ? comprehensiveSpots[index].y
+                                  : null;
+                              final double? holdingAt = index < holdingSpots.length
+                                  ? holdingSpots[index].y
+                                  : null;
+                              final double? realizedAt = index < realizedSpots.length
+                                  ? realizedSpots[index].y
+                                  : null;
+
+                              final String comprehensiveText = comprehensiveAt == null
+                                  ? '—'
+                                  : formatCurrency(comprehensiveAt, asset.currency);
+                              final String holdingText = holdingAt == null
+                                  ? '—'
+                                  : formatCurrency(holdingAt, asset.currency);
+                              final String realizedText = realizedAt == null
+                                  ? '—'
+                                  : formatCurrency(realizedAt, asset.currency);
 
                               return LineTooltipItem(
-                                '$date\n$valueStr',
+                                '''$date
+$valueStr
+综合收益: $comprehensiveText
+持仓收益: $holdingText
+实现盈亏: $realizedText''',
                                 const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold),
