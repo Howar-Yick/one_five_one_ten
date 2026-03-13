@@ -776,8 +776,7 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
       return Theme.of(context).textTheme.bodyMedium?.color ?? Colors.grey;
     }
 
-    final bool isOppositeSign =
-        holdingProfit != 0 && realizedProfit != 0 && (holdingProfit * realizedProfit < 0);
+    final bool isOppositeSign = (holdingProfit * realizedProfit) < 0;
 
     final double holdingAbs = holdingProfit.abs();
     final double realizedAbs = realizedProfit.abs();
@@ -793,10 +792,10 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
     String summaryText;
     if (!isOppositeSign) {
       summaryText =
-          '持仓收益占比：${(holdingRatio * 100).toStringAsFixed(1)}%   实现盈亏占比：${(realizedRatio * 100).toStringAsFixed(1)}%';
+          '持仓收益占比：${(holdingRatio * 100).toStringAsFixed(1)}%\n实现盈亏占比：${(realizedRatio * 100).toStringAsFixed(1)}%';
     } else if (holdingProfit < 0 && realizedProfit > 0) {
       summaryText =
-          '已实现盈亏抵消了持仓亏损的 ${(hedgeRatio * 100).toStringAsFixed(1)}%';
+          '已实现盈利抵消了持仓亏损的 ${(hedgeRatio * 100).toStringAsFixed(1)}%';
     } else {
       summaryText =
           '已实现亏损侵蚀了持仓盈利的 ${(hedgeRatio * 100).toStringAsFixed(1)}%';
