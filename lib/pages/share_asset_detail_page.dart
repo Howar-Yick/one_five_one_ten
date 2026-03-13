@@ -770,14 +770,36 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
     double comprehensiveProfit,
     String currencyCode,
   ) {
-    final double totalAbs = holdingProfit.abs() + realizedProfit.abs();
-    final double realizedRatio = totalAbs == 0 ? 0.0 : (realizedProfit.abs() / totalAbs);
-    final double holdingRatio = totalAbs == 0 ? 0.0 : (holdingProfit.abs() / totalAbs);
-
     Color pnlColor(double value) {
       if (value > 0) return Colors.red.shade400;
       if (value < 0) return Colors.green.shade400;
       return Theme.of(context).textTheme.bodyMedium?.color ?? Colors.grey;
+    }
+
+    final bool isOppositeSign =
+        holdingProfit != 0 && realizedProfit != 0 && (holdingProfit * realizedProfit < 0);
+
+    final double holdingAbs = holdingProfit.abs();
+    final double realizedAbs = realizedProfit.abs();
+    final double totalAbs = holdingAbs + realizedAbs;
+
+    final double holdingRatio = totalAbs == 0 ? 0.0 : (holdingAbs / totalAbs);
+    final double realizedRatio = totalAbs == 0 ? 0.0 : (realizedAbs / totalAbs);
+
+    final double hedgeRatio =
+        holdingAbs == 0 ? 0.0 : (realizedAbs / holdingAbs).clamp(0.0, 1.0);
+    final double remainRatio = (1.0 - hedgeRatio).clamp(0.0, 1.0);
+
+    String summaryText;
+    if (!isOppositeSign) {
+      summaryText =
+          '持仓收益占比：${(holdingRatio * 100).toStringAsFixed(1)}%   实现盈亏占比：${(realizedRatio * 100).toStringAsFixed(1)}%';
+    } else if (holdingProfit < 0 && realizedProfit > 0) {
+      summaryText =
+          '已实现盈亏抵消了持仓亏损的 ${(hedgeRatio * 100).toStringAsFixed(1)}%';
+    } else {
+      summaryText =
+          '已实现亏损侵蚀了持仓盈利的 ${(hedgeRatio * 100).toStringAsFixed(1)}%';
     }
 
     return Card(
@@ -823,21 +845,44 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                 height: 10,
                 child: Row(
                   children: [
-                    Expanded(
-                      flex: ((holdingRatio * 1000).round().clamp(1, 999) as num).toInt(),
-                      child: Container(color: Colors.blueGrey.shade300),
-                    ),
-                    Expanded(
-                      flex: ((realizedRatio * 1000).round().clamp(1, 999) as num).toInt(),
-                      child: Container(color: Colors.orange.shade300),
-                    ),
+                    if (!isOppositeSign) ...[
+                      Expanded(
+                        flex: ((holdingRatio * 1000).round().clamp(1, 999) as num)
+                            .toInt(),
+                        child: Container(color: Colors.blueGrey.shade300),
+                      ),
+                      Expanded(
+                        flex: ((realizedRatio * 1000).round().clamp(1, 999) as num)
+                            .toInt(),
+                        child: Container(color: Colors.orange.shade300),
+                      ),
+                    ] else ...[
+                      Expanded(
+                        flex: ((hedgeRatio * 1000).round().clamp(1, 999) as num)
+                            .toInt(),
+                        child: Container(color: Colors.teal.shade300),
+                      ),
+                      Expanded(
+                        flex: ((remainRatio * 1000).round().clamp(1, 999) as num)
+                            .toInt(),
+                        child: Container(color: Colors.blueGrey.shade300),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              '实现盈亏占比：${(realizedRatio * 100).toStringAsFixed(1)}%   综合收益：${formatCurrency(comprehensiveProfit, currencyCode)}',
+              summaryText,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '综合收益：${formatCurrency(comprehensiveProfit, currencyCode)}',
               style: TextStyle(
                 fontSize: 12,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
