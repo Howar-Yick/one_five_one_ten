@@ -7,6 +7,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/asset.dart';
+import 'package:one_five_one_ten/models/grid_profit_reconstruction_result.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 // import 'package:one_five_one_ten/models/transaction.dart'; // (已移除)
 import 'package:one_five_one_ten/pages/snapshot_history_page.dart';
@@ -791,11 +792,9 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
               );
             }
 
-            final result = data['result'];
-            final double cumulativeGridProfit =
-                (result?.cumulativeGridProfit ?? 0.0) as double;
-            final double costReductionPerShare =
-                (result?.costReductionPerShare ?? 0.0) as double;
+            final result = data['result'] as GridProfitReconstructionResult;
+            final double cumulativeGridProfit = result.cumulativeGridProfit;
+            final double costReductionPerShare = result.gridCostReductionPerShare;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
