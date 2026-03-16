@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/pages/share_asset_detail_page.dart';
+import 'package:one_five_one_ten/pages/grid_profit_debug_page.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
@@ -25,6 +26,19 @@ class SnapshotHistoryPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('持仓快照历史'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bug_report_outlined),
+            tooltip: '网格利润调试',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => GridProfitDebugPage(assetId: assetId),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: asyncAsset.when(
         data: (asset) {
