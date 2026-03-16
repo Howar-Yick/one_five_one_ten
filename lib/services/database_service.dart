@@ -34,10 +34,10 @@ class DatabaseService {
       return;
     }
 
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getApplicationSupportDirectory();
 
     // >>>>> 添加这一行 <<<<<
-    print('📍 ISAR 数据库路径: ${dir.path}\\one_five_one_ten_db.isar'); 
+    print('📍 ISAR 数据库路径: ${dir.path}\\one_five_one_ten_db.isar');
     // ^^
 
     // ★★★ 一定要把两个新表的 Schema 一起注册 ★★★
@@ -109,8 +109,9 @@ class DatabaseService {
 
     for (final acc in accounts) {
       final oldId = acc.supabaseId;
-      final hasValidRemoteId =
-          oldId != null && _uuidRegex.hasMatch(oldId) && remoteIds.contains(oldId);
+      final hasValidRemoteId = oldId != null &&
+          _uuidRegex.hasMatch(oldId) &&
+          remoteIds.contains(oldId);
       if (hasValidRemoteId) continue;
 
       final key = _nameCurrencyKey(acc.name, acc.currency);
@@ -187,9 +188,12 @@ class DatabaseService {
       }
     }
 
-    final orphanAssets = await isar.assets.where().accountSupabaseIdIsNull().findAll();
-    final orphanAccountTxns =
-        await isar.accountTransactions.where().accountSupabaseIdIsNull().findAll();
+    final orphanAssets =
+        await isar.assets.where().accountSupabaseIdIsNull().findAll();
+    final orphanAccountTxns = await isar.accountTransactions
+        .where()
+        .accountSupabaseIdIsNull()
+        .findAll();
 
     if (orphanAssets.isEmpty && orphanAccountTxns.isEmpty) return;
 
