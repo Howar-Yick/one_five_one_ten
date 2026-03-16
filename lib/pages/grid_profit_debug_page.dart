@@ -28,14 +28,16 @@ class GridProfitDebugPage extends ConsumerWidget {
               (data['eventCounts'] as Map<String, int>?) ?? const <String, int>{};
           final confidence = (data['confidence'] as String?) ?? '低';
 
-          final currencyCode =
-              assetAsync.asData?.value?.currency ?? 'CNY';
+          final currencyCode = assetAsync.asData?.value?.currency ?? 'CNY';
 
           if (snapshots.length < 2) {
             return const Center(
               child: Text('快照不足，无法重构网格利润'),
             );
           }
+
+          final List<GridProfitReconstructionStep> displaySteps =
+              result.steps.reversed.toList();
 
           return ListView(
             padding: const EdgeInsets.all(12),
@@ -44,7 +46,9 @@ class GridProfitDebugPage extends ConsumerWidget {
               const SizedBox(height: 10),
               _buildEventStatsCard(context, eventCounts, confidence),
               const SizedBox(height: 10),
-              ...result.steps.map(
+              _buildEventHintCard(context),
+              const SizedBox(height: 10),
+              ...displaySteps.map(
                 (step) => _buildStepCard(context, step, currencyCode),
               ),
             ],
@@ -73,10 +77,16 @@ class GridProfitDebugPage extends ConsumerWidget {
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const SizedBox(height: 8),
-            _row('累计网格利润', _formatMoney(result.cumulativeGridProfit, currencyCode),
-                _pnlColor(context, result.cumulativeGridProfit)),
-            _row('每份额降本', _formatCost(result.gridCostReductionPerShare),
-                _pnlColor(context, result.gridCostReductionPerShare)),
+            _row(
+              '累计网格利润',
+              _formatMoney(result.cumulativeGridProfit, currencyCode),
+              _pnlColor(context, result.cumulativeGridProfit),
+            ),
+            _row(
+              '每份额降本',
+              _formatCost(result.gridCostReductionPerShare),
+              _pnlColor(context, result.gridCostReductionPerShare),
+            ),
             _row('快照数量', snapshotsCount.toString(), null),
             _row('步骤数量', result.steps.length.toString(), null),
           ],
@@ -101,25 +111,68 @@ class GridProfitDebugPage extends ConsumerWidget {
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const SizedBox(height: 8),
-            _row('init', (counts['init'] ?? 0).toString(), null),
-            _row('flat_trade', (counts['flat_trade'] ?? 0).toString(), null),
-            _row('buy', (counts['buy'] ?? 0).toString(), null),
-            _row('sell', (counts['sell'] ?? 0).toString(), null),
-            _row('sell_with_fallback',
-                (counts['sell_with_fallback'] ?? 0).toString(),
-                Colors.orange.shade700),
-            _row('none', (counts['none'] ?? 0).toString(), null),
+            _row(_eventTypeLabel('init'), (counts['init'] ?? 0).toString(), null),
+            _row(
+              _eventTypeLabel('flat_trade'),
+              (counts['flat_trade'] ?? 0).toString(),
+              null,
+            ),
+            _row(_eventTypeLabel('buy'), (counts['buy'] ?? 0).toString(), null),
+            _row(_eventTypeLabel('sell'), (counts['sell'] ?? 0).toString(), null),
+            _row(
+              _eventTypeLabel('sell_with_fallback'),
+              (counts['sell_with_fallback'] ?? 0).toString(),
+              Colors.orange.shade700,
+            ),
+            _row(_eventTypeLabel('none'), (counts['none'] ?? 0).toString(), null),
             const Divider(height: 16),
             _row(
               '可信度提示',
               confidence,
               confidence == '高'
                   ? Colors.green.shade700
-                  : (confidence == '中' ? Colors.orange.shade700 : Colors.red.shade700),
+                  : (confidence == '中'
+                      ? Colors.orange.shade700
+                      : Colors.red.shade700),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildEventHintCard(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '事件说明',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _hintLine('初始化基准：第一条快照，仅作为起点'),
+            _hintLine('同份额套利：份额没变，但净投入本金下降，识别为网格利润'),
+            _hintLine('净买入建仓：份额增加，记录为后续卖出配对批次'),
+            _hintLine('净卖出兑现：份额减少，按 LIFO 配对计算网格利润'),
+            _hintLine('卖出兑现（兜底）：历史批次不足时使用兜底成本'),
+            _hintLine('无变化：本次快照未识别出有效事件'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _hintLine(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Text(text),
     );
   }
 
@@ -151,7 +204,7 @@ class GridProfitDebugPage extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    step.eventType,
+                    _eventTypeLabel(step.eventType),
                     style: TextStyle(
                       color: _eventColor(step.eventType),
                       fontWeight: FontWeight.w600,
@@ -161,20 +214,33 @@ class GridProfitDebugPage extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 8),
-            _row('shares', _formatShares(step.shares), null),
-            _row('averageCost', _formatCost(step.averageCost), null),
-            _row('netCapital', _formatMoney(step.netCapital, currencyCode),
-                _pnlColor(context, step.netCapital)),
-            _row('deltaShares', _formatShares(step.deltaShares),
-                _pnlColor(context, step.deltaShares)),
-            _row('deltaCapital', _formatMoney(step.deltaCapital, currencyCode),
-                _pnlColor(context, step.deltaCapital)),
-            _row('gridProfitDelta',
-                _formatMoney(step.gridProfitDelta, currencyCode),
-                _pnlColor(context, step.gridProfitDelta)),
-            _row('cumulativeGridProfit',
-                _formatMoney(step.cumulativeGridProfit, currencyCode),
-                _pnlColor(context, step.cumulativeGridProfit)),
+            _row('当前份额', _formatShares(step.shares), null),
+            _row('单位成本', _formatCost(step.averageCost), null),
+            _row(
+              '净投入本金',
+              _formatMoney(step.netCapital, currencyCode),
+              _pnlColor(context, step.netCapital),
+            ),
+            _row(
+              '份额变化',
+              _formatShares(step.deltaShares),
+              _pnlColor(context, step.deltaShares),
+            ),
+            _row(
+              '本金变化',
+              _formatMoney(step.deltaCapital, currencyCode),
+              _pnlColor(context, step.deltaCapital),
+            ),
+            _row(
+              '当步网格利润',
+              _formatMoney(step.gridProfitDelta, currencyCode),
+              _pnlColor(context, step.gridProfitDelta),
+            ),
+            _row(
+              '累计网格利润',
+              _formatMoney(step.cumulativeGridProfit, currencyCode),
+              _pnlColor(context, step.cumulativeGridProfit),
+            ),
           ],
         ),
       ),
@@ -198,6 +264,25 @@ class GridProfitDebugPage extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _eventTypeLabel(String eventType) {
+    switch (eventType) {
+      case 'init':
+        return '初始化基准';
+      case 'flat_trade':
+        return '同份额套利';
+      case 'buy':
+        return '净买入建仓';
+      case 'sell':
+        return '净卖出兑现';
+      case 'sell_with_fallback':
+        return '卖出兑现（兜底）';
+      case 'none':
+        return '无变化';
+      default:
+        return eventType;
+    }
   }
 
   String _formatMoney(double value, String currencyCode) {
