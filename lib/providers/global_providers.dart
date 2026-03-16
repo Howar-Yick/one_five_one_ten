@@ -17,6 +17,7 @@ import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/price_sync_service.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
+import 'package:one_five_one_ten/services/grid_profit_reconstruction_service.dart';
 
 import 'package:one_five_one_ten/utils/timezone.dart'; // ☆
 
@@ -400,6 +401,41 @@ final snapshotHistoryProvider =
       yield snaps;
     }
   }
+});
+
+
+
+final gridProfitDebugProvider =
+    FutureProvider.autoDispose.family<Map<String, dynamic>, int>((ref, assetId) async {
+  final snapshots = await ref.watch(snapshotHistoryProvider(assetId).future);
+  final result =
+      GridProfitReconstructionService().reconstructFromSnapshots(snapshots);
+
+  final Map<String, int> eventCounts = {
+    'init': 0,
+    'flat_trade': 0,
+    'buy': 0,
+    'sell': 0,
+    'sell_with_fallback': 0,
+    'none': 0,
+  };
+
+  for (final step in result.steps) {
+    eventCounts[step.eventType] = (eventCounts[step.eventType] ?? 0) + 1;
+  }
+
+  final int fallbackCount = eventCounts['sell_with_fallback'] ?? 0;
+  final String confidence = fallbackCount == 0
+      ? '高'
+      : (fallbackCount <= 2 ? '中' : '低');
+
+  return {
+    'snapshots': snapshots,
+    'result': result,
+    'eventCounts': eventCounts,
+    'fallbackCount': fallbackCount,
+    'confidence': confidence,
+  };
 });
 
 // ------------------------ 份额法资产：价格 + 业绩三线合成图 ------------------------
