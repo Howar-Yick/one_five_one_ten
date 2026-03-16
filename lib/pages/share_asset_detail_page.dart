@@ -646,6 +646,7 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
               comprehensiveProfit,
               widget.asset.currency,
             ),
+            _buildGridProfitSummaryCard(context, widget.asset.id, widget.asset.currency),
 
             // (按钮区已按要求移除)
 
@@ -762,6 +763,89 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
     );
   }
 
+
+
+  Widget _buildGridProfitSummaryCard(
+    BuildContext context,
+    int assetId,
+    String currencyCode,
+  ) {
+    Color pnlColor(double value) {
+      if (value > 0) return Colors.red.shade400;
+      if (value < 0) return Colors.green.shade400;
+      return Theme.of(context).textTheme.bodyMedium?.color ?? Colors.grey;
+    }
+
+    final debugAsync = ref.watch(gridProfitDebugProvider(assetId));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: debugAsync.when(
+          data: (data) {
+            final snapshots = (data['snapshots'] as List<PositionSnapshot>?) ?? const <PositionSnapshot>[];
+            if (snapshots.length < 2) {
+              return const Text(
+                '网格利润重构：快照不足',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              );
+            }
+
+            final result = data['result'];
+            final double cumulativeGridProfit =
+                (result?.cumulativeGridProfit ?? 0.0) as double;
+            final double costReductionPerShare =
+                (result?.costReductionPerShare ?? 0.0) as double;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '网格利润重构摘要',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                _buildMetricRow(
+                  context,
+                  '重构网格利润:',
+                  NumberFormat.currency(
+                    locale: 'zh_CN',
+                    symbol: getCurrencySymbol(currencyCode),
+                    decimalDigits: 2,
+                  ).format(cumulativeGridProfit),
+                  color: pnlColor(cumulativeGridProfit),
+                ),
+                _buildMetricRow(
+                  context,
+                  '每份额降本:',
+                  NumberFormat('#,##0.000').format(costReductionPerShare),
+                  color: pnlColor(costReductionPerShare),
+                ),
+              ],
+            );
+          },
+          loading: () => const SizedBox(
+            height: 24,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+          error: (e, s) => Text(
+            '网格利润重构：加载失败',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.error,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildProfitStructureCard(
     BuildContext context,
