@@ -774,7 +774,7 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
     Color pnlColor(double value) {
       if (value > 0) return Colors.red.shade400;
       if (value < 0) return Colors.green.shade400;
-      return Theme.of(context).textTheme.bodyMedium?.color ?? Colors.grey;
+      return Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
     }
 
     final debugAsync = ref.watch(gridProfitDebugProvider(assetId));
