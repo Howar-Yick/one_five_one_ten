@@ -28,25 +28,28 @@ class GridProfitReconstructionService {
     final asset = await _resolveAsset(sorted);
     final priceByDay = await _loadHistoricalPriceMap(asset);
 
+    final Map<DateTime, int> dayTotalCounts = <DateTime, int>{};
+    for (final snapshot in sorted) {
+      final day = _dateOnly(snapshot.date);
+      dayTotalCounts[day] = (dayTotalCounts[day] ?? 0) + 1;
+    }
+
     final List<double> netCapitals = <double>[];
-    DateTime? lastDay;
-    int daySnapshotCount = 0;
+    final Map<DateTime, int> dayCurrentIndexes = <DateTime, int>{};
 
     for (final snapshot in sorted) {
       final currentDay = _dateOnly(snapshot.date);
-      if (lastDay == null || !_isSameDay(lastDay, currentDay)) {
-        lastDay = currentDay;
-        daySnapshotCount = 0;
-      }
+      final dayIndex = dayCurrentIndexes[currentDay] ?? 0;
+      final dayTotal = dayTotalCounts[currentDay] ?? 0;
+      final bool forceUsePreviousDay = dayTotal > 1 && dayIndex == 0;
 
-      final bool isFirstSnapshotOfDay = daySnapshotCount == 0;
       final netCapital = _resolveNetCapital(
         snapshot: snapshot,
         priceByDay: priceByDay,
-        isFirstSnapshotOfDay: isFirstSnapshotOfDay,
+        forceUsePreviousDay: forceUsePreviousDay,
       );
       netCapitals.add(netCapital);
-      daySnapshotCount += 1;
+      dayCurrentIndexes[currentDay] = dayIndex + 1;
     }
 
     final List<_Lot> stack = <_Lot>[];
@@ -224,7 +227,7 @@ class GridProfitReconstructionService {
   double _resolveNetCapital({
     required PositionSnapshot snapshot,
     required Map<DateTime, double> priceByDay,
-    required bool isFirstSnapshotOfDay,
+    required bool forceUsePreviousDay,
   }) {
     final shares = _sanitize(snapshot.totalShares);
     final averageCost = _sanitize(snapshot.averageCost);
@@ -236,7 +239,7 @@ class GridProfitReconstructionService {
     }
 
     final baseDay = _dateOnly(snapshot.date);
-    final startDay = isFirstSnapshotOfDay
+    final startDay = forceUsePreviousDay
         ? baseDay.subtract(const Duration(days: 1))
         : baseDay;
 
