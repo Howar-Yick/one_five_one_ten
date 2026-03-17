@@ -408,7 +408,7 @@ final snapshotHistoryProvider =
 final gridProfitDebugProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, int>((ref, assetId) async {
   final snapshots = await ref.watch(snapshotHistoryProvider(assetId).future);
-  final result =
+  final result = await
       GridProfitReconstructionService().reconstructFromSnapshots(snapshots);
 
   final Map<String, int> eventCounts = {

@@ -1,13 +1,21 @@
+import 'package:fl_chart/fl_chart.dart';
+import 'package:isar/isar.dart';
+import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/grid_profit_reconstruction_result.dart';
 import 'package:one_five_one_ten/models/grid_profit_reconstruction_step.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
+import 'package:one_five_one_ten/services/database_service.dart';
+import 'package:one_five_one_ten/services/price_sync_service.dart';
 
 class GridProfitReconstructionService {
   static const double _eps = 1e-6;
+  static const int _maxLookbackDays = 5;
 
-  GridProfitReconstructionResult reconstructFromSnapshots(
+  Isar get _isar => DatabaseService().isar;
+
+  Future<GridProfitReconstructionResult> reconstructFromSnapshots(
     List<PositionSnapshot> snapshots,
-  ) {
+  ) async {
     if (snapshots.length < 2) {
       return const GridProfitReconstructionResult(
         cumulativeGridProfit: 0.0,
@@ -17,6 +25,29 @@ class GridProfitReconstructionService {
     }
 
     final sorted = snapshots.toList()..sort((a, b) => a.date.compareTo(b.date));
+    final asset = await _resolveAsset(sorted);
+    final priceByDay = await _loadHistoricalPriceMap(asset);
+
+    final List<double> netCapitals = <double>[];
+    DateTime? lastDay;
+    int daySnapshotCount = 0;
+
+    for (final snapshot in sorted) {
+      final currentDay = _dateOnly(snapshot.date);
+      if (lastDay == null || !_isSameDay(lastDay, currentDay)) {
+        lastDay = currentDay;
+        daySnapshotCount = 0;
+      }
+
+      final bool isFirstSnapshotOfDay = daySnapshotCount == 0;
+      final netCapital = _resolveNetCapital(
+        snapshot: snapshot,
+        priceByDay: priceByDay,
+        isFirstSnapshotOfDay: isFirstSnapshotOfDay,
+      );
+      netCapitals.add(netCapital);
+      daySnapshotCount += 1;
+    }
 
     final List<_Lot> stack = <_Lot>[];
     final List<GridProfitReconstructionStep> steps =
@@ -27,7 +58,7 @@ class GridProfitReconstructionService {
     final first = sorted.first;
     final firstShares = _sanitize(first.totalShares);
     final firstAverageCost = _sanitize(first.averageCost);
-    final firstNetCapital = _sanitize(firstShares * firstAverageCost);
+    final firstNetCapital = netCapitals.first;
 
     steps.add(
       GridProfitReconstructionStep(
@@ -49,11 +80,11 @@ class GridProfitReconstructionService {
 
       final prevShares = _sanitize(prev.totalShares);
       final prevAvgCost = _sanitize(prev.averageCost);
-      final prevNetCapital = _sanitize(prevShares * prevAvgCost);
+      final prevNetCapital = netCapitals[i - 1];
 
       final nowShares = _sanitize(now.totalShares);
       final nowAvgCost = _sanitize(now.averageCost);
-      final nowNetCapital = _sanitize(nowShares * nowAvgCost);
+      final nowNetCapital = netCapitals[i];
 
       final deltaSharesRaw = nowShares - prevShares;
       final deltaCapitalRaw = nowNetCapital - prevNetCapital;
@@ -144,6 +175,93 @@ class GridProfitReconstructionService {
       steps: steps,
     );
   }
+
+  Future<Asset?> _resolveAsset(List<PositionSnapshot> snapshots) async {
+    String? assetSupabaseId;
+    for (final snapshot in snapshots) {
+      final id = snapshot.assetSupabaseId;
+      if (id != null && id.isNotEmpty) {
+        assetSupabaseId = id;
+        break;
+      }
+    }
+    if (assetSupabaseId == null) return null;
+
+    return _isar.assets.where().supabaseIdEqualTo(assetSupabaseId).findFirst();
+  }
+
+  Future<Map<DateTime, double>> _loadHistoricalPriceMap(Asset? asset) async {
+    if (asset == null || asset.code.isEmpty) return const {};
+
+    final service = PriceSyncService();
+    List<FlSpot> spots = const [];
+
+    switch (asset.subType) {
+      case AssetSubType.stock:
+      case AssetSubType.etf:
+        spots = await service.syncKLineHistory(asset.code);
+        break;
+      case AssetSubType.mutualFund:
+        spots = await service.syncNavHistory(asset.code);
+        break;
+      default:
+        spots = const [];
+    }
+
+    final map = <DateTime, double>{};
+    for (final spot in spots) {
+      final day = _dateOnly(
+        DateTime.fromMillisecondsSinceEpoch(spot.x.toInt()).toLocal(),
+      );
+      final price = _sanitize(spot.y);
+      if (price > 0) {
+        map[day] = price;
+      }
+    }
+    return map;
+  }
+
+  double _resolveNetCapital({
+    required PositionSnapshot snapshot,
+    required Map<DateTime, double> priceByDay,
+    required bool isFirstSnapshotOfDay,
+  }) {
+    final shares = _sanitize(snapshot.totalShares);
+    final averageCost = _sanitize(snapshot.averageCost);
+    final fallbackNetCapital = _sanitize(shares * averageCost);
+
+    final comprehensiveProfit = snapshot.brokerComprehensiveProfit;
+    if (comprehensiveProfit == null || !comprehensiveProfit.isFinite) {
+      return fallbackNetCapital;
+    }
+
+    final baseDay = _dateOnly(snapshot.date);
+    final startDay = isFirstSnapshotOfDay
+        ? baseDay.subtract(const Duration(days: 1))
+        : baseDay;
+
+    double? historicalPrice;
+    for (int i = 0; i <= _maxLookbackDays; i++) {
+      final candidate = startDay.subtract(Duration(days: i));
+      final price = priceByDay[candidate];
+      if (price != null && price.isFinite && price > 0) {
+        historicalPrice = price;
+        break;
+      }
+    }
+
+    if (historicalPrice == null) {
+      return fallbackNetCapital;
+    }
+
+    final marketValue = _sanitize(shares * historicalPrice);
+    return _sanitize(marketValue - comprehensiveProfit);
+  }
+
+  DateTime _dateOnly(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   bool _nearZero(double value) => value.abs() <= _eps;
 
