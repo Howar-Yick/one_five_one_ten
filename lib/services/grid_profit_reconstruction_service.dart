@@ -27,7 +27,7 @@ class GridProfitReconstructionService {
     final first = sorted.first;
     final firstShares = _sanitize(first.totalShares);
     final firstAverageCost = _sanitize(first.averageCost);
-    final firstNetCapital = _resolveNetCapital(first);
+    final firstNetCapital = _sanitize(firstShares * firstAverageCost);
 
     steps.add(
       GridProfitReconstructionStep(
@@ -49,11 +49,11 @@ class GridProfitReconstructionService {
 
       final prevShares = _sanitize(prev.totalShares);
       final prevAvgCost = _sanitize(prev.averageCost);
-      final prevNetCapital = _resolveNetCapital(prev);
+      final prevNetCapital = _sanitize(prevShares * prevAvgCost);
 
       final nowShares = _sanitize(now.totalShares);
       final nowAvgCost = _sanitize(now.averageCost);
-      final nowNetCapital = _resolveNetCapital(now);
+      final nowNetCapital = _sanitize(nowShares * nowAvgCost);
 
       final deltaSharesRaw = nowShares - prevShares;
       final deltaCapitalRaw = nowNetCapital - prevNetCapital;
@@ -143,61 +143,6 @@ class GridProfitReconstructionService {
           _nearZero(gridCostReductionPerShare) ? 0.0 : gridCostReductionPerShare,
       steps: steps,
     );
-  }
-
-  double _resolveNetCapital(PositionSnapshot snapshot) {
-    final shares = _sanitize(snapshot.totalShares);
-    final averageCost = _sanitize(snapshot.averageCost);
-    final fallbackNetCapital = _sanitize(shares * averageCost);
-
-    final comprehensiveProfit = snapshot.brokerComprehensiveProfit;
-    if (comprehensiveProfit == null || !comprehensiveProfit.isFinite) {
-      return fallbackNetCapital;
-    }
-
-    final marketValue = _tryResolveMarketValue(snapshot);
-    if (marketValue == null) {
-      return fallbackNetCapital;
-    }
-
-    return _sanitize(marketValue - comprehensiveProfit);
-  }
-
-  double? _tryResolveMarketValue(PositionSnapshot snapshot) {
-    final dynamic snap = snapshot;
-
-    double? readNum(dynamic value) {
-      if (value is num) {
-        final v = value.toDouble();
-        return v.isFinite ? v : null;
-      }
-      return null;
-    }
-
-    try {
-      final v = readNum(snap.marketValue);
-      if (v != null) return v;
-    } catch (_) {}
-
-    try {
-      final v = readNum(snap.currentMarketValue);
-      if (v != null) return v;
-    } catch (_) {}
-
-    double? price;
-    try {
-      price = readNum(snap.price);
-    } catch (_) {}
-    try {
-      price ??= readNum(snap.latestPrice);
-    } catch (_) {}
-
-    if (price != null) {
-      final shares = _sanitize(snapshot.totalShares);
-      return _sanitize(shares * price);
-    }
-
-    return null;
   }
 
   bool _nearZero(double value) => value.abs() <= _eps;
