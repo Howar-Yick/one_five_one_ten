@@ -446,7 +446,8 @@ class CalculatorService {
       dates.add(DateTime.now().isAfter(lastDate)
           ? DateTime.now()
           : lastDate.add(const Duration(days: 1)));
-      cashflows.add(marketValue.isFinite ? marketValue : 0.0);
+      final double endValue = marketValue + realizedProfit;
+      cashflows.add(endValue.isFinite ? endValue : 0.0);
       try {
         if (cashflows.any((cf) => cf > 0) && cashflows.any((cf) => cf < 0)) {
           annualizedReturn = xirr(dates, cashflows);

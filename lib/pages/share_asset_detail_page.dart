@@ -754,7 +754,7 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
             const Divider(height: 24),
             _buildMetricRow(
               context,
-              '年化收益率:',
+              'XIRR年化(估算):',
               percentFormat.format(annualizedReturn),
               color: _pnlColor(annualizedReturn),
             ),
