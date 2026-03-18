@@ -1,5 +1,4 @@
 // 文件: lib/pages/share_asset_detail_page.dart
-// (这是已添加图表切换功能并移除旧 Provider 的完整文件)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,44 +9,30 @@ import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/grid_profit_reconstruction_result.dart';
 import 'package:one_five_one_ten/models/grid_profit_reconstruction_step.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
-// import 'package:one_five_one_ten/models/transaction.dart'; // (已移除)
 import 'package:one_five_one_ten/pages/snapshot_history_page.dart';
 import 'package:one_five_one_ten/services/calculator_service.dart';
 import 'package:one_five_one_ten/services/database_service.dart';
 import 'package:one_five_one_ten/utils/currency_formatter.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
 import 'package:one_five_one_ten/services/supabase_sync_service.dart';
-// import 'package:one_five_one_ten/pages/asset_transaction_history_page.dart'; // (已移除)
 import 'package:isar/isar.dart';
 import 'package:one_five_one_ten/pages/add_edit_asset_page.dart';
 
-// (*** 关键修复：顶部的所有 Provider 定义都已被【移除】 ***)
-
-
-// (*** 1. 关键修改：转换为 ConsumerStatefulWidget ***)
 class ShareAssetDetailPage extends ConsumerStatefulWidget {
   final int assetId;
   const ShareAssetDetailPage({super.key, required this.assetId});
 
   @override
-  ConsumerState<ShareAssetDetailPage> createState() => _ShareAssetDetailPageState();
+  ConsumerState<ShareAssetDetailPage> createState() =>
+      _ShareAssetDetailPageState();
 }
 
 class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
-
-  // (*** 2. 新增：图表状态变量 ***)
-  ShareAssetChartType _selectedChartType = ShareAssetChartType.price;
-  // (*** 新增结束 ***)
-
   @override
   Widget build(BuildContext context) {
-    // (*** 3. 修改： ref.watch 和 widget.assetId ***)
     final asyncAsset = ref.watch(shareAssetDetailProvider(widget.assetId));
-    final asyncPerformance = ref.watch(shareAssetPerformanceProvider(widget.assetId));
-
-    // (*** 4. 修改：我们不再需要在这里 watch 图表，图表卡片自己会 watch ***)
-    // final asyncChartData = ref.watch(assetHistoryChartProvider(assetId)); // <-- 移除
-    // final asyncChartData = ref.watch(shareAssetCombinedChartProvider(widget.assetId)); // <-- 也不需要
+    final asyncPerformance =
+        ref.watch(shareAssetPerformanceProvider(widget.assetId));
 
     return asyncAsset.when(
       data: (asset) {
@@ -67,7 +52,8 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                 tooltip: '编辑资产',
                 onPressed: () async {
                   final isar = DatabaseService().isar;
-                  final parentAccount = await isar.accounts.where()
+                  final parentAccount = await isar.accounts
+                      .where()
                       .filter()
                       .supabaseIdEqualTo(asset.accountSupabaseId)
                       .findFirst();
@@ -75,11 +61,13 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                   if (parentAccount != null && context.mounted) {
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => AddEditAssetPage(accountId: parentAccount.id, assetId: asset.id),
+                        builder: (_) => AddEditAssetPage(
+                            accountId: parentAccount.id, assetId: asset.id),
                       ),
                     );
                   } else if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('错误：找不到父账户')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('错误：找不到父账户')));
                   }
                 },
               ),
@@ -89,21 +77,17 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
             onRefresh: () async {
               ref.read(priceSyncControllerProvider.notifier).syncAllPrices();
               ref.invalidate(shareAssetPerformanceProvider(widget.assetId));
-              // (*** 5. 修改：刷新新的组合 provider ***)
               ref.invalidate(shareAssetCombinedChartProvider(widget.assetId));
             },
             child: _ShareAssetDetailView(
               asset: asset,
               performanceAsync: asyncPerformance,
-              // (*** 6. 修改：我们不再传递图表数据，视图会自己构建 ***)
-              // chartAsync: asyncChartData,
             ),
           ),
           floatingActionButton: FloatingActionButton(
             child: const Icon(Icons.sync_alt),
             tooltip: '更新持仓快照',
             onPressed: () {
-              // (*** 7. 修改：调用 State 类中的方法 ***)
               _showUpdateSnapshotDialog(context, ref, asset);
             },
           ),
@@ -120,25 +104,20 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
     );
   }
 
-
-  // (*** 8. 修改：_build... 和 _show... 方法现在是 State 的一部分 ***)
-
-  // (*** 9. 新增：快照更新弹窗 ***)
-  void _showUpdateSnapshotDialog(BuildContext context, WidgetRef ref, Asset asset) {
-    // (*** 10. 修改：从 ref 读取 provider ***)
+  void _showUpdateSnapshotDialog(
+      BuildContext context, WidgetRef ref, Asset asset) {
     final performance = ref.read(shareAssetPerformanceProvider(asset.id));
     final sharesController = TextEditingController(
-      text: performance.asData?.value['totalShares']?.toString() ?? ''
-    );
+        text: performance.asData?.value['totalShares']?.toString() ?? '');
     final costController = TextEditingController(
-       text: performance.asData?.value['averageCost']?.toString() ?? ''
-    );
+        text: performance.asData?.value['averageCost']?.toString() ?? '');
     final comprehensiveProfitController = TextEditingController(
       text: performance.asData?.value['comprehensiveProfit']?.toString() ?? '',
     );
     final fxRateController = TextEditingController();
     final costCnyController = TextEditingController();
-    final priceController = TextEditingController(text: asset.latestPrice > 0 ? asset.latestPrice.toString() : '');
+    final priceController = TextEditingController(
+        text: asset.latestPrice > 0 ? asset.latestPrice.toString() : '');
     DateTime selectedDate = DateTime.now();
 
     showDialog(
@@ -152,9 +131,25 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextField(controller: sharesController, decoration: const InputDecoration(labelText: '最新总份额'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                    TextField(controller: costController, decoration: InputDecoration(labelText: '最新单位成本', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                    TextField(controller: priceController, decoration: InputDecoration(labelText: '最新价格 (可选)', prefixText: getCurrencySymbol(asset.currency)), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                    TextField(
+                        controller: sharesController,
+                        decoration: const InputDecoration(labelText: '最新总份额'),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true)),
+                    TextField(
+                        controller: costController,
+                        decoration: InputDecoration(
+                            labelText: '最新单位成本',
+                            prefixText: getCurrencySymbol(asset.currency)),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true)),
+                    TextField(
+                        controller: priceController,
+                        decoration: InputDecoration(
+                            labelText: '最新价格 (可选)',
+                            prefixText: getCurrencySymbol(asset.currency)),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true)),
                     TextField(
                       controller: comprehensiveProfitController,
                       decoration: InputDecoration(
@@ -162,13 +157,15 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                         helperText: '仅录入综合收益，持仓收益和实现盈亏将自动计算',
                         prefixText: getCurrencySymbol(asset.currency),
                       ),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
                     ),
                     if (asset.currency != 'CNY') ...[
                       const SizedBox(height: 12),
                       TextField(
                         controller: fxRateController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
                         decoration: const InputDecoration(
                           labelText: '汇率（资产币种→CNY，可选）',
                           helperText: '用于记录快照成本对应的人民币成本',
@@ -176,8 +173,11 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                         onChanged: (_) {
                           final cost = double.tryParse(costController.text);
                           final fx = double.tryParse(fxRateController.text);
-                          if (cost != null && fx != null && sharesController.text.isNotEmpty) {
-                            final shares = double.tryParse(sharesController.text);
+                          if (cost != null &&
+                              fx != null &&
+                              sharesController.text.isNotEmpty) {
+                            final shares =
+                                double.tryParse(sharesController.text);
                             if (shares != null) {
                               costCnyController.text =
                                   (cost * shares * fx).toStringAsFixed(2);
@@ -188,7 +188,8 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                       const SizedBox(height: 12),
                       TextField(
                         controller: costCnyController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
                         decoration: const InputDecoration(
                           labelText: '人民币成本（可选）',
                           helperText: '记录该快照对应的累计人民币成本',
@@ -201,10 +202,16 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                         const Text("快照日期:", style: TextStyle(fontSize: 16)),
                         const Spacer(),
                         TextButton(
-                          child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
+                          child: Text(
+                              DateFormat('yyyy-MM-dd').format(selectedDate)),
                           onPressed: () async {
-                            final pickedDate = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime.now());
-                            if (pickedDate != null) setState(() => selectedDate = pickedDate);
+                            final pickedDate = await showDatePicker(
+                                context: context,
+                                initialDate: selectedDate,
+                                firstDate: DateTime(2000),
+                                lastDate: DateTime.now());
+                            if (pickedDate != null)
+                              setState(() => selectedDate = pickedDate);
                           },
                         )
                       ],
@@ -213,22 +220,23 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('取消')),
+                TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('取消')),
                 TextButton(
                   onPressed: () async {
                     final shares = double.tryParse(sharesController.text);
                     final cost = double.tryParse(costController.text);
                     final priceText = priceController.text.trim();
-                    final comprehensiveProfit =
-                        double.tryParse(comprehensiveProfitController.text.trim());
+                    final comprehensiveProfit = double.tryParse(
+                        comprehensiveProfitController.text.trim());
 
                     if (shares == null || cost == null) {
-                       if (context.mounted) {
-                         ScaffoldMessenger.of(context).showSnackBar(
-                           const SnackBar(content: Text('请输入有效的份额和成本'))
-                         );
-                       }
-                       return;
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('请输入有效的份额和成本')));
+                      }
+                      return;
                     }
 
                     try {
@@ -236,7 +244,8 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
 
                       bool assetUpdated = false;
                       if (priceText.isNotEmpty) {
-                        asset.latestPrice = double.tryParse(priceText) ?? asset.latestPrice;
+                        asset.latestPrice =
+                            double.tryParse(priceText) ?? asset.latestPrice;
                         asset.priceUpdateDate = DateTime.now();
                         assetUpdated = true;
                       }
@@ -263,7 +272,7 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
 
                       await syncService.savePositionSnapshot(newSnapshot);
 
-                      if(assetUpdated) {
+                      if (assetUpdated) {
                         await syncService.saveAsset(asset);
                       }
 
@@ -275,18 +284,17 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                       }
 
                       if (context.mounted) {
-                         Navigator.of(context).push(MaterialPageRoute(
-                           builder: (_) => SnapshotHistoryPage(assetId: asset.id),
-                         ));
+                        Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) =>
+                              SnapshotHistoryPage(assetId: asset.id),
+                        ));
                       }
-
                     } catch (e) {
-                       print('更新快照失败: $e');
-                       if (context.mounted) {
-                         ScaffoldMessenger.of(context).showSnackBar(
-                           SnackBar(content: Text('保存失败: $e'))
-                         );
-                       }
+                      print('更新快照失败: $e');
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text('保存失败: $e')));
+                      }
                     }
                   },
                   child: const Text('保存并查看历史'),
@@ -298,495 +306,45 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
       },
     );
   }
-  // --- (*** 新增结束 ***) ---
-
-
-  // --- (*** 11. 关键修改：_buildChartCard ***) ---
-  // (它现在 watch 新的 provider，并包含切换按钮)
-  Widget _buildChartCard(BuildContext context, Asset asset) {
-    final asyncChartData = ref.watch(shareAssetCombinedChartProvider(asset.id));
-    final debugAsync = ref.watch(gridProfitDebugProvider(asset.id));
-
-    return asyncChartData.when(
-      data: (chartDataMap) {
-        List<FlSpot> spots;
-        String chartTitle;
-        bool isPercentage = false;
-        String modeLabel = '价格模式';
-        final List<FlSpot> comprehensiveSpots =
-            chartDataMap['comprehensiveProfit'] ?? [];
-        final List<FlSpot> holdingSpots = chartDataMap['holdingProfit'] ?? [];
-        final List<FlSpot> realizedSpots = chartDataMap['realizedProfit'] ?? [];
-
-        switch (_selectedChartType) {
-          case ShareAssetChartType.comprehensiveProfit:
-            spots = comprehensiveSpots;
-            chartTitle = '综合收益趋势';
-            modeLabel = '当前：综合收益曲线';
-            break;
-          case ShareAssetChartType.holdingProfit:
-            spots = holdingSpots;
-            chartTitle = '持仓收益趋势';
-            modeLabel = '当前：持仓收益曲线';
-            break;
-          case ShareAssetChartType.realizedProfit:
-            spots = realizedSpots;
-            chartTitle = '实现盈亏趋势';
-            modeLabel = '当前：实现盈亏曲线';
-            break;
-          case ShareAssetChartType.price:
-          default:
-            spots = chartDataMap['price'] ?? [];
-            chartTitle =
-                (asset.subType == AssetSubType.mutualFund) ? '单位净值历史' : '价格历史 (日K收盘)';
-            modeLabel = '当前：价格曲线';
-            break;
-        }
-
-        if (spots.length < 2) return const SizedBox.shrink();
-
-        final GridProfitReconstructionResult? reconstructionResult =
-            debugAsync.asData?.value['result'] as GridProfitReconstructionResult?;
-        final List<GridProfitReconstructionStep> reconstructionSteps =
-            reconstructionResult?.steps ?? const <GridProfitReconstructionStep>[];
-        final bool showAdjustedCostLine =
-            _selectedChartType == ShareAssetChartType.price &&
-                reconstructionSteps.isNotEmpty;
-
-        DateTime dateOnly(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
-
-        final List<GridProfitReconstructionStep> sortedSteps = reconstructionSteps.toList()
-          ..sort((a, b) => dateOnly(a.date).compareTo(dateOnly(b.date)));
-
-        final List<FlSpot> adjustedCostOriginalSpots = <FlSpot>[];
-        final List<GridProfitReconstructionStep?> activeStepsForSpots = [];
-        double? lastValidAdjustedCost;
-        int activeStepIndex = 0;
-        GridProfitReconstructionStep? activeStep;
-
-        for (final spot in spots) {
-          final DateTime spotDate =
-              dateOnly(DateTime.fromMillisecondsSinceEpoch(spot.x.toInt()));
-
-          while (activeStepIndex < sortedSteps.length) {
-            final candidate = sortedSteps[activeStepIndex];
-            final candidateDay = dateOnly(candidate.date);
-            if (candidateDay.isAfter(spotDate)) break;
-            activeStep = candidate;
-            activeStepIndex++;
-          }
-
-          final GridProfitReconstructionStep? stepForDay = activeStep;
-          double? adjustedCost;
-          if (stepForDay != null) {
-            if (stepForDay.shares > 0) {
-              adjustedCost = stepForDay.netCapital / stepForDay.shares;
-              if (!adjustedCost.isFinite) {
-                adjustedCost = null;
-              } else {
-                lastValidAdjustedCost = adjustedCost;
-              }
-            } else {
-              adjustedCost = lastValidAdjustedCost;
-            }
-          }
-
-          activeStepsForSpots.add(activeStep);
-          adjustedCostOriginalSpots.add(
-            FlSpot(spot.x, adjustedCost ?? double.nan),
-          );
-        }
-
-        double minY = double.infinity;
-        double maxY = double.negativeInfinity;
-
-        for (final spot in spots) {
-          if (spot.y.isFinite) {
-            if (spot.y < minY) minY = spot.y;
-            if (spot.y > maxY) maxY = spot.y;
-          }
-        }
-
-        if (showAdjustedCostLine) {
-          for (final spot in adjustedCostOriginalSpots) {
-            if (spot.y.isFinite) {
-              if (spot.y < minY) minY = spot.y;
-              if (spot.y > maxY) maxY = spot.y;
-            }
-          }
-        }
-
-        if (minY == double.infinity || maxY == double.negativeInfinity) {
-          minY = 0;
-          maxY = 1;
-        } else {
-          final padding = (maxY - minY) * 0.1;
-          minY -= padding;
-          maxY += padding;
-        }
-
-        final NumberFormat yAxisFormat;
-        if (isPercentage) {
-          yAxisFormat = NumberFormat.percentPattern('zh_CN')
-            ..maximumFractionDigits = 1;
-        } else if (_selectedChartType == ShareAssetChartType.comprehensiveProfit ||
-            _selectedChartType == ShareAssetChartType.holdingProfit ||
-            _selectedChartType == ShareAssetChartType.realizedProfit) {
-          yAxisFormat = NumberFormat.compactCurrency(
-            locale: 'zh_CN',
-            symbol: getCurrencySymbol(asset.currency),
-          );
-        } else {
-          yAxisFormat = (asset.subType == AssetSubType.mutualFund)
-              ? NumberFormat('0.0000')
-              : (asset.subType == AssetSubType.etf
-                  ? NumberFormat('0.000')
-                  : NumberFormat('0.00'));
-        }
-        final tooltipFormat =
-            (isPercentage || _selectedChartType == ShareAssetChartType.totalProfit)
-                ? yAxisFormat
-                : (asset.subType == AssetSubType.mutualFund
-                    ? NumberFormat('0.0000')
-                    : (asset.subType == AssetSubType.etf
-                        ? NumberFormat('0.000')
-                        : NumberFormat('0.00')));
-
-        final colorScheme = Theme.of(context).colorScheme;
-        final List<FlSpot> indexedSpots = <FlSpot>[];
-        final List<FlSpot> indexedAdjustedCostSpots = <FlSpot>[];
-        for (int i = 0; i < spots.length; i++) {
-          indexedSpots.add(FlSpot(i.toDouble(), spots[i].y));
-          final adjustedY = adjustedCostOriginalSpots[i].y;
-          indexedAdjustedCostSpots.add(FlSpot(i.toDouble(), adjustedY));
-        }
-
-        double bottomInterval;
-        const desiredLabelCount = 4.0;
-        if (spots.length <= desiredLabelCount) {
-          bottomInterval = 1;
-        } else {
-          bottomInterval = (spots.length - 1) / desiredLabelCount;
-          if (bottomInterval < 1) bottomInterval = 1;
-        }
-
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(chartTitle,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 16),
-                Center(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return SegmentedButton<ShareAssetChartType>(
-                        segments: const [
-                          ButtonSegment(value: ShareAssetChartType.price, label: Text('价格'), icon: Icon(Icons.timeline)),
-                          ButtonSegment(value: ShareAssetChartType.comprehensiveProfit, label: Text('综合收益'), icon: Icon(Icons.multiline_chart)),
-                          ButtonSegment(value: ShareAssetChartType.holdingProfit, label: Text('持仓收益'), icon: Icon(Icons.show_chart)),
-                          ButtonSegment(value: ShareAssetChartType.realizedProfit, label: Text('实现盈亏'), icon: Icon(Icons.trending_up)),
-                        ],
-                        selected: {_selectedChartType},
-                        onSelectionChanged: (newSelection) {
-                          setState(() {
-                            _selectedChartType = newSelection.first;
-                          });
-                        },
-                        showSelectedIcon: constraints.maxWidth >= 360,
-                      );
-                    }
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 8,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(width: 10, height: 10, color: colorScheme.primary),
-                        const SizedBox(width: 6),
-                        Text(modeLabel,
-                            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                      ],
-                    ),
-                    if (showAdjustedCostLine)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: Colors.greenAccent.shade400,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '网格降本线（Adjusted Cost Line）',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                SizedBox(
-                  height: 200,
-                  child: LineChart(
-                    LineChartData(
-                      minY: minY,
-                      maxY: maxY,
-                      minX: 0,
-                      maxX: (spots.length - 1).toDouble(),
-                      lineBarsData: [
-                        LineChartBarData(
-                          spots: indexedSpots,
-                          isCurved: false,
-                          barWidth: 3,
-                          color: colorScheme.primary,
-                          dotData: FlDotData(show: spots.length < 40),
-                          belowBarData: BarAreaData(show: false),
-                        ),
-                        if (showAdjustedCostLine)
-                          LineChartBarData(
-                            spots: indexedAdjustedCostSpots,
-                            isCurved: false,
-                            barWidth: 2,
-                            color: Colors.greenAccent.shade400,
-                            dashArray: const [8, 4],
-                            dotData: FlDotData(show: spots.length < 40),
-                            belowBarData: BarAreaData(show: false),
-                          ),
-                      ],
-                      titlesData: FlTitlesData(
-                        leftTitles: AxisTitles(sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 50,
-                          getTitlesWidget: (value, meta) => Text(
-                              yAxisFormat.format(value),
-                              style: const TextStyle(fontSize: 10)),
-                        )),
-                        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        bottomTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            reservedSize: 30,
-                            interval: bottomInterval,
-                            getTitlesWidget: (value, meta) {
-                              final int index = value.toInt();
-                              if (index >= 0 && index < spots.length) {
-                                final date = DateTime.fromMillisecondsSinceEpoch(spots[index].x.toInt());
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 8.0),
-                                  child: Text(
-                                    DateFormat('yy-MM-dd').format(date),
-                                    style: const TextStyle(fontSize: 10),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                );
-                              }
-                              return const Text('');
-                            }
-                          )
-                        ),
-                      ),
-                      gridData: FlGridData(
-                        show: true,
-                        drawVerticalLine: false,
-                        getDrawingHorizontalLine: (value) => FlLine(
-                          color: Colors.grey.withOpacity(0.2),
-                          strokeWidth: 1,
-                        ),
-                      ),
-                      borderData: FlBorderData(show: false),
-                      lineTouchData: LineTouchData(
-                        handleBuiltInTouches: true,
-                        getTouchedSpotIndicator: (barData, spotIndexes) {
-                          return spotIndexes.map((index) {
-                            return TouchedSpotIndicatorData(
-                              FlLine(
-                                color: colorScheme.outline.withOpacity(0.5),
-                                strokeWidth: 1,
-                                dashArray: const [4, 4],
-                              ),
-                              FlDotData(
-                                show: true,
-                                getDotPainter: (spot, percent, bar, spotIndex) {
-                                  return FlDotCirclePainter(
-                                    radius: 4,
-                                    color: bar.color ?? colorScheme.primary,
-                                    strokeColor: Colors.white,
-                                    strokeWidth: 1.5,
-                                  );
-                                },
-                              ),
-                            );
-                          }).toList();
-                        },
-                        touchTooltipData: LineTouchTooltipData(
-                          fitInsideHorizontally: true,
-                          fitInsideVertically: true,
-                          getTooltipItems: (touchedSpotsList) {
-                            if (touchedSpotsList.isEmpty) {
-                              return const <LineTooltipItem>[];
-                            }
-
-                            final LineBarSpot primaryTouchedSpot =
-                                touchedSpotsList.first;
-                            final int index = primaryTouchedSpot.x.round();
-                            if (index < 0 || index >= spots.length) {
-                              return const <LineTooltipItem>[];
-                            }
-
-                            final FlSpot originalSpot = spots[index];
-                            final DateTime originalDate =
-                                DateTime.fromMillisecondsSinceEpoch(
-                              originalSpot.x.toInt(),
-                            );
-                            final String date =
-                                DateFormat('yyyy-MM-dd').format(originalDate);
-
-                            LineTooltipItem tooltipItem;
-                            if (_selectedChartType == ShareAssetChartType.price) {
-                              final String latestPriceText =
-                                  '🔵 最新价格: ¥${tooltipFormat.format(originalSpot.y)}';
-
-                              final double adjustedCostValue =
-                                  adjustedCostOriginalSpots[index].y;
-                              final String adjustedCostText =
-                                  adjustedCostValue.isFinite
-                                  ? '🟢 降本后成本: ¥${tooltipFormat.format(adjustedCostValue)}'
-                                  : '🟢 降本后成本: —';
-
-                              final GridProfitReconstructionStep? stepForDay =
-                                  activeStepsForSpots[index];
-                              final String cumulativeProfitText =
-                                  stepForDay == null
-                                  ? ''
-                                  : '\n💡 累计网格利润: ${formatCurrency(stepForDay.cumulativeGridProfit, asset.currency)}';
-
-                              tooltipItem = LineTooltipItem(
-                                '$date\n$latestPriceText\n$adjustedCostText$cumulativeProfitText',
-                                const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  height: 1.45,
-                                ),
-                              );
-                            } else {
-                              final String valueText =
-                                  formatCurrency(originalSpot.y, asset.currency);
-                              final double? comprehensiveAt =
-                                  index < comprehensiveSpots.length
-                                  ? comprehensiveSpots[index].y
-                                  : null;
-                              final double? holdingAt =
-                                  index < holdingSpots.length
-                                  ? holdingSpots[index].y
-                                  : null;
-                              final double? realizedAt =
-                                  index < realizedSpots.length
-                                  ? realizedSpots[index].y
-                                  : null;
-
-                              final String comprehensiveText =
-                                  comprehensiveAt == null
-                                  ? '—'
-                                  : formatCurrency(
-                                      comprehensiveAt,
-                                      asset.currency,
-                                    );
-                              final String holdingText = holdingAt == null
-                                  ? '—'
-                                  : formatCurrency(holdingAt, asset.currency);
-                              final String realizedText = realizedAt == null
-                                  ? '—'
-                                  : formatCurrency(realizedAt, asset.currency);
-
-                              tooltipItem = LineTooltipItem(
-                                '$date\n$valueText\n综合收益: $comprehensiveText\n持仓收益: $holdingText\n实现盈亏: $realizedText',
-                                const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  height: 1.45,
-                                ),
-                              );
-                            }
-
-                            return touchedSpotsList.map((touchedSpot) {
-                              return touchedSpot == primaryTouchedSpot
-                                  ? tooltipItem
-                                  : null;
-                            }).toList();
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-      loading: () => const Center(child: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: CircularProgressIndicator(),
-      )),
-      error: (e, s) => Text('图表加载失败: $e'),
-    );
-  }
-  // --- (*** 图表卡片修改结束 ***) ---
-
 }
 
-
-// (*** 这是 _ShareAssetDetailView 的辅助函数，现在是 _ShareAssetDetailPageState 的成员 ***)
-class _ShareAssetDetailView extends ConsumerStatefulWidget { // (*** 1. 转换为 Stateful ***)
+class _ShareAssetDetailView extends ConsumerStatefulWidget {
   final Asset asset;
   final AsyncValue<Map<String, dynamic>> performanceAsync;
-  // final AsyncValue<List<FlSpot>> chartAsync; // (*** 2. 移除旧的 chartAsync ***)
 
   const _ShareAssetDetailView({
     required this.asset,
     required this.performanceAsync,
-    // required this.chartAsync, // (*** 2. 移除旧的 chartAsync ***)
   });
 
   @override
-  ConsumerState<_ShareAssetDetailView> createState() => _ShareAssetDetailViewState();
+  ConsumerState<_ShareAssetDetailView> createState() =>
+      _ShareAssetDetailViewState();
 }
 
 class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
-  // (*** 3. 新增状态变量 ***)
   ShareAssetChartType _selectedChartType = ShareAssetChartType.price;
 
   @override
   Widget build(BuildContext context) {
-    // (*** 5. 修改：使用 widget.asset 和 widget.performanceAsync ***)
     return widget.performanceAsync.when(
       data: (performance) {
-
-        final String latestPriceString = formatPrice(widget.asset.latestPrice, widget.asset.subType);
-        final String avgCostString = formatPrice(performance['averageCost'] ?? 0.0, widget.asset.subType);
-        final double holdingProfit = (performance['holdingProfit'] ?? 0.0) as double;
-        final double realizedProfit = (performance['realizedProfit'] ?? 0.0) as double;
+        final String latestPriceString =
+            formatPrice(widget.asset.latestPrice, widget.asset.subType);
+        final String avgCostString = formatPrice(
+            performance['averageCost'] ?? 0.0, widget.asset.subType);
+        final double holdingProfit =
+            (performance['holdingProfit'] ?? 0.0) as double;
+        final double realizedProfit =
+            (performance['realizedProfit'] ?? 0.0) as double;
         final double comprehensiveProfit =
-            (performance['comprehensiveProfit'] ?? performance['totalProfit'] ?? 0.0) as double;
+            (performance['comprehensiveProfit'] ??
+                performance['totalProfit'] ??
+                0.0) as double;
 
         return ListView(
           padding: const EdgeInsets.all(16.0),
           children: [
-            // 1. 顶部卡片 (总览)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -799,20 +357,28 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(formatCurrency(performance['marketValue'] ?? 0.0, widget.asset.currency),
-                                style: Theme.of(context).textTheme.headlineMedium),
-                            Text('当前市值', style: Theme.of(context).textTheme.bodySmall),
+                            Text(
+                                formatCurrency(
+                                    performance['marketValue'] ?? 0.0,
+                                    widget.asset.currency),
+                                style:
+                                    Theme.of(context).textTheme.headlineMedium),
+                            Text('当前市值',
+                                style: Theme.of(context).textTheme.bodySmall),
                           ],
                         ),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text(latestPriceString, style: Theme.of(context).textTheme.headlineSmall),
-                            Text(widget.asset.priceUpdateDate != null
-                                ? DateFormat('MM-dd HH:mm').format(widget.asset.priceUpdateDate!)
-                                : '未更新',
-                                style: Theme.of(context).textTheme.bodySmall
-                            ),
+                            Text(latestPriceString,
+                                style:
+                                    Theme.of(context).textTheme.headlineSmall),
+                            Text(
+                                widget.asset.priceUpdateDate != null
+                                    ? DateFormat('MM-dd HH:mm')
+                                        .format(widget.asset.priceUpdateDate!)
+                                    : '未更新',
+                                style: Theme.of(context).textTheme.bodySmall),
                           ],
                         )
                       ],
@@ -828,14 +394,17 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                       '单位成本:',
                       avgCostString,
                     ),
-                    _buildMetricRow(context, '当前份额:', (performance['totalShares'] ?? 0.0).toString()),
-                    _buildMetricRow(context, '持仓成本:', formatCurrency(performance['totalCost'] ?? 0.0, widget.asset.currency)),
+                    _buildMetricRow(context, '当前份额:',
+                        (performance['totalShares'] ?? 0.0).toString()),
+                    _buildMetricRow(
+                        context,
+                        '持仓成本:',
+                        formatCurrency(performance['totalCost'] ?? 0.0,
+                            widget.asset.currency)),
                   ],
                 ),
               ),
             ),
-
-            // 2. 中部卡片 (业绩)
             _buildPerformanceCard(context, performance, widget.asset.currency),
             _buildProfitStructureCard(
               context,
@@ -844,15 +413,9 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
               comprehensiveProfit,
               widget.asset.currency,
             ),
-            _buildGridProfitSummaryCard(context, widget.asset.id, widget.asset.currency),
-
-            // (按钮区已按要求移除)
-
-            // 4. 图表卡片
-            // (*** 6. 关键修改：直接调用 _buildChartCard ***)
-            _buildChartCard(context, widget.asset),
-
-            // 5. 辅助按钮
+            _buildGridProfitSummaryCard(
+                context, widget.asset.id, widget.asset.currency),
+            _buildChartCard(context, widget.asset), // 渲染正确的图表组件
             const SizedBox(height: 8),
             Wrap(
               spacing: 8.0,
@@ -861,14 +424,14 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                   child: const Text('查看持仓快照历史'),
                   onPressed: () {
                     Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => SnapshotHistoryPage(assetId: widget.asset.id),
+                      builder: (_) =>
+                          SnapshotHistoryPage(assetId: widget.asset.id),
                     ));
                   },
                 ),
-                // (“交易历史”按钮已移除)
               ],
             ),
-            const SizedBox(height: 80), // (为 FAB 留出空间)
+            const SizedBox(height: 80),
           ],
         );
       },
@@ -877,37 +440,49 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
     );
   }
 
-  // (Metric Row 辅助函数)
-  Widget _buildMetricRow(BuildContext context, String title, String value, {Color? color}) {
+  Widget _buildMetricRow(BuildContext context, String title, String value,
+      {Color? color}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title, style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+          Text(title,
+              style: TextStyle(
+                  fontSize: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.bold, color: color)),
         ],
       ),
     );
   }
 
-  // (Performance Card 函数)
-  Widget _buildPerformanceCard(
-      BuildContext context, Map<String, dynamic> performance, String currencyCode) {
-    final double holdingProfit = (performance['holdingProfit'] ?? 0.0) as double;
-    final double holdingProfitRate = (performance['holdingProfitRate'] ?? 0.0) as double;
-    final double realizedProfit = (performance['realizedProfit'] ?? 0.0) as double;
-    final double realizedProfitRate = (performance['realizedProfitRate'] ?? 0.0) as double;
-    final double comprehensiveProfit =
-        (performance['comprehensiveProfit'] ?? performance['totalProfit'] ?? 0.0) as double;
+  Widget _buildPerformanceCard(BuildContext context,
+      Map<String, dynamic> performance, String currencyCode) {
+    final double holdingProfit =
+        (performance['holdingProfit'] ?? 0.0) as double;
+    final double holdingProfitRate =
+        (performance['holdingProfitRate'] ?? 0.0) as double;
+    final double realizedProfit =
+        (performance['realizedProfit'] ?? 0.0) as double;
+    final double realizedProfitRate =
+        (performance['realizedProfitRate'] ?? 0.0) as double;
+    final double comprehensiveProfit = (performance['comprehensiveProfit'] ??
+        performance['totalProfit'] ??
+        0.0) as double;
     final double comprehensiveProfitRate =
-        (performance['comprehensiveProfitRate'] ?? performance['profitRate'] ?? 0.0) as double;
-    final double annualizedReturn = (performance['annualizedReturn'] ?? 0.0) as double;
+        (performance['comprehensiveProfitRate'] ??
+            performance['profitRate'] ??
+            0.0) as double;
+    final double annualizedReturn =
+        (performance['annualizedReturn'] ?? 0.0) as double;
 
-    final percentFormat =
-        NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2;
+    final percentFormat = NumberFormat.percentPattern('zh_CN')
+      ..maximumFractionDigits = 2;
 
-    Color _pnlColor(double value) {
+    Color pnlColor(double value) {
       if (value > 0) return Colors.red.shade400;
       if (value < 0) return Colors.green.shade400;
       return Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
@@ -934,34 +509,32 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
               context,
               '持仓收益:',
               '${formatCurrency(holdingProfit, currencyCode)} (${percentFormat.format(holdingProfitRate)})',
-              color: _pnlColor(holdingProfit),
+              color: pnlColor(holdingProfit),
             ),
             _buildMetricRow(
               context,
               '实现盈亏:',
               '${formatCurrency(realizedProfit, currencyCode)} (${percentFormat.format(realizedProfitRate)})',
-              color: _pnlColor(realizedProfit),
+              color: pnlColor(realizedProfit),
             ),
             _buildMetricRow(
               context,
               '综合收益:',
               '${formatCurrency(comprehensiveProfit, currencyCode)} (${percentFormat.format(comprehensiveProfitRate)})',
-              color: _pnlColor(comprehensiveProfit),
+              color: pnlColor(comprehensiveProfit),
             ),
             const Divider(height: 24),
             _buildMetricRow(
               context,
               'XIRR年化(估算):',
               percentFormat.format(annualizedReturn),
-              color: _pnlColor(annualizedReturn),
+              color: pnlColor(annualizedReturn),
             ),
           ],
         ),
       ),
     );
   }
-
-
 
   Widget _buildGridProfitSummaryCard(
     BuildContext context,
@@ -981,7 +554,8 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
         padding: const EdgeInsets.all(16.0),
         child: debugAsync.when(
           data: (data) {
-            final snapshots = (data['snapshots'] as List<PositionSnapshot>?) ?? const <PositionSnapshot>[];
+            final snapshots = (data['snapshots'] as List<PositionSnapshot>?) ??
+                const <PositionSnapshot>[];
             if (snapshots.length < 2) {
               return const Text(
                 '网格利润重构：快照不足',
@@ -991,7 +565,8 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
 
             final result = data['result'] as GridProfitReconstructionResult;
             final double cumulativeGridProfit = result.cumulativeGridProfit;
-            final double costReductionPerShare = result.gridCostReductionPerShare;
+            final double costReductionPerShare =
+                result.gridCostReductionPerShare;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1074,11 +649,9 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
       summaryText =
           '持仓收益占比：${(holdingRatio * 100).toStringAsFixed(1)}%\n实现盈亏占比：${(realizedRatio * 100).toStringAsFixed(1)}%';
     } else if (holdingProfit < 0 && realizedProfit > 0) {
-      summaryText =
-          '已实现盈利抵消了持仓亏损的 ${(hedgeRatio * 100).toStringAsFixed(1)}%';
+      summaryText = '已实现盈利抵消了持仓亏损的 ${(hedgeRatio * 100).toStringAsFixed(1)}%';
     } else {
-      summaryText =
-          '已实现亏损侵蚀了持仓盈利的 ${(hedgeRatio * 100).toStringAsFixed(1)}%';
+      summaryText = '已实现亏损侵蚀了持仓盈利的 ${(hedgeRatio * 100).toStringAsFixed(1)}%';
     }
 
     return Card(
@@ -1126,12 +699,14 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                   children: [
                     if (!isOppositeSign) ...[
                       Expanded(
-                        flex: ((holdingRatio * 1000).round().clamp(1, 999) as num)
-                            .toInt(),
+                        flex:
+                            ((holdingRatio * 1000).round().clamp(1, 999) as num)
+                                .toInt(),
                         child: Container(color: Colors.blueGrey.shade300),
                       ),
                       Expanded(
-                        flex: ((realizedRatio * 1000).round().clamp(1, 999) as num)
+                        flex: ((realizedRatio * 1000).round().clamp(1, 999)
+                                as num)
                             .toInt(),
                         child: Container(color: Colors.orange.shade300),
                       ),
@@ -1142,8 +717,9 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                         child: Container(color: Colors.teal.shade300),
                       ),
                       Expanded(
-                        flex: ((remainRatio * 1000).round().clamp(1, 999) as num)
-                            .toInt(),
+                        flex:
+                            ((remainRatio * 1000).round().clamp(1, 999) as num)
+                                .toInt(),
                         child: Container(color: Colors.blueGrey.shade300),
                       ),
                     ],
@@ -1173,20 +749,19 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
     );
   }
 
-  // (*** 7. 关键修改：_buildChartCard ***)
+  // ★★★ 唯一的、完全包含所有逻辑的完美版图表构建方法 ★★★
   Widget _buildChartCard(BuildContext context, Asset asset) {
-    // (*** 1. Watch 新的组合 Provider ***)
     final asyncChartData = ref.watch(shareAssetCombinedChartProvider(asset.id));
+    final debugAsync = ref.watch(gridProfitDebugProvider(asset.id));
 
     return asyncChartData.when(
       data: (chartDataMap) {
-
-        // (*** 2. 根据 State 选择要显示的列表 ***)
         List<FlSpot> spots;
         String chartTitle;
         bool isPercentage = false;
         String modeLabel = '价格模式';
-        final List<FlSpot> comprehensiveSpots = chartDataMap['comprehensiveProfit'] ?? [];
+        final List<FlSpot> comprehensiveSpots =
+            chartDataMap['comprehensiveProfit'] ?? [];
         final List<FlSpot> holdingSpots = chartDataMap['holdingProfit'] ?? [];
         final List<FlSpot> realizedSpots = chartDataMap['realizedProfit'] ?? [];
 
@@ -1209,43 +784,136 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
           case ShareAssetChartType.price:
           default:
             spots = chartDataMap['price'] ?? [];
-            chartTitle = (asset.subType == AssetSubType.mutualFund) ? '单位净值历史' : '价格历史 (日K收盘)';
+            chartTitle = (asset.subType == AssetSubType.mutualFund)
+                ? '单位净值历史'
+                : '价格历史 (日K收盘)';
             modeLabel = '当前：价格曲线';
             break;
         }
 
         if (spots.length < 2) return const SizedBox.shrink();
 
-        // (*** 3. 动态格式化Y轴 ***)
+        final GridProfitReconstructionResult? reconstructionResult = debugAsync
+            .asData?.value['result'] as GridProfitReconstructionResult?;
+        final List<GridProfitReconstructionStep> reconstructionSteps =
+            reconstructionResult?.steps ??
+                const <GridProfitReconstructionStep>[];
+        final bool showAdjustedCostLine =
+            _selectedChartType == ShareAssetChartType.price &&
+                reconstructionSteps.isNotEmpty;
+
+        DateTime dateOnly(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
+
+        final List<GridProfitReconstructionStep> sortedSteps =
+            reconstructionSteps.toList()
+              ..sort((a, b) => dateOnly(a.date).compareTo(dateOnly(b.date)));
+
+        final List<FlSpot> adjustedCostOriginalSpots = <FlSpot>[];
+        final List<GridProfitReconstructionStep?> activeStepsForSpots = [];
+
+        final Map<int, GridProfitReconstructionStep> stepByDayMap = {
+          for (final step in sortedSteps)
+            dateOnly(step.date).millisecondsSinceEpoch: step,
+        };
+
+        for (final spot in spots) {
+          final int spotDayEpoch =
+              dateOnly(DateTime.fromMillisecondsSinceEpoch(spot.x.toInt()))
+                  .millisecondsSinceEpoch;
+
+          GridProfitReconstructionStep? matchedStep;
+          double? adjustedCost;
+
+          if (stepByDayMap.containsKey(spotDayEpoch)) {
+            matchedStep = stepByDayMap[spotDayEpoch];
+          } else {
+            for (int i = sortedSteps.length - 1; i >= 0; i--) {
+              final stepDayEpoch =
+                  dateOnly(sortedSteps[i].date).millisecondsSinceEpoch;
+              if (stepDayEpoch <= spotDayEpoch) {
+                matchedStep = sortedSteps[i];
+                break;
+              }
+            }
+          }
+
+          if (matchedStep != null && matchedStep.shares > 0) {
+            adjustedCost = matchedStep.netCapital / matchedStep.shares;
+            if (!adjustedCost.isFinite) adjustedCost = null;
+          }
+
+          activeStepsForSpots.add(matchedStep);
+          adjustedCostOriginalSpots.add(
+            FlSpot(spot.x, adjustedCost ?? double.nan),
+          );
+        }
+
+        // ★ 核心修复：强制打穿地板的 min/max 逻辑
+        double minY = double.infinity;
+        double maxY = double.negativeInfinity;
+
+        for (final spot in spots) {
+          if (spot.y.isFinite) {
+            if (spot.y < minY) minY = spot.y;
+            if (spot.y > maxY) maxY = spot.y;
+          }
+        }
+
+        if (showAdjustedCostLine) {
+          for (final spot in adjustedCostOriginalSpots) {
+            if (spot.y.isFinite) {
+              if (spot.y < minY) minY = spot.y;
+              if (spot.y > maxY) maxY = spot.y;
+            }
+          }
+        }
+
+        if (minY == double.infinity || maxY == double.negativeInfinity) {
+          minY = 0;
+          maxY = 1;
+        } else {
+          final padding = (maxY - minY) * 0.1;
+          minY -= padding;
+          maxY += padding;
+        }
+
         final NumberFormat yAxisFormat;
         if (isPercentage) {
-          yAxisFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 1;
-        } else if (_selectedChartType == ShareAssetChartType.comprehensiveProfit ||
+          yAxisFormat = NumberFormat.percentPattern('zh_CN')
+            ..maximumFractionDigits = 1;
+        } else if (_selectedChartType ==
+                ShareAssetChartType.comprehensiveProfit ||
             _selectedChartType == ShareAssetChartType.holdingProfit ||
             _selectedChartType == ShareAssetChartType.realizedProfit) {
-          yAxisFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: getCurrencySymbol(asset.currency));
+          yAxisFormat = NumberFormat.compactCurrency(
+              locale: 'zh_CN', symbol: getCurrencySymbol(asset.currency));
         } else {
           yAxisFormat = (asset.subType == AssetSubType.mutualFund)
-            ? NumberFormat("0.0000")
-            : (asset.subType == AssetSubType.etf
-              ? NumberFormat("0.000")
-              : NumberFormat("0.00"));
+              ? NumberFormat("0.0000")
+              : (asset.subType == AssetSubType.etf
+                  ? NumberFormat("0.000")
+                  : NumberFormat("0.00"));
         }
 
         final tooltipFormat = (isPercentage ||
                 _selectedChartType == ShareAssetChartType.comprehensiveProfit ||
                 _selectedChartType == ShareAssetChartType.holdingProfit ||
                 _selectedChartType == ShareAssetChartType.realizedProfit)
-          ? yAxisFormat
-          : (asset.subType == AssetSubType.mutualFund
-            ? NumberFormat("0.0000")
-            : (asset.subType == AssetSubType.etf ? NumberFormat("0.000") : NumberFormat("0.00")));
+            ? yAxisFormat
+            : (asset.subType == AssetSubType.mutualFund
+                ? NumberFormat("0.0000")
+                : (asset.subType == AssetSubType.etf
+                    ? NumberFormat("0.000")
+                    : NumberFormat("0.00")));
 
         final colorScheme = Theme.of(context).colorScheme;
 
         final List<FlSpot> indexedSpots = [];
+        final List<FlSpot> indexedAdjustedCostSpots = [];
         for (int i = 0; i < spots.length; i++) {
           indexedSpots.add(FlSpot(i.toDouble(), spots[i].y));
+          final adjustedY = adjustedCostOriginalSpots[i].y;
+          indexedAdjustedCostSpots.add(FlSpot(i.toDouble(), adjustedY));
         }
 
         double bottomInterval;
@@ -1257,7 +925,6 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
           if (bottomInterval < 1) bottomInterval = 1;
         }
 
-        // ★★★ 修复点: 统一阈值并修正变量名 ★★★
         final bool showDots = spots.length < 40;
 
         return Card(
@@ -1267,46 +934,90 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(chartTitle,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 16),
-
-                // (*** 4. 新增：切换按钮 ***)
                 Center(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return SegmentedButton<ShareAssetChartType>(
-                        segments: const [
-                          ButtonSegment(value: ShareAssetChartType.price, label: Text('价格'), icon: Icon(Icons.timeline)),
-                          ButtonSegment(value: ShareAssetChartType.comprehensiveProfit, label: Text('综合收益'), icon: Icon(Icons.multiline_chart)),
-                          ButtonSegment(value: ShareAssetChartType.holdingProfit, label: Text('持仓收益'), icon: Icon(Icons.show_chart)),
-                          ButtonSegment(value: ShareAssetChartType.realizedProfit, label: Text('实现盈亏'), icon: Icon(Icons.trending_up)),
-                        ],
-                        selected: {_selectedChartType},
-                        onSelectionChanged: (newSelection) {
-                          setState(() {
-                            _selectedChartType = newSelection.first;
-                          });
-                        },
-                        showSelectedIcon: constraints.maxWidth >= 360,
-                      );
-                    }
-                  ),
+                  child: LayoutBuilder(builder: (context, constraints) {
+                    return SegmentedButton<ShareAssetChartType>(
+                      segments: const [
+                        ButtonSegment(
+                            value: ShareAssetChartType.price,
+                            label: Text('价格'),
+                            icon: Icon(Icons.timeline)),
+                        ButtonSegment(
+                            value: ShareAssetChartType.comprehensiveProfit,
+                            label: Text('综合收益'),
+                            icon: Icon(Icons.multiline_chart)),
+                        ButtonSegment(
+                            value: ShareAssetChartType.holdingProfit,
+                            label: Text('持仓收益'),
+                            icon: Icon(Icons.show_chart)),
+                        ButtonSegment(
+                            value: ShareAssetChartType.realizedProfit,
+                            label: Text('实现盈亏'),
+                            icon: Icon(Icons.trending_up)),
+                      ],
+                      selected: {_selectedChartType},
+                      onSelectionChanged: (newSelection) {
+                        setState(() {
+                          _selectedChartType = newSelection.first;
+                        });
+                      },
+                      showSelectedIcon: constraints.maxWidth >= 360,
+                    );
+                  }),
                 ),
                 const SizedBox(height: 10),
-                Row(
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 8,
                   children: [
-                    Container(width: 10, height: 10, color: colorScheme.primary),
-                    const SizedBox(width: 6),
-                    Text(modeLabel, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                            width: 10, height: 10, color: colorScheme.primary),
+                        const SizedBox(width: 6),
+                        Text(modeLabel,
+                            style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant)),
+                      ],
+                    ),
+                    if (showAdjustedCostLine)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: Colors.greenAccent.shade400,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '网格降本线（Adjusted Cost Line）',
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
                 const SizedBox(height: 14),
-
-                // (*** 5. 动态图表 ***)
                 SizedBox(
                   height: 200,
                   child: LineChart(
                     LineChartData(
+                      minY: minY,
+                      maxY: maxY,
                       minX: 0,
                       maxX: (spots.length - 1).toDouble(),
                       lineBarsData: [
@@ -1315,99 +1026,166 @@ class _ShareAssetDetailViewState extends ConsumerState<_ShareAssetDetailView> {
                           isCurved: false,
                           barWidth: 3,
                           color: colorScheme.primary,
-                          // ★★★ 修复点: 应用新的布尔值 ★★★
                           dotData: FlDotData(show: showDots),
                           belowBarData: BarAreaData(show: false),
                         ),
+                        if (showAdjustedCostLine)
+                          LineChartBarData(
+                            spots: indexedAdjustedCostSpots,
+                            isCurved: false,
+                            barWidth: 2,
+                            color: Colors.greenAccent.shade400,
+                            //dashArray: const [8, 4],
+                            dotData: FlDotData(show: showDots),
+                            belowBarData: BarAreaData(show: false),
+                          ),
                       ],
                       titlesData: FlTitlesData(
-                        leftTitles: AxisTitles(sideTitles: SideTitles(
+                        leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
                           showTitles: true,
                           reservedSize: 50,
                           getTitlesWidget: (value, meta) => Text(
                               yAxisFormat.format(value),
                               style: const TextStyle(fontSize: 10)),
                         )),
-                        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
                         bottomTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            reservedSize: 30,
-                            interval: bottomInterval,
-                            getTitlesWidget: (value, meta) {
-                              final int index = value.toInt();
-                              if (index >= 0 && index < spots.length) {
-                                final date = DateTime.fromMillisecondsSinceEpoch(spots[index].x.toInt());
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 8.0),
-                                  child: Text(
-                                    DateFormat('yy-MM-dd').format(date),
-                                    style: const TextStyle(fontSize: 10),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                );
-                              }
-                              return const Text('');
-                            }
-                          )
-                        ),
+                            sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 30,
+                                interval: bottomInterval,
+                                getTitlesWidget: (value, meta) {
+                                  final int index = value.toInt();
+                                  if (index >= 0 && index < spots.length) {
+                                    final date =
+                                        DateTime.fromMillisecondsSinceEpoch(
+                                            spots[index].x.toInt());
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 8.0),
+                                      child: Text(
+                                        DateFormat('yy-MM-dd').format(date),
+                                        style: const TextStyle(fontSize: 10),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    );
+                                  }
+                                  return const Text('');
+                                })),
                       ),
-                      gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1)),
+                      gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: false,
+                          getDrawingHorizontalLine: (value) => FlLine(
+                              color: Colors.grey.withOpacity(0.2),
+                              strokeWidth: 1)),
                       borderData: FlBorderData(show: false),
                       lineTouchData: LineTouchData(
+                        handleBuiltInTouches: true,
+                        getTouchedSpotIndicator: (barData, spotIndexes) {
+                          return spotIndexes.map((index) {
+                            return TouchedSpotIndicatorData(
+                              FlLine(
+                                color: colorScheme.outline.withOpacity(0.5),
+                                strokeWidth: 1,
+                                dashArray: const [4, 4],
+                              ),
+                              FlDotData(
+                                show: true,
+                                getDotPainter: (spot, percent, bar, spotIndex) {
+                                  return FlDotCirclePainter(
+                                    radius: 4,
+                                    color: bar.color ?? colorScheme.primary,
+                                    strokeColor: Colors.white,
+                                    strokeWidth: 1.5,
+                                  );
+                                },
+                              ),
+                            );
+                          }).toList();
+                        },
                         touchTooltipData: LineTouchTooltipData(
+                          tooltipHorizontalAlignment: FLHorizontalAlignment
+                              .left, // 将弹窗右边缘对齐鼠标（即弹窗整体悬浮在鼠标的【左侧】）
+                          tooltipHorizontalOffset: -20,
+                          tooltipMargin: 0, // 取消向上的默认推移，让它和鼠标保持在同一水平高度
+                          fitInsideHorizontally: true,
+                          fitInsideVertically: true,
                           getTooltipItems: (touchedSpotsList) {
-                            return touchedSpotsList.map((touchedSpot) {
-                              final int index = touchedSpot.x.round();
-                              if (index < 0 || index >= spots.length) return null;
+                            if (touchedSpotsList.isEmpty) return [];
 
-                              final originalSpot = spots[index];
-                              final date = DateFormat('yyyy-MM-dd')
-                                  .format(DateTime.fromMillisecondsSinceEpoch(originalSpot.x.toInt()));
+                            final primarySpot = touchedSpotsList.first;
+                            final int index = primarySpot.x.round();
+                            if (index < 0 || index >= spots.length) return [];
 
-                              // (*** 6. 动态工具提示 ***)
-                              final String valueStr;
-                              if (isPercentage) {
-                                valueStr = (NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2).format(originalSpot.y);
-                              } else if (_selectedChartType == ShareAssetChartType.comprehensiveProfit ||
-                                  _selectedChartType == ShareAssetChartType.holdingProfit ||
-                                  _selectedChartType == ShareAssetChartType.realizedProfit) {
-                                valueStr = formatCurrency(originalSpot.y, asset.currency);
-                              } else {
-                                valueStr = tooltipFormat.format(originalSpot.y);
-                              }
-                              final double? comprehensiveAt = index < comprehensiveSpots.length
+                            final originalSpot = spots[index];
+                            final date = DateFormat('yyyy-MM-dd').format(
+                                DateTime.fromMillisecondsSinceEpoch(
+                                    originalSpot.x.toInt()));
+
+                            if (_selectedChartType ==
+                                ShareAssetChartType.price) {
+                              final latestPriceText =
+                                  '🔵 最新价格: ¥${tooltipFormat.format(originalSpot.y)}';
+                              final adjustedCostValue =
+                                  adjustedCostOriginalSpots[index].y;
+                              final adjustedCostText = adjustedCostValue
+                                      .isFinite
+                                  ? '🟢 降本后成本: ¥${tooltipFormat.format(adjustedCostValue)}'
+                                  : '🟢 降本后成本: —';
+
+                              final step = activeStepsForSpots[index];
+                              final profitText = step == null
+                                  ? ''
+                                  : '\n💡 累计网格利润: ${formatCurrency(step.cumulativeGridProfit, asset.currency)}';
+
+                              final item = LineTooltipItem(
+                                '$date\n$latestPriceText\n$adjustedCostText$profitText',
+                                const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    height: 1.45),
+                              );
+                              return touchedSpotsList
+                                  .map((e) => e == primarySpot ? item : null)
+                                  .toList();
+                            } else {
+                              final val = formatCurrency(
+                                  originalSpot.y, asset.currency);
+                              final comp = index < comprehensiveSpots.length
                                   ? comprehensiveSpots[index].y
                                   : null;
-                              final double? holdingAt = index < holdingSpots.length
+                              final hold = index < holdingSpots.length
                                   ? holdingSpots[index].y
                                   : null;
-                              final double? realizedAt = index < realizedSpots.length
+                              final real = index < realizedSpots.length
                                   ? realizedSpots[index].y
                                   : null;
 
-                              final String comprehensiveText = comprehensiveAt == null
+                              final compStr = comp == null
                                   ? '—'
-                                  : formatCurrency(comprehensiveAt, asset.currency);
-                              final String holdingText = holdingAt == null
+                                  : formatCurrency(comp, asset.currency);
+                              final holdStr = hold == null
                                   ? '—'
-                                  : formatCurrency(holdingAt, asset.currency);
-                              final String realizedText = realizedAt == null
+                                  : formatCurrency(hold, asset.currency);
+                              final realStr = real == null
                                   ? '—'
-                                  : formatCurrency(realizedAt, asset.currency);
+                                  : formatCurrency(real, asset.currency);
 
-                              return LineTooltipItem(
-                                '''$date
-$valueStr
-综合收益: $comprehensiveText
-持仓收益: $holdingText
-实现盈亏: $realizedText''',
+                              final item = LineTooltipItem(
+                                '$date\n$val\n综合收益: $compStr\n持仓收益: $holdStr\n实现盈亏: $realStr',
                                 const TextStyle(
                                     color: Colors.white,
-                                    fontWeight: FontWeight.bold),
+                                    fontWeight: FontWeight.bold,
+                                    height: 1.45),
                               );
-                            }).whereType<LineTooltipItem>().toList();
+                              return touchedSpotsList
+                                  .map((e) => e == primarySpot ? item : null)
+                                  .toList();
+                            }
                           },
                         ),
                       ),
@@ -1419,7 +1197,8 @@ $valueStr
           ),
         );
       },
-      loading: () => const Center(child: Padding(
+      loading: () => const Center(
+          child: Padding(
         padding: EdgeInsets.all(16.0),
         child: CircularProgressIndicator(),
       )),
