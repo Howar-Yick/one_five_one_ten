@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/grid_profit_reconstruction_result.dart';
+import 'package:one_five_one_ten/models/grid_profit_reconstruction_step.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 // import 'package:one_five_one_ten/models/transaction.dart'; // (已移除)
 import 'package:one_five_one_ten/pages/snapshot_history_page.dart';
@@ -303,18 +304,17 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
   // --- (*** 11. 关键修改：_buildChartCard ***) ---
   // (它现在 watch 新的 provider，并包含切换按钮)
   Widget _buildChartCard(BuildContext context, Asset asset) {
-    // (*** 1. Watch 新的组合 Provider ***)
     final asyncChartData = ref.watch(shareAssetCombinedChartProvider(asset.id));
+    final debugAsync = ref.watch(gridProfitDebugProvider(asset.id));
 
     return asyncChartData.when(
       data: (chartDataMap) {
-
-        // (*** 2. 根据 State 选择要显示的列表 ***)
         List<FlSpot> spots;
         String chartTitle;
-        bool isPercentage = false; // 标记是否为百分比Y轴
+        bool isPercentage = false;
         String modeLabel = '价格模式';
-        final List<FlSpot> comprehensiveSpots = chartDataMap['comprehensiveProfit'] ?? [];
+        final List<FlSpot> comprehensiveSpots =
+            chartDataMap['comprehensiveProfit'] ?? [];
         final List<FlSpot> holdingSpots = chartDataMap['holdingProfit'] ?? [];
         final List<FlSpot> realizedSpots = chartDataMap['realizedProfit'] ?? [];
 
@@ -337,40 +337,103 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
           case ShareAssetChartType.price:
           default:
             spots = chartDataMap['price'] ?? [];
-            chartTitle = (asset.subType == AssetSubType.mutualFund) ? '单位净值历史' : '价格历史 (日K收盘)';
+            chartTitle =
+                (asset.subType == AssetSubType.mutualFund) ? '单位净值历史' : '价格历史 (日K收盘)';
             modeLabel = '当前：价格曲线';
             break;
         }
 
         if (spots.length < 2) return const SizedBox.shrink();
 
-        // (*** 3. 动态格式化Y轴 ***)
+        final GridProfitReconstructionResult? reconstructionResult =
+            debugAsync.asData?.value['result'] as GridProfitReconstructionResult?;
+        final List<GridProfitReconstructionStep> reconstructionSteps =
+            reconstructionResult?.steps ?? const <GridProfitReconstructionStep>[];
+        final bool showAdjustedCostLine =
+            _selectedChartType == ShareAssetChartType.price &&
+                reconstructionSteps.isNotEmpty;
+
+        DateTime dateOnly(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
+
+        final List<GridProfitReconstructionStep> sortedSteps = reconstructionSteps.toList()
+          ..sort((a, b) => dateOnly(a.date).compareTo(dateOnly(b.date)));
+
+        final Map<int, GridProfitReconstructionStep> stepByDay = {
+          for (final step in sortedSteps)
+            dateOnly(step.date).millisecondsSinceEpoch: step,
+        };
+
+        final List<FlSpot> adjustedCostOriginalSpots = <FlSpot>[];
+        double? lastValidAdjustedCost;
+        int activeStepIndex = 0;
+        GridProfitReconstructionStep? activeStep;
+
+        for (final spot in spots) {
+          final DateTime spotDate =
+              dateOnly(DateTime.fromMillisecondsSinceEpoch(spot.x.toInt()));
+
+          while (activeStepIndex < sortedSteps.length) {
+            final candidate = sortedSteps[activeStepIndex];
+            final candidateDay = dateOnly(candidate.date);
+            if (candidateDay.isAfter(spotDate)) break;
+            activeStep = candidate;
+            activeStepIndex++;
+          }
+
+          final GridProfitReconstructionStep? stepForDay = activeStep;
+          double? adjustedCost;
+          if (stepForDay != null) {
+            if (stepForDay.shares > 0) {
+              adjustedCost = stepForDay.netCapital / stepForDay.shares;
+              if (!adjustedCost.isFinite) {
+                adjustedCost = null;
+              } else {
+                lastValidAdjustedCost = adjustedCost;
+              }
+            } else {
+              adjustedCost = lastValidAdjustedCost;
+            }
+          }
+
+          adjustedCostOriginalSpots.add(
+            FlSpot(spot.x, adjustedCost ?? double.nan),
+          );
+        }
+
         final NumberFormat yAxisFormat;
         if (isPercentage) {
-          yAxisFormat = NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 1;
+          yAxisFormat = NumberFormat.percentPattern('zh_CN')
+            ..maximumFractionDigits = 1;
         } else if (_selectedChartType == ShareAssetChartType.comprehensiveProfit ||
             _selectedChartType == ShareAssetChartType.holdingProfit ||
             _selectedChartType == ShareAssetChartType.realizedProfit) {
-          yAxisFormat = NumberFormat.compactCurrency(locale: 'zh_CN', symbol: getCurrencySymbol(asset.currency));
+          yAxisFormat = NumberFormat.compactCurrency(
+            locale: 'zh_CN',
+            symbol: getCurrencySymbol(asset.currency),
+          );
         } else {
-          // 价格
           yAxisFormat = (asset.subType == AssetSubType.mutualFund)
-            ? NumberFormat("0.0000")
-            : (asset.subType == AssetSubType.etf
-              ? NumberFormat("0.000")
-              : NumberFormat("0.00"));
+              ? NumberFormat('0.0000')
+              : (asset.subType == AssetSubType.etf
+                  ? NumberFormat('0.000')
+                  : NumberFormat('0.00'));
         }
-        final tooltipFormat = (isPercentage || _selectedChartType == ShareAssetChartType.totalProfit)
-          ? yAxisFormat // 对于收益率和收益，工具提示和Y轴用相同格式
-          : (asset.subType == AssetSubType.mutualFund // 对于价格，工具提示用更精确的格式
-            ? NumberFormat("0.0000")
-            : (asset.subType == AssetSubType.etf ? NumberFormat("0.000") : NumberFormat("0.00")));
+        final tooltipFormat =
+            (isPercentage || _selectedChartType == ShareAssetChartType.totalProfit)
+                ? yAxisFormat
+                : (asset.subType == AssetSubType.mutualFund
+                    ? NumberFormat('0.0000')
+                    : (asset.subType == AssetSubType.etf
+                        ? NumberFormat('0.000')
+                        : NumberFormat('0.00')));
 
         final colorScheme = Theme.of(context).colorScheme;
-
-        final List<FlSpot> indexedSpots = [];
+        final List<FlSpot> indexedSpots = <FlSpot>[];
+        final List<FlSpot> indexedAdjustedCostSpots = <FlSpot>[];
         for (int i = 0; i < spots.length; i++) {
           indexedSpots.add(FlSpot(i.toDouble(), spots[i].y));
+          final adjustedY = adjustedCostOriginalSpots[i].y;
+          indexedAdjustedCostSpots.add(FlSpot(i.toDouble(), adjustedY));
         }
 
         double bottomInterval;
@@ -391,8 +454,6 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                 Text(chartTitle,
                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 16),
-
-                // (*** 4. 新增：切换按钮 ***)
                 Center(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
@@ -415,16 +476,43 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Row(
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 8,
                   children: [
-                    Container(width: 10, height: 10, color: colorScheme.primary),
-                    const SizedBox(width: 6),
-                    Text(modeLabel, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(width: 10, height: 10, color: colorScheme.primary),
+                        const SizedBox(width: 6),
+                        Text(modeLabel,
+                            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                      ],
+                    ),
+                    if (showAdjustedCostLine)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: Colors.greenAccent.shade400,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '网格降本线（Adjusted Cost Line）',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
                 const SizedBox(height: 14),
-
-                // (*** 5. 动态图表 ***)
                 SizedBox(
                   height: 200,
                   child: LineChart(
@@ -437,17 +525,26 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                           isCurved: false,
                           barWidth: 3,
                           color: colorScheme.primary,
-                          // ★★★ 修复点: 根据数据点数量动态显示圆点 ★★★
                           dotData: FlDotData(show: spots.length < 40),
                           belowBarData: BarAreaData(show: false),
                         ),
+                        if (showAdjustedCostLine)
+                          LineChartBarData(
+                            spots: indexedAdjustedCostSpots,
+                            isCurved: false,
+                            barWidth: 2,
+                            color: Colors.greenAccent.shade400,
+                            dashArray: const [8, 4],
+                            dotData: FlDotData(show: spots.length < 40),
+                            belowBarData: BarAreaData(show: false),
+                          ),
                       ],
                       titlesData: FlTitlesData(
                         leftTitles: AxisTitles(sideTitles: SideTitles(
                           showTitles: true,
                           reservedSize: 50,
                           getTitlesWidget: (value, meta) => Text(
-                              yAxisFormat.format(value), // (使用动态格式)
+                              yAxisFormat.format(value),
                               style: const TextStyle(fontSize: 10)),
                         )),
                         rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -475,43 +572,114 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                           )
                         ),
                       ),
-                      gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1)),
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        getDrawingHorizontalLine: (value) => FlLine(
+                          color: Colors.grey.withOpacity(0.2),
+                          strokeWidth: 1,
+                        ),
+                      ),
                       borderData: FlBorderData(show: false),
                       lineTouchData: LineTouchData(
+                        handleBuiltInTouches: true,
+                        getTouchedSpotIndicator: (barData, spotIndexes) {
+                          return spotIndexes.map((index) {
+                            return TouchedSpotIndicatorData(
+                              FlLine(
+                                color: colorScheme.outline.withOpacity(0.5),
+                                strokeWidth: 1,
+                                dashArray: const [4, 4],
+                              ),
+                              FlDotData(
+                                show: true,
+                                getDotPainter: (spot, percent, bar, spotIndex) {
+                                  return FlDotCirclePainter(
+                                    radius: 4,
+                                    color: bar.color ?? colorScheme.primary,
+                                    strokeColor: Colors.white,
+                                    strokeWidth: 1.5,
+                                  );
+                                },
+                              ),
+                            );
+                          }).toList();
+                        },
                         touchTooltipData: LineTouchTooltipData(
+                          fitInsideHorizontally: true,
+                          fitInsideVertically: true,
                           getTooltipItems: (touchedSpotsList) {
-                            return touchedSpotsList.map((touchedSpot) {
-                              final int index = touchedSpot.x.round();
-                              if (index < 0 || index >= spots.length) return null;
+                            if (touchedSpotsList.isEmpty) {
+                              return const <LineTooltipItem>[];
+                            }
 
-                              final originalSpot = spots[index];
-                              final date = DateFormat('yyyy-MM-dd')
-                                  .format(DateTime.fromMillisecondsSinceEpoch(originalSpot.x.toInt()));
+                            final LineBarSpot primaryTouchedSpot =
+                                touchedSpotsList.first;
+                            final int index = primaryTouchedSpot.x.round();
+                            if (index < 0 || index >= spots.length) {
+                              return const <LineTooltipItem>[];
+                            }
 
-                              // (*** 6. 动态工具提示 ***)
-                              final String valueStr;
-                              if (isPercentage) {
-                                valueStr = (NumberFormat.percentPattern('zh_CN')..maximumFractionDigits = 2).format(originalSpot.y);
-                              } else if (_selectedChartType == ShareAssetChartType.comprehensiveProfit ||
-                                  _selectedChartType == ShareAssetChartType.holdingProfit ||
-                                  _selectedChartType == ShareAssetChartType.realizedProfit) {
-                                valueStr = formatCurrency(originalSpot.y, asset.currency);
-                              } else {
-                                valueStr = tooltipFormat.format(originalSpot.y);
-                              }
-                              final double? comprehensiveAt = index < comprehensiveSpots.length
+                            final FlSpot originalSpot = spots[index];
+                            final DateTime originalDate =
+                                DateTime.fromMillisecondsSinceEpoch(
+                              originalSpot.x.toInt(),
+                            );
+                            final String date =
+                                DateFormat('yyyy-MM-dd').format(originalDate);
+
+                            LineTooltipItem tooltipItem;
+                            if (_selectedChartType == ShareAssetChartType.price) {
+                              final int originalDayEpoch =
+                                  dateOnly(originalDate).millisecondsSinceEpoch;
+                              final String latestPriceText =
+                                  '🔵 最新价格: ¥${tooltipFormat.format(originalSpot.y)}';
+
+                              final double adjustedCostValue =
+                                  adjustedCostOriginalSpots[index].y;
+                              final String adjustedCostText =
+                                  adjustedCostValue.isFinite
+                                  ? '🟢 降本后成本: ¥${tooltipFormat.format(adjustedCostValue)}'
+                                  : '🟢 降本后成本: —';
+
+                              final GridProfitReconstructionStep? stepForDay =
+                                  stepByDay[originalDayEpoch];
+                              final String cumulativeProfitText =
+                                  stepForDay == null
+                                  ? ''
+                                  : '\n💡 累计网格利润: ${formatCurrency(stepForDay.cumulativeGridProfit, asset.currency)}';
+
+                              tooltipItem = LineTooltipItem(
+                                '$date\n$latestPriceText\n$adjustedCostText$cumulativeProfitText',
+                                const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.45,
+                                ),
+                              );
+                            } else {
+                              final String valueText =
+                                  formatCurrency(originalSpot.y, asset.currency);
+                              final double? comprehensiveAt =
+                                  index < comprehensiveSpots.length
                                   ? comprehensiveSpots[index].y
                                   : null;
-                              final double? holdingAt = index < holdingSpots.length
+                              final double? holdingAt =
+                                  index < holdingSpots.length
                                   ? holdingSpots[index].y
                                   : null;
-                              final double? realizedAt = index < realizedSpots.length
+                              final double? realizedAt =
+                                  index < realizedSpots.length
                                   ? realizedSpots[index].y
                                   : null;
 
-                              final String comprehensiveText = comprehensiveAt == null
+                              final String comprehensiveText =
+                                  comprehensiveAt == null
                                   ? '—'
-                                  : formatCurrency(comprehensiveAt, asset.currency);
+                                  : formatCurrency(
+                                      comprehensiveAt,
+                                      asset.currency,
+                                    );
                               final String holdingText = holdingAt == null
                                   ? '—'
                                   : formatCurrency(holdingAt, asset.currency);
@@ -519,17 +687,21 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                                   ? '—'
                                   : formatCurrency(realizedAt, asset.currency);
 
-                              return LineTooltipItem(
-                                '''$date
-$valueStr
-综合收益: $comprehensiveText
-持仓收益: $holdingText
-实现盈亏: $realizedText''',
+                              tooltipItem = LineTooltipItem(
+                                '$date\n$valueText\n综合收益: $comprehensiveText\n持仓收益: $holdingText\n实现盈亏: $realizedText',
                                 const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold),
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.45,
+                                ),
                               );
-                            }).whereType<LineTooltipItem>().toList();
+                            }
+
+                            return touchedSpotsList.map((touchedSpot) {
+                              return touchedSpot == primaryTouchedSpot
+                                  ? tooltipItem
+                                  : null;
+                            }).toList();
                           },
                         ),
                       ),
