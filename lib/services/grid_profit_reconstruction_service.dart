@@ -91,11 +91,22 @@ class GridProfitReconstructionService {
       final nowRecord = netCapitals[i];
       final nowNetCapital = nowRecord.value;
 
+      // 1. 计算平均成本的异常跳变率 (仅在持仓连续的情况下计算)
+      final double costJumpRatio = (prevAvgCost > _eps && nowAvgCost > _eps)
+          ? (nowAvgCost - prevAvgCost).abs() / prevAvgCost
+          : 0.0;
+
+      // 2. 判定是否发生了“会计口径跳变”或“人工数据修正”
+      // 条件 A：isLegacy 状态发生改变 (新老系统切换)
+      // 条件 B：平均成本发生了 > 5% 的不合常理的单日跳变
+      final bool isMethodShift =
+          (prevRecord.isLegacy != nowRecord.isLegacy) || (costJumpRatio > 0.05);
+
       final deltaSharesRaw = nowShares - prevShares;
       double deltaCapitalRaw;
 
-      if (prevRecord.isLegacy != nowRecord.isLegacy) {
-        // 触发口径跳变减震器：废弃直接相减，改用份额变化估算真实流水
+      if (isMethodShift) {
+        // 触发阻断器！废弃直接相减，改用当天的真实价格和份额变动来推算资金流
         if (_nearZero(deltaSharesRaw)) {
           deltaCapitalRaw = 0.0;
         } else {
@@ -103,7 +114,7 @@ class GridProfitReconstructionService {
           deltaCapitalRaw = deltaSharesRaw * price;
         }
       } else {
-        // 口径一致时，允许直接相减
+        // 数据平滑无异常，安全使用传统的本金相减
         deltaCapitalRaw = nowNetCapital - prevNetCapital;
       }
 
