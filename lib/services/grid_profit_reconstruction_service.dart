@@ -34,7 +34,7 @@ class GridProfitReconstructionService {
       dayTotalCounts[day] = (dayTotalCounts[day] ?? 0) + 1;
     }
 
-    final List<double> netCapitals = <double>[];
+    final List<_NetCapitalRecord> netCapitals = <_NetCapitalRecord>[];
     final Map<DateTime, int> dayCurrentIndexes = <DateTime, int>{};
 
     for (final snapshot in sorted) {
@@ -61,7 +61,7 @@ class GridProfitReconstructionService {
     final first = sorted.first;
     final firstShares = _sanitize(first.totalShares);
     final firstAverageCost = _sanitize(first.averageCost);
-    final firstNetCapital = netCapitals.first;
+    final firstNetCapital = netCapitals.first.value;
 
     steps.add(
       GridProfitReconstructionStep(
@@ -83,14 +83,29 @@ class GridProfitReconstructionService {
 
       final prevShares = _sanitize(prev.totalShares);
       final prevAvgCost = _sanitize(prev.averageCost);
-      final prevNetCapital = netCapitals[i - 1];
+      final prevRecord = netCapitals[i - 1];
+      final prevNetCapital = prevRecord.value;
 
       final nowShares = _sanitize(now.totalShares);
       final nowAvgCost = _sanitize(now.averageCost);
-      final nowNetCapital = netCapitals[i];
+      final nowRecord = netCapitals[i];
+      final nowNetCapital = nowRecord.value;
 
       final deltaSharesRaw = nowShares - prevShares;
-      final deltaCapitalRaw = nowNetCapital - prevNetCapital;
+      double deltaCapitalRaw;
+
+      if (prevRecord.isLegacy != nowRecord.isLegacy) {
+        // 触发口径跳变减震器：废弃直接相减，改用份额变化估算真实流水
+        if (_nearZero(deltaSharesRaw)) {
+          deltaCapitalRaw = 0.0;
+        } else {
+          final price = nowRecord.priceUsed ?? nowAvgCost;
+          deltaCapitalRaw = deltaSharesRaw * price;
+        }
+      } else {
+        // 口径一致时，允许直接相减
+        deltaCapitalRaw = nowNetCapital - prevNetCapital;
+      }
 
       final deltaShares = _nearZero(deltaSharesRaw) ? 0.0 : deltaSharesRaw;
       final deltaCapital = _nearZero(deltaCapitalRaw) ? 0.0 : deltaCapitalRaw;
@@ -224,7 +239,7 @@ class GridProfitReconstructionService {
     return map;
   }
 
-  double _resolveNetCapital({
+  _NetCapitalRecord _resolveNetCapital({
     required PositionSnapshot snapshot,
     required Map<DateTime, double> priceByDay,
     required bool forceUsePreviousDay,
@@ -235,7 +250,7 @@ class GridProfitReconstructionService {
 
     final comprehensiveProfit = snapshot.brokerComprehensiveProfit;
     if (comprehensiveProfit == null || !comprehensiveProfit.isFinite) {
-      return fallbackNetCapital;
+      return _NetCapitalRecord(fallbackNetCapital, true, null);
     }
 
     final baseDay = _dateOnly(snapshot.date);
@@ -254,11 +269,15 @@ class GridProfitReconstructionService {
     }
 
     if (historicalPrice == null) {
-      return fallbackNetCapital;
+      return _NetCapitalRecord(fallbackNetCapital, true, null);
     }
 
     final marketValue = _sanitize(shares * historicalPrice);
-    return _sanitize(marketValue - comprehensiveProfit);
+    return _NetCapitalRecord(
+      _sanitize(marketValue - comprehensiveProfit),
+      false,
+      historicalPrice,
+    );
   }
 
   DateTime _dateOnly(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
@@ -272,6 +291,14 @@ class GridProfitReconstructionService {
     if (!value.isFinite) return 0.0;
     return value;
   }
+}
+
+class _NetCapitalRecord {
+  final double value;
+  final bool isLegacy;
+  final double? priceUsed;
+
+  const _NetCapitalRecord(this.value, this.isLegacy, this.priceUsed);
 }
 
 class _Lot {
