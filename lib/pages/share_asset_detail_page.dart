@@ -358,12 +358,8 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
         final List<GridProfitReconstructionStep> sortedSteps = reconstructionSteps.toList()
           ..sort((a, b) => dateOnly(a.date).compareTo(dateOnly(b.date)));
 
-        final Map<int, GridProfitReconstructionStep> stepByDay = {
-          for (final step in sortedSteps)
-            dateOnly(step.date).millisecondsSinceEpoch: step,
-        };
-
         final List<FlSpot> adjustedCostOriginalSpots = <FlSpot>[];
+        final List<GridProfitReconstructionStep?> activeStepsForSpots = [];
         double? lastValidAdjustedCost;
         int activeStepIndex = 0;
         GridProfitReconstructionStep? activeStep;
@@ -395,9 +391,38 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
             }
           }
 
+          activeStepsForSpots.add(activeStep);
           adjustedCostOriginalSpots.add(
             FlSpot(spot.x, adjustedCost ?? double.nan),
           );
+        }
+
+        double minY = double.infinity;
+        double maxY = double.negativeInfinity;
+
+        for (final spot in spots) {
+          if (spot.y.isFinite) {
+            if (spot.y < minY) minY = spot.y;
+            if (spot.y > maxY) maxY = spot.y;
+          }
+        }
+
+        if (showAdjustedCostLine) {
+          for (final spot in adjustedCostOriginalSpots) {
+            if (spot.y.isFinite) {
+              if (spot.y < minY) minY = spot.y;
+              if (spot.y > maxY) maxY = spot.y;
+            }
+          }
+        }
+
+        if (minY == double.infinity || maxY == double.negativeInfinity) {
+          minY = 0;
+          maxY = 1;
+        } else {
+          final padding = (maxY - minY) * 0.1;
+          minY -= padding;
+          maxY += padding;
         }
 
         final NumberFormat yAxisFormat;
@@ -517,6 +542,8 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                   height: 200,
                   child: LineChart(
                     LineChartData(
+                      minY: minY,
+                      maxY: maxY,
                       minX: 0,
                       maxX: (spots.length - 1).toDouble(),
                       lineBarsData: [
@@ -630,8 +657,6 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
 
                             LineTooltipItem tooltipItem;
                             if (_selectedChartType == ShareAssetChartType.price) {
-                              final int originalDayEpoch =
-                                  dateOnly(originalDate).millisecondsSinceEpoch;
                               final String latestPriceText =
                                   '🔵 最新价格: ¥${tooltipFormat.format(originalSpot.y)}';
 
@@ -643,7 +668,7 @@ class _ShareAssetDetailPageState extends ConsumerState<ShareAssetDetailPage> {
                                   : '🟢 降本后成本: —';
 
                               final GridProfitReconstructionStep? stepForDay =
-                                  stepByDay[originalDayEpoch];
+                                  activeStepsForSpots[index];
                               final String cumulativeProfitText =
                                   stepForDay == null
                                   ? ''
