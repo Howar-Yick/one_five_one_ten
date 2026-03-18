@@ -11,6 +11,7 @@ import 'package:one_five_one_ten/utils/currency_formatter.dart';
 
 // (*** 1. 导入新模块 ***)
 import 'package:one_five_one_ten/allocation/feature_flags.dart';
+import 'package:one_five_one_ten/pages/batch_snapshot_page.dart';
 // (*** 导入结束 ***)
 
 
@@ -62,6 +63,17 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         title: const Text('概览'),
         // (*** 2. 在这里添加新按钮 ***)
         actions: [
+          IconButton(
+            tooltip: '批量快照工作台',
+            icon: const Icon(Icons.fact_check),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const BatchSnapshotPage(),
+                ),
+              );
+            },
+          ),
           if (kFeatureAllocation)
             IconButton(
               tooltip: '资产配置',
