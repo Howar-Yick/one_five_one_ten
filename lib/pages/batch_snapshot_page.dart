@@ -7,6 +7,7 @@ import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
+import 'package:isar/isar.dart';
 
 class BatchSnapshotPage extends ConsumerStatefulWidget {
   const BatchSnapshotPage({super.key});
@@ -44,8 +45,13 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
 
   Future<Map<Account, List<Asset>>> _loadBatchData() async {
     final isar = ref.read(databaseServiceProvider).isar;
-    final accounts = await isar.accounts.where().sortByName().findAll();
-    final assets = await isar.assets.where().sortByName().findAll();
+// 1. 先安全地查出所有数据
+    final accounts = await isar.accounts.where().findAll();
+    final assets = await isar.assets.where().findAll();
+
+    // 2. 使用 Dart 原生在内存中进行排序（绝对不会报类型错误）
+    accounts.sort((a, b) => a.name.compareTo(b.name));
+    assets.sort((a, b) => a.name.compareTo(b.name));
 
     final activeAssets = assets.where((asset) => !asset.isArchived).toList();
     final assetsByAccountSupabaseId = <String, List<Asset>>{};
@@ -66,7 +72,8 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
       if (accountSupabaseId == null || accountSupabaseId.isEmpty) {
         continue;
       }
-      final accountAssets = assetsByAccountSupabaseId[accountSupabaseId] ?? <Asset>[];
+      final accountAssets =
+          assetsByAccountSupabaseId[accountSupabaseId] ?? <Asset>[];
       if (accountAssets.isEmpty) {
         continue;
       }
@@ -121,7 +128,9 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
       for (final entry in groupedData.entries) {
         for (final asset in entry.value) {
           final fieldMap = _draftControllers[asset.id];
-          if (fieldMap == null || asset.supabaseId == null || asset.supabaseId!.isEmpty) {
+          if (fieldMap == null ||
+              asset.supabaseId == null ||
+              asset.supabaseId!.isEmpty) {
             continue;
           }
 
@@ -129,10 +138,15 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
             final sharesController = fieldMap['shares'];
             final costController = fieldMap['cost'];
             final profitController = fieldMap['profit'];
-            final shares = sharesController == null ? null : _parseOptionalNumber(sharesController);
-            final cost = costController == null ? null : _parseOptionalNumber(costController);
-            final comprehensiveProfit =
-                profitController == null ? null : _parseOptionalNumber(profitController);
+            final shares = sharesController == null
+                ? null
+                : _parseOptionalNumber(sharesController);
+            final cost = costController == null
+                ? null
+                : _parseOptionalNumber(costController);
+            final comprehensiveProfit = profitController == null
+                ? null
+                : _parseOptionalNumber(profitController);
 
             if (shares == null && cost == null && comprehensiveProfit == null) {
               continue;
@@ -204,7 +218,8 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(savedCount > 0 ? '批量保存成功，共保存 $savedCount 条记录' : '没有可保存的输入内容'),
+          content: Text(
+              savedCount > 0 ? '批量保存成功，共保存 $savedCount 条记录' : '没有可保存的输入内容'),
         ),
       );
 
