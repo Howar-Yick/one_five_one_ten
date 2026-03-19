@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:one_five_one_ten/models/account.dart';
 import 'package:one_five_one_ten/models/asset.dart';
 import 'package:one_five_one_ten/models/position_snapshot.dart';
 import 'package:one_five_one_ten/models/transaction.dart';
 import 'package:one_five_one_ten/providers/global_providers.dart';
+import 'package:one_five_one_ten/services/ocr_parser_service.dart';
 
 class BatchSnapshotPage extends ConsumerStatefulWidget {
   const BatchSnapshotPage({super.key});
@@ -17,9 +19,12 @@ class BatchSnapshotPage extends ConsumerStatefulWidget {
 
 class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
   final Map<int, Map<String, TextEditingController>> _draftControllers = {};
+  final ImagePicker _imagePicker = ImagePicker();
+  final OcrParserService _ocrParserService = OcrParserService();
   late Future<Map<Account, List<Asset>>> _pageDataFuture;
   DateTime _selectedDate = DateTime.now();
   bool _isSaving = false;
+  bool _isOcrProcessing = false;
 
   @override
   void initState() {
@@ -66,7 +71,8 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
       if (accountSupabaseId == null || accountSupabaseId.isEmpty) {
         continue;
       }
-      final accountAssets = assetsByAccountSupabaseId[accountSupabaseId] ?? <Asset>[];
+      final accountAssets =
+          assetsByAccountSupabaseId[accountSupabaseId] ?? <Asset>[];
       if (accountAssets.isEmpty) {
         continue;
       }
@@ -104,7 +110,112 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
     if (text.isEmpty) {
       return null;
     }
-    return double.tryParse(text);
+    return _sanitizeNumericText(text);
+  }
+
+  double? _sanitizeNumericText(String raw) {
+    final cleaned = raw
+        .replaceAll(',', '')
+        .replaceAll('，', '')
+        .replaceAll('%', '')
+        .replaceAll('％', '')
+        .replaceAll('¥', '')
+        .replaceAll('￥', '')
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll(RegExp(r'[^0-9+\-.]'), '');
+
+    if (cleaned.isEmpty ||
+        cleaned == '-' ||
+        cleaned == '+' ||
+        cleaned == '.' ||
+        cleaned == '-.' ||
+        cleaned == '+.') {
+      return null;
+    }
+    return double.tryParse(cleaned);
+  }
+
+  String _formatDetectedNumber(double value) {
+    final text = value.toStringAsFixed(6);
+    return text
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  Future<void> _handleOcrImport() async {
+    if (_isOcrProcessing) return;
+
+    setState(() {
+      _isOcrProcessing = true;
+    });
+
+    try {
+      final groupedData = await _pageDataFuture;
+      final shareAssets = groupedData.values
+          .expand((assets) => assets)
+          .where((asset) => asset.trackingMethod == AssetTrackingMethod.shareBased)
+          .toList();
+
+      if (shareAssets.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前没有可供 OCR 自动填充的份额法资产')),
+        );
+        return;
+      }
+
+      final image = await _imagePicker.pickImage(source: ImageSource.gallery);
+      if (image == null) {
+        return;
+      }
+
+      final assetNames = shareAssets.map((asset) => asset.name).toList();
+      final parsedData = await _ocrParserService.parseGuojinScreenshot(
+        image.path,
+        assetNames,
+      );
+
+      int filledAssetCount = 0;
+      for (final asset in shareAssets) {
+        final matched = parsedData[asset.name];
+        if (matched == null) {
+          continue;
+        }
+
+        final shares = matched['shares'];
+        final cost = matched['cost'];
+        final profit = matched['profit'];
+        if (shares == null || cost == null) {
+          continue;
+        }
+
+        _controllerFor(asset.id, 'shares').text = _formatDetectedNumber(shares);
+        _controllerFor(asset.id, 'cost').text = _formatDetectedNumber(cost);
+        if (profit != null) {
+          _controllerFor(asset.id, 'profit').text = _formatDetectedNumber(profit);
+        }
+        filledAssetCount++;
+      }
+
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('OCR 识别完成，已自动填充 $filledAssetCount 个资产'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('OCR 识别失败: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isOcrProcessing = false;
+        });
+      }
+    }
   }
 
   Future<void> _saveBatch(Map<Account, List<Asset>> groupedData) async {
@@ -121,7 +232,9 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
       for (final entry in groupedData.entries) {
         for (final asset in entry.value) {
           final fieldMap = _draftControllers[asset.id];
-          if (fieldMap == null || asset.supabaseId == null || asset.supabaseId!.isEmpty) {
+          if (fieldMap == null ||
+              asset.supabaseId == null ||
+              asset.supabaseId!.isEmpty) {
             continue;
           }
 
@@ -129,10 +242,14 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
             final sharesController = fieldMap['shares'];
             final costController = fieldMap['cost'];
             final profitController = fieldMap['profit'];
-            final shares = sharesController == null ? null : _parseOptionalNumber(sharesController);
-            final cost = costController == null ? null : _parseOptionalNumber(costController);
-            final comprehensiveProfit =
-                profitController == null ? null : _parseOptionalNumber(profitController);
+            final shares = sharesController == null
+                ? null
+                : _parseOptionalNumber(sharesController);
+            final cost =
+                costController == null ? null : _parseOptionalNumber(costController);
+            final comprehensiveProfit = profitController == null
+                ? null
+                : _parseOptionalNumber(profitController);
 
             if (shares == null && cost == null && comprehensiveProfit == null) {
               continue;
@@ -169,9 +286,8 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
           }
 
           if (netFlow != null && netFlow != 0) {
-            final flowType = netFlow >= 0
-                ? TransactionType.invest
-                : TransactionType.withdraw;
+            final flowType =
+                netFlow >= 0 ? TransactionType.invest : TransactionType.withdraw;
             final flowTxn = Transaction()
               ..type = flowType
               ..date = _selectedDate
@@ -204,7 +320,9 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(savedCount > 0 ? '批量保存成功，共保存 $savedCount 条记录' : '没有可保存的输入内容'),
+          content: Text(savedCount > 0
+              ? '批量保存成功，共保存 $savedCount 条记录'
+              : '没有可保存的输入内容'),
         ),
       );
 
@@ -238,6 +356,17 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
       appBar: AppBar(
         title: const Text('批量快照工作台'),
         actions: [
+          IconButton(
+            onPressed: _isOcrProcessing ? null : _handleOcrImport,
+            tooltip: '导入国金截图 OCR',
+            icon: _isOcrProcessing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.document_scanner),
+          ),
           TextButton.icon(
             onPressed: _pickDate,
             icon: const Icon(Icons.calendar_month),
@@ -273,7 +402,7 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
                   leading: const Icon(Icons.tips_and_updates_outlined),
                   title: const Text('录入说明'),
                   subtitle: Text(
-                    '当前快照日期：$selectedDateText\n份额法需至少填写“最新份额 + 单位成本”；价值法可填写“当前总市值”，净投入变动为可选。空白输入会自动跳过。',
+                    '当前快照日期：$selectedDateText\n份额法需至少填写“最新份额 + 单位成本”；价值法可填写“当前总市值”，净投入变动为可选。你也可以从国金证券持仓截图中 OCR 自动填充份额法资产。',
                   ),
                 ),
               ),
