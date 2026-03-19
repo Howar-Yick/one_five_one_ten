@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.8.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -25,6 +25,8 @@ dependencies:
   http: ^1.2.2
   shared_preferences: ^2.3.2
   url_launcher: ^6.3.0
+  image_picker: ^1.2.1
+  google_mlkit_text_recognition: ^0.15.1
 
 
   supabase_flutter: ^2.5.3 # (或最新版本，这个版本是 Dart 3 兼容的)
