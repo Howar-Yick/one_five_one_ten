@@ -55,7 +55,6 @@ class OcrParserService {
       for (final row in rows) {
         if (row.isEmpty) continue;
         final lineText = row.map((e) => e.text).join(' ');
-        print("OCR 扫描行数据: $lineText");
 
         // 清除所有空格转小写，用于暴力匹配，兼容 6 位代码被识别为带空格格式
         final normalizedLineText = lineText.replaceAll(RegExp(r'\s+'), '');
