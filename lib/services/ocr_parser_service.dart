@@ -1,17 +1,18 @@
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 class OcrParserService {
-  Future<Map<String, Map<String, double>>> parseGuojinScreenshot(
-      String imagePath, List<String> assetNames) async {
-    // 强制使用中文语言包进行识别
+  // ★ 升级：接收 Map<资产ID, 搜索关键词列表(代码+名称)>，返回 Map<资产ID, 提取数据>
+  Future<Map<int, Map<String, double>>> parseGuojinScreenshot(
+    String imagePath,
+    Map<int, List<String>> assetSearchKeys,
+  ) async {
     final recognizer = TextRecognizer(script: TextRecognitionScript.chinese);
-    final result = <String, Map<String, double>>{};
+    final result = <int, Map<String, double>>{};
 
     try {
       final inputImage = InputImage.fromFilePath(imagePath);
       final recognizedText = await recognizer.processImage(inputImage);
 
-      // 1. 将所有识别到的文本块打散为一个个基础元素
       List<TextElement> allElements = [];
       for (final block in recognizedText.blocks) {
         for (final line in block.lines) {
@@ -21,7 +22,7 @@ class OcrParserService {
         }
       }
 
-      // 2. 按 Y 坐标聚合成行 (误差 15 像素以内的算同一行)
+      // 1. 聚合成行 (Y 坐标差值 < 15 视作同一行)
       List<List<TextElement>> rows = [];
       for (final element in allElements) {
         bool placed = false;
@@ -40,49 +41,66 @@ class OcrParserService {
         }
       }
 
-      // 3. 排序：行按 Y 排序，行内的元素按 X (从左到右) 排序
+      // 2. 排序：自上而下，自左而右
       rows.sort(
-          (a, b) => a.first.boundingBox.top.compareTo(b.first.boundingBox.top));
+        (a, b) => a.first.boundingBox.top.compareTo(b.first.boundingBox.top),
+      );
       for (final row in rows) {
         row.sort((a, b) => a.boundingBox.left.compareTo(b.boundingBox.left));
       }
 
-      // 4. 解析匹配：找到资产名称，然后取对应的列
-      for (int i = 0; i < rows.length; i++) {
-        final row = rows[i];
+      // 3. 状态机解析：用【ID】绝对锚定当前资产
+      int? currentAssetId;
+
+      for (final row in rows) {
         if (row.isEmpty) continue;
+        String originalLineText = row.map((e) => e.text).join(' ');
+        // 清除所有空格转小写，用于暴力匹配
+        String cleanLine = originalLineText.replaceAll(' ', '').toLowerCase();
 
-        final firstText = row.first.text;
+        // ★ 核心升级：遍历所有的资产的 搜索词(代码 / 名称)
+        for (final entry in assetSearchKeys.entries) {
+          final assetId = entry.key;
+          final searchWords = entry.value;
 
-        for (final assetName in assetNames) {
-          // 模糊匹配资产名
-          if (firstText.contains(assetName) || assetName.contains(firstText)) {
-            double? shares;
-            double? profit;
-            double? cost;
-
-            // 国金第一行特征：名称 | 盈亏 | 份额 | 最新价
-            if (row.length >= 3) {
-              profit = _parseDouble(row[1].text);
-              shares = _parseDouble(row[2].text);
+          bool matched = false;
+          for (final word in searchWords) {
+            final cleanWord = word.replaceAll(' ', '').toLowerCase();
+            if (cleanWord.isNotEmpty && cleanLine.contains(cleanWord)) {
+              matched = true;
+              break;
             }
+          }
 
-            // 国金第二行特征：市值 | 比例 | 可用份额 | 单位成本
-            if (i + 1 < rows.length) {
-              final nextRow = rows[i + 1];
-              if (nextRow.length >= 4) {
-                cost = _parseDouble(nextRow[3].text);
-              }
-            }
-
-            if (shares != null || cost != null || profit != null) {
-              result[assetName] = {
-                if (shares != null) 'shares': shares,
-                if (cost != null) 'cost': cost,
-                if (profit != null) 'profit': profit,
-              };
-            }
+          if (matched) {
+            currentAssetId = assetId; // 锁定 ID！
+            result.putIfAbsent(currentAssetId, () => {});
             break;
+          }
+        }
+
+        if (currentAssetId != null) {
+          // ★ 锚点 1：提取 成本 和 综合收益
+          if (originalLineText.contains('成本/现价')) {
+            final parts = originalLineText.split('成本/现价');
+            if (parts.length == 2) {
+              final profit = _parseDouble(parts[0]);
+              if (profit != null) result[currentAssetId]!['profit'] = profit;
+
+              final costStr = parts[1].trim().split('/')[0];
+              final cost = _parseDouble(costStr);
+              if (cost != null) result[currentAssetId]!['cost'] = cost;
+            }
+          }
+
+          // ★ 锚点 2：提取 最新份额
+          if (originalLineText.contains('持仓/可用')) {
+            final parts = originalLineText.split('持仓/可用');
+            if (parts.length == 2) {
+              final shareStr = parts[1].trim().split('/')[0];
+              final shares = _parseDouble(shareStr);
+              if (shares != null) result[currentAssetId]!['shares'] = shares;
+            }
           }
         }
       }
@@ -95,9 +113,12 @@ class OcrParserService {
     return result;
   }
 
-  // 数字清洗：把逗号、百分号等杂质去掉，安全转为 double
   double? _parseDouble(String text) {
-    final cleaned = text.replaceAll(RegExp(r'[^\d.-]'), '');
-    return double.tryParse(cleaned);
+    final match = RegExp(r'-?[\d,]+(\.\d+)?').firstMatch(text);
+    if (match != null) {
+      String numStr = match.group(0)!.replaceAll(',', '');
+      return double.tryParse(numStr);
+    }
+    return null;
   }
 }
