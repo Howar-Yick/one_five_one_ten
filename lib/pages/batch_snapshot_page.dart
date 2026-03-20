@@ -46,10 +46,25 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
   Future<List<MapEntry<Account, List<Asset>>>> _loadData() async {
     final isar = DatabaseService().isar;
     final accounts = await isar.accounts.where().findAll();
-    final assets = await isar.assets.where().findAll();
+    final assets = await isar.assets
+        .filter()
+        .isArchivedEqualTo(false)
+        .findAll();
+    final snapshots = await isar.positionSnapshots.where().findAll();
 
     accounts.sort((a, b) => a.name.compareTo(b.name));
     assets.sort((a, b) => a.name.compareTo(b.name));
+
+    final latestSnapshotByAssetSupabaseId = <String, PositionSnapshot>{};
+    for (final snapshot in snapshots) {
+      final assetSupabaseId = snapshot.assetSupabaseId;
+      if (assetSupabaseId == null || assetSupabaseId.isEmpty) continue;
+
+      final existing = latestSnapshotByAssetSupabaseId[assetSupabaseId];
+      if (existing == null || snapshot.date.isAfter(existing.date)) {
+        latestSnapshotByAssetSupabaseId[assetSupabaseId] = snapshot;
+      }
+    }
 
     final Map<String?, Account> accountMap = {
       for (var a in accounts) a.supabaseId: a,
@@ -57,6 +72,14 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
     final Map<Account, List<Asset>> grouped = {};
 
     for (final asset in assets) {
+      final assetSupabaseId = asset.supabaseId;
+      if (assetSupabaseId == null || assetSupabaseId.isEmpty) continue;
+
+      final latestSnapshot = latestSnapshotByAssetSupabaseId[assetSupabaseId];
+      if (latestSnapshot == null || latestSnapshot.totalShares <= 0) {
+        continue;
+      }
+
       final acc = accountMap[asset.accountSupabaseId];
       if (acc != null) {
         grouped.putIfAbsent(acc, () => []).add(asset);
@@ -93,30 +116,21 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
 
       setState(() => _isOcrProcessing = true);
 
+      // 构建搜索字典：Asset ID -> [资产代码, 资产名称]
       final Map<int, List<String>> assetSearchKeys = {};
-      String debugSearchingWords = ""; // 记录我们在找什么
-
       for (final asset in accountAssets) {
         final keys = <String>[];
-        // 🚨 确认字段是 code！防止 null 字符串导致的严重 Bug
-        final code = asset.code;
-        if (code != null && code.trim().isNotEmpty) {
-          keys.add(code.trim());
-        }
+        final code = asset.code.toString().trim();
 
-        if (asset.name.trim().isNotEmpty) {
-          keys.add(asset.name.trim());
-          // 极简模糊匹配：去掉多余后缀，提取核心词（比如把"中概互联ETF广发"变成"中概互联"）
-          String shortName = asset.name
-              .replaceAll(RegExp(r'(ETF|LOF|广发|易方达|华泰|中证)'), '')
-              .trim();
-          if (shortName.length >= 2) keys.add(shortName);
+        if (code.isNotEmpty) {
+          keys.add(code); // 第一优先级：匹配资产代码
         }
+        keys.add(asset.name); // 第二优先级：兜底匹配名称
         assetSearchKeys[asset.id] = keys;
-        debugSearchingWords += "ID:${asset.id} 找: $keys\n";
       }
 
       final ocrService = OcrParserService();
+      // 传入字典，返回直接绑死 ID 的数据！
       final results = await ocrService.parseGuojinScreenshot(
         image.path,
         assetSearchKeys,
@@ -125,61 +139,25 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
       int fillCount = 0;
       for (final asset in accountAssets) {
         final data = results[asset.id];
+        // 只要数据不为空，就填进去
         if (data != null && data.isNotEmpty) {
-          if (data.containsKey('shares'))
+          if (data.containsKey('shares')) {
             _controllerFor(asset.id, 'shares').text = data['shares'].toString();
-          if (data.containsKey('cost'))
+          }
+          if (data.containsKey('cost')) {
             _controllerFor(asset.id, 'cost').text = data['cost'].toString();
-          if (data.containsKey('profit'))
+          }
+          if (data.containsKey('profit')) {
             _controllerFor(asset.id, 'profit').text = data['profit'].toString();
+          }
           fillCount++;
         }
       }
 
       if (context.mounted) {
         if (fillCount == 0) {
-          // ★ 杀手锏：识别失败时，直接在手机上弹出 X光诊断面板！
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('🕵️ 识别失败诊断报告', style: TextStyle(fontSize: 16)),
-              content: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '【我们的程序在找这些词】',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
-                      ),
-                    ),
-                    Text(
-                      debugSearchingWords,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    const Divider(),
-                    const Text(
-                      '【机器在图里看到了这些词】',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.orange,
-                      ),
-                    ),
-                    Text(
-                      OcrParserService.debugRawText,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('明白原因了'),
-                ),
-              ],
-            ),
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('未识别到匹配的资产，请确保资产已配置证券代码，或名称与截图一致。')),
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -191,7 +169,7 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('OCR 失败: $e')));
+        ).showSnackBar(SnackBar(content: Text('OCR 识别失败: $e')));
       }
     } finally {
       setState(() => _isOcrProcessing = false);

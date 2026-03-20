@@ -1,16 +1,13 @@
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 class OcrParserService {
-  // ★ 新增：用于在手机端透视机器到底看到了什么
-  static String debugRawText = "";
-
+  // ★ 升级：接收 Map<资产ID, 搜索关键词列表(代码+名称)>，返回 Map<资产ID, 提取数据>
   Future<Map<int, Map<String, double>>> parseGuojinScreenshot(
     String imagePath,
     Map<int, List<String>> assetSearchKeys,
   ) async {
     final recognizer = TextRecognizer(script: TextRecognitionScript.chinese);
     final result = <int, Map<String, double>>{};
-    debugRawText = ""; // 每次扫描前清空
 
     try {
       final inputImage = InputImage.fromFilePath(imagePath);
@@ -19,78 +16,89 @@ class OcrParserService {
       List<TextElement> allElements = [];
       for (final block in recognizedText.blocks) {
         for (final line in block.lines) {
-          allElements.addAll(line.elements);
+          for (final element in line.elements) {
+            allElements.add(element);
+          }
         }
       }
 
-      // 1. 聚合成行 (误差 < 15)
+      // 1. 聚合成行 (Y 坐标差值 < 15 视作同一行)
       List<List<TextElement>> rows = [];
       for (final element in allElements) {
         bool placed = false;
         for (final row in rows) {
-          if (row.isNotEmpty &&
-              (element.boundingBox.top - row.first.boundingBox.top).abs() <
-                  15) {
-            row.add(element);
-            placed = true;
-            break;
+          if (row.isNotEmpty) {
+            final rowY = row.first.boundingBox.top;
+            if ((element.boundingBox.top - rowY).abs() < 15) {
+              row.add(element);
+              placed = true;
+              break;
+            }
           }
         }
-        if (!placed) rows.add([element]);
+        if (!placed) {
+          rows.add([element]);
+        }
       }
 
-      // 2. 排序
+      // 2. 排序：自上而下，自左而右
       rows.sort(
         (a, b) => a.first.boundingBox.top.compareTo(b.first.boundingBox.top),
       );
-      for (final row in rows)
+      for (final row in rows) {
         row.sort((a, b) => a.boundingBox.left.compareTo(b.boundingBox.left));
+      }
 
+      // 3. 状态机解析：用【ID】绝对锚定当前资产
       int? currentAssetId;
 
       for (final row in rows) {
         if (row.isEmpty) continue;
-        String originalLineText = row.map((e) => e.text).join(' ');
+        final lineText = row.map((e) => e.text).join(' ');
 
-        // ★ 记录原始文本，供弹窗 Debug 使用
-        debugRawText += originalLineText + "\n";
+        // 清除所有空格转小写，用于暴力匹配，兼容 6 位代码被识别为带空格格式
+        final normalizedLineText = lineText.replaceAll(RegExp(r'\s+'), '');
+        final cleanLine = normalizedLineText.toLowerCase();
 
-        String cleanLine = originalLineText.replaceAll(' ', '').toLowerCase();
-
+        // ★ 核心升级：遍历所有的资产的 搜索词(代码 / 名称)
         for (final entry in assetSearchKeys.entries) {
           final assetId = entry.key;
-          bool matched = false;
+          final searchWords = entry.value;
 
-          for (final word in entry.value) {
-            if (word.isEmpty) continue;
-            final cleanWord = word.replaceAll(' ', '').toLowerCase();
-            // 只要行内包含这个词，就认定匹配成功
-            if (cleanLine.contains(cleanWord)) {
+          bool matched = false;
+          for (final word in searchWords) {
+            final normalizedWord = word.replaceAll(RegExp(r'\s+'), '');
+            final cleanWord = normalizedWord.toLowerCase();
+            if (cleanWord.isNotEmpty && cleanLine.contains(cleanWord)) {
               matched = true;
               break;
             }
           }
 
           if (matched) {
-            currentAssetId = assetId;
+            currentAssetId = assetId; // 锁定 ID！
             result.putIfAbsent(currentAssetId, () => {});
             break;
           }
         }
 
         if (currentAssetId != null) {
-          if (originalLineText.contains('成本/现价')) {
-            final parts = originalLineText.split('成本/现价');
+          // ★ 锚点 1：提取 成本 和 综合收益
+          if (lineText.contains('成本/现价')) {
+            final parts = lineText.split('成本/现价');
             if (parts.length == 2) {
               final profit = _parseDouble(parts[0]);
               if (profit != null) result[currentAssetId]!['profit'] = profit;
+
               final costStr = parts[1].trim().split('/')[0];
               final cost = _parseDouble(costStr);
               if (cost != null) result[currentAssetId]!['cost'] = cost;
             }
           }
-          if (originalLineText.contains('持仓/可用')) {
-            final parts = originalLineText.split('持仓/可用');
+
+          // ★ 锚点 2：提取 最新份额
+          if (lineText.contains('持仓/可用')) {
+            final parts = lineText.split('持仓/可用');
             if (parts.length == 2) {
               final shareStr = parts[1].trim().split('/')[0];
               final shares = _parseDouble(shareStr);
@@ -100,17 +108,19 @@ class OcrParserService {
         }
       }
     } catch (e) {
-      debugRawText += "\nError: $e";
+      print("OCR Error: $e");
     } finally {
       recognizer.close();
     }
+
     return result;
   }
 
   double? _parseDouble(String text) {
     final match = RegExp(r'-?[\d,]+(\.\d+)?').firstMatch(text);
     if (match != null) {
-      return double.tryParse(match.group(0)!.replaceAll(',', ''));
+      String numStr = match.group(0)!.replaceAll(',', '');
+      return double.tryParse(numStr);
     }
     return null;
   }
