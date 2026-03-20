@@ -97,13 +97,10 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
       final Map<int, List<String>> assetSearchKeys = {};
       for (final asset in accountAssets) {
         final keys = <String>[];
+        final code = asset.code.toString().trim();
 
-        // 🚨【极度重要】🚨
-        // 如果你的数据库里，存“518850”这个代码的字段名叫 code，请把下面的 symbol 换成 code！
-        final code = asset.code?.toString().trim();
-
-        if (code != null && code.isNotEmpty) {
-          keys.add(code); // 第一优先级：匹配 6 位代码
+        if (code.isNotEmpty) {
+          keys.add(code); // 第一优先级：匹配资产代码
         }
         keys.add(asset.name); // 第二优先级：兜底匹配名称
         assetSearchKeys[asset.id] = keys;
