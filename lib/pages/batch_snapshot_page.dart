@@ -46,10 +46,25 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
   Future<List<MapEntry<Account, List<Asset>>>> _loadData() async {
     final isar = DatabaseService().isar;
     final accounts = await isar.accounts.where().findAll();
-    final assets = await isar.assets.where().findAll();
+    final assets = await isar.assets
+        .filter()
+        .isArchivedEqualTo(false)
+        .findAll();
+    final snapshots = await isar.positionSnapshots.where().findAll();
 
     accounts.sort((a, b) => a.name.compareTo(b.name));
     assets.sort((a, b) => a.name.compareTo(b.name));
+
+    final latestSnapshotByAssetSupabaseId = <String, PositionSnapshot>{};
+    for (final snapshot in snapshots) {
+      final assetSupabaseId = snapshot.assetSupabaseId;
+      if (assetSupabaseId == null || assetSupabaseId.isEmpty) continue;
+
+      final existing = latestSnapshotByAssetSupabaseId[assetSupabaseId];
+      if (existing == null || snapshot.date.isAfter(existing.date)) {
+        latestSnapshotByAssetSupabaseId[assetSupabaseId] = snapshot;
+      }
+    }
 
     final Map<String?, Account> accountMap = {
       for (var a in accounts) a.supabaseId: a,
@@ -57,6 +72,14 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
     final Map<Account, List<Asset>> grouped = {};
 
     for (final asset in assets) {
+      final assetSupabaseId = asset.supabaseId;
+      if (assetSupabaseId == null || assetSupabaseId.isEmpty) continue;
+
+      final latestSnapshot = latestSnapshotByAssetSupabaseId[assetSupabaseId];
+      if (latestSnapshot == null || latestSnapshot.totalShares <= 0) {
+        continue;
+      }
+
       final acc = accountMap[asset.accountSupabaseId];
       if (acc != null) {
         grouped.putIfAbsent(acc, () => []).add(asset);
@@ -97,13 +120,10 @@ class _BatchSnapshotPageState extends ConsumerState<BatchSnapshotPage> {
       final Map<int, List<String>> assetSearchKeys = {};
       for (final asset in accountAssets) {
         final keys = <String>[];
+        final code = asset.code.toString().trim();
 
-        // 🚨【极度重要】🚨
-        // 如果你的数据库里，存“518850”这个代码的字段名叫 code，请把下面的 symbol 换成 code！
-        final code = asset.code?.toString().trim();
-
-        if (code != null && code.isNotEmpty) {
-          keys.add(code); // 第一优先级：匹配 6 位代码
+        if (code.isNotEmpty) {
+          keys.add(code); // 第一优先级：匹配资产代码
         }
         keys.add(asset.name); // 第二优先级：兜底匹配名称
         assetSearchKeys[asset.id] = keys;

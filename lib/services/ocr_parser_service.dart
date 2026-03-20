@@ -54,9 +54,11 @@ class OcrParserService {
 
       for (final row in rows) {
         if (row.isEmpty) continue;
-        String originalLineText = row.map((e) => e.text).join(' ');
-        // 清除所有空格转小写，用于暴力匹配
-        String cleanLine = originalLineText.replaceAll(' ', '').toLowerCase();
+        final lineText = row.map((e) => e.text).join(' ');
+
+        // 清除所有空格转小写，用于暴力匹配，兼容 6 位代码被识别为带空格格式
+        final normalizedLineText = lineText.replaceAll(RegExp(r'\s+'), '');
+        final cleanLine = normalizedLineText.toLowerCase();
 
         // ★ 核心升级：遍历所有的资产的 搜索词(代码 / 名称)
         for (final entry in assetSearchKeys.entries) {
@@ -65,7 +67,8 @@ class OcrParserService {
 
           bool matched = false;
           for (final word in searchWords) {
-            final cleanWord = word.replaceAll(' ', '').toLowerCase();
+            final normalizedWord = word.replaceAll(RegExp(r'\s+'), '');
+            final cleanWord = normalizedWord.toLowerCase();
             if (cleanWord.isNotEmpty && cleanLine.contains(cleanWord)) {
               matched = true;
               break;
@@ -81,8 +84,8 @@ class OcrParserService {
 
         if (currentAssetId != null) {
           // ★ 锚点 1：提取 成本 和 综合收益
-          if (originalLineText.contains('成本/现价')) {
-            final parts = originalLineText.split('成本/现价');
+          if (lineText.contains('成本/现价')) {
+            final parts = lineText.split('成本/现价');
             if (parts.length == 2) {
               final profit = _parseDouble(parts[0]);
               if (profit != null) result[currentAssetId]!['profit'] = profit;
@@ -94,8 +97,8 @@ class OcrParserService {
           }
 
           // ★ 锚点 2：提取 最新份额
-          if (originalLineText.contains('持仓/可用')) {
-            final parts = originalLineText.split('持仓/可用');
+          if (lineText.contains('持仓/可用')) {
+            final parts = lineText.split('持仓/可用');
             if (parts.length == 2) {
               final shareStr = parts[1].trim().split('/')[0];
               final shares = _parseDouble(shareStr);
