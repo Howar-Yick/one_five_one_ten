@@ -304,29 +304,18 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
   void _showInvestWithdrawDialog(
       BuildContext context, WidgetRef ref, Account account) {
     final amountController = TextEditingController();
-    final fxRateController = TextEditingController();
-    final cnyAmountController = TextEditingController();
     final List<bool> isSelected = [true, false];
     DateTime selectedDate = DateTime.now();
-    bool rateRequested = false;
+    final supportedCurrencies = ['CNY', 'USD', 'HKD'];
+    String selectedCurrency = supportedCurrencies.contains(account.currency)
+        ? account.currency
+        : 'CNY';
 
     showDialog(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setState) {
-            if (account.currency != 'CNY' && !rateRequested) {
-              rateRequested = true;
-              ExchangeRateService()
-                  .getRate(account.currency, 'CNY')
-                  .then((rate) {
-                if (fxRateController.text.isEmpty && dialogContext.mounted) {
-                  setState(() {
-                    fxRateController.text = rate.toStringAsFixed(4);
-                  });
-                }
-              });
-            }
             return AlertDialog(
               title: const Text('资金操作'),
               content: Column(
@@ -351,39 +340,52 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  TextField(
-                      controller: amountController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: InputDecoration(
-                          labelText: '金额', prefixText: getCurrencySymbol(account.currency))),
-                  if (account.currency != 'CNY') ...[
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: fxRateController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: '汇率（本币→CNY，可选）',
-                        helperText: '默认自动拉取，留空则按金额自动计算',
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextField(
+                          controller: amountController,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          decoration: InputDecoration(
+                            labelText: '金额',
+                            prefixText: getCurrencySymbol(selectedCurrency),
+                          ),
+                        ),
                       ),
-                      onChanged: (_) {
-                        final amount = double.tryParse(amountController.text);
-                        final rate = double.tryParse(fxRateController.text);
-                        if (amount != null && rate != null) {
-                          cnyAmountController.text = (amount * rate).toStringAsFixed(2);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: cnyAmountController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: '折算人民币金额（可选）',
-                        helperText: '填写后可直接用于汇率盈亏拆分',
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: DropdownButtonFormField<String>(
+                          value: selectedCurrency,
+                          decoration: const InputDecoration(labelText: '币种'),
+                          items: supportedCurrencies
+                              .map(
+                                (currency) => DropdownMenuItem<String>(
+                                  value: currency,
+                                  child: Text(currency),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() {
+                              selectedCurrency = value;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (selectedCurrency != 'CNY')
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        '外币金额将在保存时按当日汇率折算为 CNY 入账',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ),
-                  ],
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -424,31 +426,26 @@ class _AccountDetailPageState extends ConsumerState<AccountDetailPage> {
                         return;
                       }
 
-                      double? fxRate;
-                      double? baseCnyAmount;
-                      if (account.currency != 'CNY') {
-                        fxRate = double.tryParse(fxRateController.text);
-                        baseCnyAmount = double.tryParse(cnyAmountController.text);
-                        if (fxRate == null && baseCnyAmount != null && amount > 0) {
-                          fxRate = baseCnyAmount / amount;
-                        }
-                        if (baseCnyAmount == null && fxRate != null) {
-                          baseCnyAmount = amount * fxRate;
-                        }
+                      double fxRateToCny = 1.0;
+                      if (selectedCurrency != 'CNY') {
+                        fxRateToCny = await ExchangeRateService()
+                            .getRate(selectedCurrency, 'CNY');
                       }
+
+                      final convertedAmountCny = amount * fxRateToCny;
 
                       final syncService = ref.read(syncServiceProvider);
 
                       final newTxn = AccountTransaction()
-                        ..amount = amount
+                        ..amount = convertedAmountCny
                         ..date = selectedDate
                         ..createdAt = DateTime.now()
                         ..type = isSelected[0]
                             ? TransactionType.invest
                             : TransactionType.withdraw
                         ..accountSupabaseId = account.supabaseId
-                        ..fxRateToCny = fxRate
-                        ..baseAmountCny = baseCnyAmount;
+                        ..fxRateToCny = fxRateToCny
+                        ..baseAmountCny = convertedAmountCny;
 
                       final isar = DatabaseService().isar;
                       await isar.writeTxn(() async {
